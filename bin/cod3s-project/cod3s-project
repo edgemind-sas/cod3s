@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+import argparse
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
+import yaml
+import cod3s
+import logging
+import os
+import pkg_resources
+import time
+installed_pkg = {pkg.key
+                 for pkg in pkg_resources.working_set}
+if 'ipdb' in installed_pkg:
+    import ipdb  # noqa: F401
+
+# App config
+# ----------
+APP_CONFIG = dict(
+    app_name_short="cod3s",
+    author="Developed by EdgeMind (www.edgemind.net) 2024-",
+    version="1.0.0",
+    project_filename=os.path.join(os.getcwd(), "project.yaml"),
+    verbose_mode=False,
+    debug_mode=False,
+    log_dir=os.getcwd(),
+)
+
+
+# CLI parameters management
+# -------------------------
+APP_ARG_PARSER = argparse.ArgumentParser(
+    description=APP_CONFIG["app_name_short"] + " " + APP_CONFIG["version"])
+
+APP_ARG_PARSER.add_argument(
+    '-j', '--project-filename',
+    dest='project_filename',
+    action='store',
+    default=APP_CONFIG["project_filename"],
+    help='COD3S Project filename.')
+
+# APP_ARG_PARSER.add_argument(
+#     '-m', '--multithreading',
+#     dest='multithreading',
+#     action='store_true',
+#     default=False,
+#     help='Indicate if multithreading is enable for parameters study')
+
+# APP_ARG_PARSER.add_argument(
+#     '-C', '--clean-db',
+#     dest='clean_db',
+#     action='store_true',
+#     default=False,
+#     help='Reset DB.')
+
+APP_ARG_PARSER.add_argument(
+    '-p', '--progress',
+    dest='progress_mode',
+    action='store_true',
+    default=APP_CONFIG.get("progress_mode", False),
+    help='Show progress bar in the console.')
+
+APP_ARG_PARSER.add_argument(
+    '-v', '--verbose',
+    dest='verbose_mode',
+    action='store_true',
+    default=APP_CONFIG.get("verbose_mode", False),
+    help='Display log information on stardard output.')
+
+APP_ARG_PARSER.add_argument(
+    '-d', '--debug',
+    dest='debug_mode',
+    action='store_true',
+    default=APP_CONFIG.get("debug_mode", False),
+    help='Display debug on stardard output.')
+
+
+APP_INPUT_ARGS = APP_ARG_PARSER.parse_args()
+
+APP_CONFIG.update(vars(APP_ARG_PARSER.parse_args()))
+
+
+PROJECT = None
+
+app = FastAPI()
+
+# Logging configuration
+logger = None
+if APP_CONFIG.get("verbose_mode") or APP_CONFIG.get("debug_mode"):
+    logger = logging.getLogger(__name__)
+    if APP_CONFIG.get("verbose_mode"):
+        logger.setLevel(logging.INFO)
+    if APP_CONFIG.get("debug_mode"):
+        logger.setLevel(logging.DEBUG)
+
+    log_filename = os.path.join(APP_CONFIG.get("log_dir", "."), "project.log")
+    file_handler = logging.FileHandler(log_filename)
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter('[%(asctime)s][%(name)s][%(levelname)s]\n%(message)s')
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+PROJECT = cod3s.COD3SProject.from_yaml(
+    file_path=APP_CONFIG["project_filename"],
+    cls_attr="COD3SProject",
+)
+PROJECT.logger = logger
+
+
+@app.get("/", tags=["Root"])
+async def read_root():
+    return {"message": "Welcome to this fantastic app!"}
+
+
+@app.get("/project/")
+async def get_project_info():
+    if not PROJECT:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    return PROJECT.dict()
+
+
+@app.get("/components/")
+async def get_components():
+    if not PROJECT:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    res = []
+    for comp in PROJECT.system.components("#.*", "#.*"):
+        comp_cur = {
+            "cls": comp.className(),
+            "name": comp.name(),
+            }
+        res.append(comp_cur)
+
+    return res
+
+
+@app.post("/add_indicator/")
+async def add_indicator(indic_specs=Body(...)):
+    if not PROJECT:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    # Call the add_indicator_var method with the parameters from the request
+    indic_added = PROJECT.system.add_indicator_var(**indic_specs)
+    
+    # Depending on the behavior of your add_indicator_var method,
+    # you might need to return something or just confirm that the action was performed successfully.
+    return {
+        "message": "Indicator(s) added successfully",
+        "indicators": [indic.dict(exclude={"bkd", "values", "instants"})
+                       for indic in indic_added],
+    }
+
+
+@app.post("/simulate/")
+async def simulate(simu_params=Body(...)):
+    if not PROJECT:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    # Load default parameters
+    #system_model.loadParameters("system_params.xml")
+    start_time = time.perf_counter()
+    PROJECT.system.simulate(**simu_params)
+    end_time = time.perf_counter()
+    process_time = end_time - start_time
+    # Depending on the behavior of your add_indicator_var method,
+    # you might need to return something or just confirm that the action was performed successfully.
+    return {"message": "Simulation ended successfully",
+            "process_time": process_time}
+
+
+@app.get("/system_viz/")
+async def get_system_viz():
+    if not PROJECT:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    system_viz = PROJECT.get_system_viz()
+
+    return system_viz
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+if __name__ == "__main__":
+
+    import uvicorn
+    uvicorn.run(
+        app,
+#        "main:app",
+        host="0.0.0.0",
+        port=8000,
+    )
