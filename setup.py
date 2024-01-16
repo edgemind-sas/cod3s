@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 
 setup(name='cod3s',
       version=VERSION,
@@ -46,6 +46,7 @@ setup(name='cod3s',
           "colored==1.4.4",
           "fastapi==0.99.1",
           "uvicorn==0.25.0",
+          "PyYAML==6.0",
       ],
       zip_safe=False,
       scripts=[
