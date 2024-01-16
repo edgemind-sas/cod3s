@@ -1,7 +1,10 @@
-"""pyar3 Setup"""
+"""cod3s Setup"""
 
 from setuptools import setup, find_packages
-from cod3s import __version__
+
+# read version as __version__
+exec(open('cod3s/version.py').read())
+
 
 setup(name='cod3s',
       version=__version__,
