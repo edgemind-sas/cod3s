@@ -73,11 +73,8 @@ class COD3SVizSpecs(ObjCOD3S):
 
     def apply_comp_specs(self, comp):
 
-        comp_viz = {
-            "name": comp.name(),
-            "class_name": comp.className(),
-        }
-
+        comp_viz = {}
+        
         for comp_specs in self.components.values():
             if re.search(comp_specs.name_pattern, comp.name()) and \
                re.search(comp_specs.class_pattern, comp.className()):
@@ -173,11 +170,18 @@ class COD3SProject(ObjCOD3S):
 
 
     def get_system_viz(self):
-
+        
         comp_viz_list = []
         for comp in self.system.components("#.*", "#.*"):
 
-            comp_viz = self.viz_specs.apply_comp_specs(comp)
+            comp_viz = {
+                "name": comp.name(),
+                "class_name": comp.className(),
+            }
+
+            if self.viz_specs:
+                comp_viz_extra = self.viz_specs.apply_comp_specs(comp)
+                comp_viz.update(comp_viz_extra)
 
             comp_viz_list.append(comp_viz)
 
@@ -200,10 +204,10 @@ class COD3SProject(ObjCOD3S):
                         "port_target": conn_cur.basename(),
                     }
 
-                    conn_viz_extra = \
-                        self.viz_specs.apply_connection_specs(mb)
-
-                    conn_viz_cur.update(conn_viz_extra)
+                    if self.viz_specs:
+                        conn_viz_extra = \
+                            self.viz_specs.apply_connection_specs(mb)
+                        conn_viz_cur.update(conn_viz_extra)
 
                     conn_viz_list.append(conn_viz_cur)
             
