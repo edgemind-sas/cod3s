@@ -1,11 +1,10 @@
 """pyar3 Setup"""
 
 from setuptools import setup, find_packages
-
-VERSION = "0.0.2"
+from cod3s import __version__
 
 setup(name='cod3s',
-      version=VERSION,
+      version=__version__,
       url='https://github.com/edgemind-sas/pyctools',
       author='Roland Donat',
       author_email='roland.donat@gmail.com, roland.donat@edgemind.net',

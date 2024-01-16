@@ -2,10 +2,11 @@
 import argparse
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-import yaml
+from pathlib import Path
 import cod3s
 import logging
 import os
+import sys
 import pkg_resources
 import time
 installed_pkg = {pkg.key
@@ -109,12 +110,23 @@ if APP_CONFIG.get("verbose_mode") or APP_CONFIG.get("debug_mode"):
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 
-PROJECT = cod3s.COD3SProject.from_yaml(
-    file_path=APP_CONFIG["project_filename"],
-    cls_attr="COD3SProject",
-)
-PROJECT.logger = logger
 
+project_filename_path = Path(APP_CONFIG["project_filename"])
+if project_filename_path.exists():
+    try:
+        PROJECT = cod3s.COD3SProject.from_yaml(
+            file_path=project_filename_path.as_posix(),
+            cls_attr="COD3SProject",
+        )
+    except Exception as e:
+        sys.stdout.write(f"Something's wrong when loading COD3S project: {e}")
+        sys.exit(1)
+else:
+    sys.stdout.write(f"Project file {project_filename_path.as_posix()} doesn't exist")
+    sys.exit(1)
+
+    
+PROJECT.logger = logger
 
 @app.get("/", tags=["Root"])
 async def read_root():
