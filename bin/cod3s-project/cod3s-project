@@ -53,6 +53,14 @@ APP_ARG_PARSER.add_argument(
 #     help='Reset DB.')
 
 APP_ARG_PARSER.add_argument(
+    '-P', '--port',
+    dest='port',
+    action='store',
+    default=8000,
+    help='COD3S Project filename.')
+
+
+APP_ARG_PARSER.add_argument(
     '-p', '--progress',
     dest='progress_mode',
     action='store_true',
@@ -196,5 +204,5 @@ if __name__ == "__main__":
         app,
 #        "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=int(APP_CONFIG.get("port")),
     )
