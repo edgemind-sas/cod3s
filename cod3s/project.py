@@ -76,33 +76,41 @@ class COD3SVizSpecs(ObjCOD3S):
         comp_viz = {}
         
         for comp_specs in self.components.values():
-            if re.search(comp_specs.name_pattern, comp.name()) and \
-               re.search(comp_specs.class_pattern, comp.className()):
+            is_match_name = re.search(comp_specs.name_pattern, comp.name()) \
+                if comp_specs.name_pattern else True
+            is_match_cls = re.search(comp_specs.class_pattern, comp.className()) \
+                if comp_specs.class_pattern else True
+            if is_match_name and is_match_cls:
 
                 comp_specs_cur = \
                     comp_specs.dict(exclude={"name_pattern",
                                              "class_pattern",
                                              "renaming"})
+                comp_specs_cur = {k: v for k, v in comp_specs_cur.items() if v}
                 comp_specs_cur.pop("cls")
 
                 for renaming_inst in comp_specs.renaming:
                     renaming_inst.transform(comp_specs_cur)
-                
+                    
                 comp_viz.update(comp_specs_cur)
 
         return comp_viz
-
-    
+   
     def apply_connection_specs(self, conn):
 
         conn_viz = {}
         for conn_specs in self.connections.values():
+
+            is_match_name = re.search(conn_specs.name_pattern, conn.basename()) \
+                if conn_specs.name_pattern else True
             
-            if re.search(conn_specs.name_pattern, conn.basename()):
+            if is_match_name:
 
                 conn_viz_cur = \
                     conn_specs.dict(exclude={"name_pattern",
                                              "renaming"})
+                conn_viz_cur = {k: v for k, v in conn_viz_cur.items() if v}
+
                 conn_viz_cur.pop("cls")
 
                 for renaming_inst in conn_specs.renaming:
