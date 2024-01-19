@@ -96,8 +96,12 @@ class ComponentVizSpecs(pydantic.BaseModel):
 
 class ConnectionVizSpecs(pydantic.BaseModel):
 
-    name_pattern: str = pydantic.Field(".*", description="Connections name regex")
+    comp_source: str = pydantic.Field(".*", description="Source component name pattern")
+    port_source: str = pydantic.Field(".*", description="Source component port name pattern")
+    comp_target: str = pydantic.Field(".*", description="Target component name pattern")
+    port_target: str = pydantic.Field(".*", description="Target component port name pattern")
     style: dict = pydantic.Field({}, description="Styling")
+    ignore: bool = pydantic.Field(False, description="Indicatre if the connection must be ignored")
 
     renaming: typing.List[RenamingSpecs] = \
         pydantic.Field([], description="Renamming specs")
@@ -114,8 +118,11 @@ class COD3SVizSpecs(ObjCOD3S):
 
     def apply_comp_specs(self, comp):
 
-        comp_viz = {}
-        
+        comp_viz = {
+            "name": comp.name(),
+            "class_name": comp.className(),
+        }
+
         for comp_specs in self.components.values():
             is_match_name = re.search(comp_specs.name, comp.name()) \
                 if comp_specs.name else True
@@ -145,22 +152,54 @@ class COD3SVizSpecs(ObjCOD3S):
 
         return comp_viz
    
-    def apply_connection_specs(self, conn):
+    def apply_connection_specs(self,
+                               comp_source,
+                               port_source,
+                               comp_target,
+                               port_target):
 
-        conn_viz = {}
+        comp_source_name = comp_source.basename()
+        comp_target_name = comp_target.basename()
+        port_source_name = port_source.basename()
+        port_target_name = port_target.basename()
+
+        conn_viz = {
+            "comp_source": comp_source_name,
+            "port_source": port_source_name,
+            "comp_target": comp_target_name,
+            "port_target": port_target_name,
+        }
+
         for conn_specs in self.connections.values():
 
-            is_match_name = re.search(conn_specs.name_pattern, conn.basename()) \
-                if conn_specs.name_pattern else True
+            is_match_comp_source_name = re.search(conn_specs.comp_source,
+                                                  comp_source_name) \
+                if conn_specs.comp_source else True
+            is_match_port_source_name = re.search(conn_specs.port_source,
+                                                  port_source_name) \
+                if conn_specs.port_source else True
+            is_match_comp_target_name = re.search(conn_specs.comp_target,
+                                                  comp_target_name) \
+                if conn_specs.comp_target else True
+            is_match_port_target_name = re.search(conn_specs.port_target,
+                                                  port_target_name) \
+                if conn_specs.port_target else True
             
-            if is_match_name:
+            if is_match_comp_source_name and \
+               is_match_port_source_name and \
+               is_match_comp_target_name and \
+               is_match_port_target_name:
+
+                if conn_specs.ignore:
+                    return None
 
                 conn_viz_cur = \
-                    conn_specs.dict(exclude={"name",
+                    conn_specs.dict(exclude={"comp_source",
+                                             "port_source",
+                                             "comp_target",
+                                             "port_target",
                                              "renaming"})
                 conn_viz_cur = {k: v for k, v in conn_viz_cur.items() if v}
-
-                #conn_viz_cur.pop("cls")
 
                 for renaming_inst in conn_specs.renaming:
                     renaming_inst.transform(conn_viz_cur)
@@ -231,47 +270,51 @@ class COD3SProject(ObjCOD3S):
         comp_viz_list = []
         for comp in self.system.components("#.*", "#.*"):
 
-            comp_viz = {
-                "name": comp.name(),
-                "class_name": comp.className(),
-            }
+            # comp_viz = {
+            #     "name": comp.name(),
+            #     "class_name": comp.className(),
+            # }
 
+            # Hypothesis, we represent only component with viz specs
             if self.viz_specs:
-                comp_viz_extra = self.viz_specs.apply_comp_specs(comp)
-                comp_viz.update(comp_viz_extra)
-
-            comp_viz_list.append(comp_viz)
+                comp_viz = self.viz_specs.apply_comp_specs(comp)
+                comp_viz_list.append(comp_viz)
 
         conn_viz_list = []
 
-        for comp in self.system.components("#.*", "#.*"):
-            for mb in comp.messageBoxes():
-                for cnx in range(mb.cnctCount()):
+        for comp_source_cur in self.system.components("#.*", "#.*"):
+            for port_source_cur in comp_source_cur.messageBoxes():
+                for cnx in range(port_source_cur.cnctCount()):
 
-                    conn_cur = mb.cnct(cnx)
-                    comp_target = conn_cur.parent()
+                    port_target_cur = port_source_cur.cnct(cnx)
+                    comp_target_cur = port_target_cur.parent()
 
-                    comp_source_name = comp.basename()
-                    comp_target_name = comp_target.basename()
+                    # comp_source_name = comp.basename()
+                    # comp_target_name = comp_target_cur.basename()
 
-                    conn_viz_cur = {
-                        "comp_source": comp_source_name,
-                        "port_source": mb.basename(),
-                        "comp_target": comp_target_name,
-                        "port_target": conn_cur.basename(),
-                    }
+                    # conn_viz_cur = {
+                    #     "comp_source": comp_source_name,
+                    #     "port_source": port_source_cur.basename(),
+                    #     "comp_target": comp_target_name,
+                    #     "port_target": port_target_cur.basename(),
+                    # }
 
-                    # Test if the reverse connection is already in the connection to
-                    # visualize
-                    if reverse_conn_in_viz_list(conn_viz_cur, conn_viz_list):
-                        continue
-                    
+                    # # Test if the reverse connection is already in the connection to
+                    # # visualize
+                    # if reverse_conn_in_viz_list(conn_viz_cur, conn_viz_list):
+                    #     continue
+
                     if self.viz_specs:
-                        conn_viz_extra = \
-                            self.viz_specs.apply_connection_specs(mb)
-                        conn_viz_cur.update(conn_viz_extra)
-
-                    conn_viz_list.append(conn_viz_cur)
+                        conn_viz = \
+                            self.viz_specs.apply_connection_specs(
+                                comp_source=comp_source_cur,
+                                port_source=port_source_cur,
+                                comp_target=comp_target_cur,
+                                port_target=port_target_cur,
+                            )
+                        #conn_viz_cur.update(conn_viz_extra)
+                        if conn_viz:
+                            conn_viz_list.append(conn_viz)
             
         return {
             "components": comp_viz_list,
