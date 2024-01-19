@@ -2,6 +2,7 @@ import pydantic
 import typing
 import pkg_resources
 from .core import ObjCOD3S
+from .utils import update_dict_deep
 import importlib.util
 import sys
 import os
@@ -11,6 +12,15 @@ installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
 
+# Utility functions
+def reverse_conn_in_viz_list(conn_viz: dict, conn_viz_list: list) -> bool:
+    for existing_conn_viz in conn_viz_list:
+        if (existing_conn_viz['comp_target'] == conn_viz['comp_source'] and
+                existing_conn_viz['port_target'] == conn_viz['port_source'] and
+                existing_conn_viz['comp_source'] == conn_viz['comp_target'] and
+                existing_conn_viz['port_source'] == conn_viz['port_target']):
+            return True
+    return False
 
 
 class RenamingSpecs(pydantic.BaseModel):
@@ -26,21 +36,52 @@ class RenamingSpecs(pydantic.BaseModel):
             document[self.attr] = re.sub(self.pattern, self.raplace, attr_val)
     
 
-class ComponentVizSpecs(ObjCOD3S):
+class PortVizSpec(pydantic.BaseModel):
+    name: str = pydantic.Field(".*", description="Port name pattern")
+    spot: str = pydantic.Field(None, description="Port spot")
+    color: str = pydantic.Field(None, description="Port color")
 
-    name_pattern: str = pydantic.Field(".*", description="Component name regex")
+    
+class ComponentVizSpecs(pydantic.BaseModel):
 
-    class_pattern: str = pydantic.Field(".*", description="Component class regex")
+    name: str = pydantic.Field(".*", description="Component name pattern")
+
+    type: str = pydantic.Field(".*", description="Component class regex")
 
     renaming: typing.List[RenamingSpecs] = \
         pydantic.Field([], description="Renamming specs")
     
-    ports: typing.Dict[str, str] = pydantic.Field({}, description="Connection ports position")
+    ports: typing.List[PortVizSpec] = pydantic.Field({}, description="Connection ports specification")
 
     style: dict = pydantic.Field({}, description="Styling")
 
-    
-            
+
+    def apply_ports_specs(self, comp):
+
+        port_viz_list = []
+
+        for mb in comp.messageBoxes():
+
+            port_viz = {}
+                
+            port_name_cur = mb.basename()
+
+            for port_specs in self.ports:
+                is_match_name = re.search(port_specs.name, port_name_cur) \
+                    if port_specs.name else True
+                if is_match_name:
+
+                    port_viz_cur = \
+                        port_specs.dict(exclude={"name"})
+                    port_viz_cur["name"] = port_name_cur
+                    port_viz_cur = {k: v for k, v in port_viz_cur.items() if v}
+
+                    port_viz.update(port_viz_cur)
+                        
+            if port_viz:
+                port_viz_list.append(port_viz)
+
+        return port_viz_list
     
 # class ComponentViz(ObjCOD3S):
 
@@ -53,7 +94,7 @@ class ComponentVizSpecs(ObjCOD3S):
 #     style_default: dict = pydantic.Field({}, description="Component class name")
 
 
-class ConnectionVizSpecs(ObjCOD3S):
+class ConnectionVizSpecs(pydantic.BaseModel):
 
     name_pattern: str = pydantic.Field(".*", description="Connections name regex")
     style: dict = pydantic.Field({}, description="Styling")
@@ -76,23 +117,31 @@ class COD3SVizSpecs(ObjCOD3S):
         comp_viz = {}
         
         for comp_specs in self.components.values():
-            is_match_name = re.search(comp_specs.name_pattern, comp.name()) \
-                if comp_specs.name_pattern else True
-            is_match_cls = re.search(comp_specs.class_pattern, comp.className()) \
-                if comp_specs.class_pattern else True
+            is_match_name = re.search(comp_specs.name, comp.name()) \
+                if comp_specs.name else True
+            is_match_cls = re.search(comp_specs.type, comp.className()) \
+                if comp_specs.type else True
             if is_match_name and is_match_cls:
 
                 comp_specs_cur = \
-                    comp_specs.dict(exclude={"name_pattern",
-                                             "class_pattern",
+                    comp_specs.dict(exclude={"name",
+                                             "type",
                                              "renaming"})
                 comp_specs_cur = {k: v for k, v in comp_specs_cur.items() if v}
-                comp_specs_cur.pop("cls")
+                #comp_specs_cur.pop("cls")
 
+                if ports_spec := comp_specs.apply_ports_specs(comp):
+                    comp_specs_cur["ports"] = ports_spec
+    
                 for renaming_inst in comp_specs.renaming:
                     renaming_inst.transform(comp_specs_cur)
                     
-                comp_viz.update(comp_specs_cur)
+                #comp_viz.update(comp_specs_cur)
+                update_dict_deep(comp_viz, comp_specs_cur,
+                                 key_attr="name")
+
+                # if comp.basename() == "S":
+                #     ipdb.set_trace()
 
         return comp_viz
    
@@ -107,11 +156,11 @@ class COD3SVizSpecs(ObjCOD3S):
             if is_match_name:
 
                 conn_viz_cur = \
-                    conn_specs.dict(exclude={"name_pattern",
+                    conn_specs.dict(exclude={"name",
                                              "renaming"})
                 conn_viz_cur = {k: v for k, v in conn_viz_cur.items() if v}
 
-                conn_viz_cur.pop("cls")
+                #conn_viz_cur.pop("cls")
 
                 for renaming_inst in conn_specs.renaming:
                     renaming_inst.transform(conn_viz_cur)
@@ -212,6 +261,11 @@ class COD3SProject(ObjCOD3S):
                         "port_target": conn_cur.basename(),
                     }
 
+                    # Test if the reverse connection is already in the connection to
+                    # visualize
+                    if reverse_conn_in_viz_list(conn_viz_cur, conn_viz_list):
+                        continue
+                    
                     if self.viz_specs:
                         conn_viz_extra = \
                             self.viz_specs.apply_connection_specs(mb)
