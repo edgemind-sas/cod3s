@@ -179,7 +179,7 @@ class PycTransition(TransitionModel):
         trans_name = trans_bkd.basename()
 
         state_source_bkd = trans_bkd.startState()
-        state_target_bkd = trans_bkd.getTarget(0)
+        state_target_bkd = trans_bkd.target(0)
 
         occ_law = PycOccurrenceDistribution.from_bkd(trans_bkd.distLaw())
 

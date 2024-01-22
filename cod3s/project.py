@@ -34,7 +34,22 @@ class RenamingSpecs(pydantic.BaseModel):
         attr_val = document.get(self.attr)
         if attr_val and isinstance(attr_val, str):
             document[self.attr] = re.sub(self.pattern, self.raplace, attr_val)
-    
+
+
+class StyleConditionSpecs(pydantic.BaseModel):
+
+    expr: str = pydantic.Field(..., description="Boolean expression to evaluate")
+    style: dict = pydantic.Field({}, description="Style to be applied")
+
+    def check(self, mapper):
+        try:
+            res = eval(self.expr.format(**{k: f"mapper['{k}']" for k in mapper.keys()}))
+        except:
+            res = False
+            
+        return res
+        
+
 
 class PortVizSpec(pydantic.BaseModel):
     name: str = pydantic.Field(".*", description="Port name pattern")
@@ -51,9 +66,12 @@ class ComponentVizSpecs(pydantic.BaseModel):
     renaming: typing.List[RenamingSpecs] = \
         pydantic.Field([], description="Renamming specs")
     
-    ports: typing.List[PortVizSpec] = pydantic.Field({}, description="Connection ports specification")
-
+    ports: typing.List[PortVizSpec] = \
+        pydantic.Field([], description="Connection ports specification")
     style: dict = pydantic.Field({}, description="Styling")
+
+    conditions: typing.List[StyleConditionSpecs] = \
+        pydantic.Field([], description="Styling conditions")
 
 
     def apply_ports_specs(self, comp):
@@ -133,8 +151,11 @@ class COD3SVizSpecs(ObjCOD3S):
                 comp_specs_cur = \
                     comp_specs.dict(exclude={"name",
                                              "type",
-                                             "renaming"})
+                                             "renaming",
+                                             "conditions",
+                                             })
                 comp_specs_cur = {k: v for k, v in comp_specs_cur.items() if v}
+                comp_specs_cur.setdefault("style", {})
                 #comp_specs_cur.pop("cls")
 
                 if ports_spec := comp_specs.apply_ports_specs(comp):
@@ -142,7 +163,12 @@ class COD3SVizSpecs(ObjCOD3S):
     
                 for renaming_inst in comp_specs.renaming:
                     renaming_inst.transform(comp_specs_cur)
-                    
+
+                for cond in comp_specs.conditions:
+
+                    if cond.check(mapper={"COMP": comp}):
+                        comp_specs_cur["style"].update(cond.style)
+                
                 #comp_viz.update(comp_specs_cur)
                 update_dict_deep(comp_viz, comp_specs_cur,
                                  key_attr="name")

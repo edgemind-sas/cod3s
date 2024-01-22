@@ -8,6 +8,7 @@ import pkg_resources
 import itertools
 import re
 from .indicator import PycVarIndicator, PycFunIndicator
+from .automaton import PycTransition
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
@@ -184,3 +185,72 @@ class PycSystem(pyc.CSystem):
         fig.update_layout(**layout)
 
         return fig
+
+    
+    def active_transitions(self, exclude={"bkd"}, **kwargs):
+
+        trans_list_bkd = self.activeTransitions()
+
+        trans_list = []
+        end_time_bound = float("inf")
+        for i, trans in enumerate(trans_list_bkd):
+            trans_cur = dict(
+                trans_id=i,
+                comp_name=trans.parent().name(),
+                comp_classname=trans.parent().className(),
+                end_time=trans.endTime() if trans.endTime() < float("inf") else None,
+                **PycTransition.from_bkd(trans).dict(exclude=exclude),
+            )
+            if trans.endTime() < end_time_bound:
+                end_time_bound = trans.endTime()
+
+            trans_list.append(trans_cur)
+
+        return trans_list, end_time_bound
+
+    def fireable_transitions(self, **kwargs):
+
+        trans_list, end_time_bound = self.active_transitions(exclude={})
+
+        trans_list_fireable = []
+        for trans in trans_list:
+
+            # if trans["occ_law"]["cls"] == "ExpOccDistribution":
+            #     trans["end_time"] = self.currentTime()
+
+            # if trans["comp_name"] == "S":
+            #     ipdb.set_trace()
+            if trans["end_time"] is None:
+                if self.currentTime() != end_time_bound:
+                    trans_list_fireable.append(trans)          
+            elif trans["end_time"] <= end_time_bound:
+                trans_list_fireable.append(trans)
+
+        return trans_list_fireable
+    
+
+    def set_transition(self, trans_id, date=None, state_index=None, **kwargs):
+
+        trans_list, end_time_bound = self.active_transitions(exclude={})
+
+        selected_transition = None
+        for trans in trans_list:
+
+            if trans["trans_id"] == trans_id:
+                selected_transition = trans
+                break
+
+        if not selected_transition:
+            raise IndexError(f"Incorrect transition id {trans_id}")
+        
+        if not date:
+            date = selected_transition["end_time"] \
+                if selected_transition["end_time"] else self.currentTime()
+                
+        if not state_index:
+            state_index = 0
+
+        self.setTransPlanning(selected_transition["bkd"], date, state_index)
+
+        self.updatePlanningInt()
+        self.stepForward()
