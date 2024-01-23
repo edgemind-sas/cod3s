@@ -49,6 +49,7 @@ setup(name='cod3s',
           "fastapi==0.99.1",
           "uvicorn==0.25.0",
           "PyYAML==6.0",
+          "watchdog==3.0.0",
       ],
       zip_safe=False,
       scripts=[

@@ -3,16 +3,65 @@ import argparse
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
+import importlib
 import cod3s
 import logging
 import os
 import sys
 import pkg_resources
 import time
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
 installed_pkg = {pkg.key
                  for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
+
+
+
+# Utils functions
+# ---------------
+def load_project(project_state, project_filename, logger=None):
+
+    importlib.reload(cod3s)
+    
+    project_filename_path = Path(project_filename)
+    if project_filename_path.exists():
+        try:
+            if project_state.get("project"):
+                project_state["project"].system.deleteSys()
+                
+            project_state["project"] = cod3s.COD3SProject.from_yaml(
+                file_path=project_filename_path.as_posix(),
+                cls_attr="COD3SProject",
+            )
+        except Exception as e:
+            sys.stdout.write(f"Something's wrong when loading COD3S project: {e}")
+            sys.exit(1)
+    else:
+        sys.stdout.write(f"Project file {project_filename_path.as_posix()} doesn't exist")
+        sys.exit(1)
+
+    project_state["project"].logger = logger
+
+
+class ProjectFileChangeHandler(FileSystemEventHandler):
+    def __init__(self, project_state, project_filename, logger):
+        self.project_filename = project_filename
+        self.project_state = project_state
+        self.logger = logger
+
+    def on_modified(self, event):
+        # Check if the modified file is one of the project files
+        if event.src_path in [self.project_state["project"].system_filename,
+                              self.project_state["project"].viz_specs_filename]:
+            if self.logger:
+                self.logger.info(f"{event.src_path} has been modified. Reloading...")
+            load_project(self.project_state,
+                         self.project_filename,
+                         logger=self.logger)
+
 
 # App config
 # ----------
@@ -87,8 +136,11 @@ APP_INPUT_ARGS = APP_ARG_PARSER.parse_args()
 
 APP_CONFIG.update(vars(APP_ARG_PARSER.parse_args()))
 
+PROJECT_STATE = {
+    "project": None, 
+}
 
-PROJECT = None
+load_project(PROJECT_STATE, APP_CONFIG.get("project_filename"))
 
 app = FastAPI()
 
@@ -110,44 +162,39 @@ if APP_CONFIG.get("verbose_mode") or APP_CONFIG.get("debug_mode"):
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 
-
-project_filename_path = Path(APP_CONFIG["project_filename"])
-if project_filename_path.exists():
-    try:
-        PROJECT = cod3s.COD3SProject.from_yaml(
-            file_path=project_filename_path.as_posix(),
-            cls_attr="COD3SProject",
-        )
-    except Exception as e:
-        sys.stdout.write(f"Something's wrong when loading COD3S project: {e}")
-        sys.exit(1)
-else:
-    sys.stdout.write(f"Project file {project_filename_path.as_posix()} doesn't exist")
-    sys.exit(1)
-
-    
-PROJECT.logger = logger
-
 @app.get("/", tags=["Root"])
 async def read_root():
     return {"message": "Welcome to this fantastic app!"}
 
 
+@app.post("/reload_project/")
+async def reload_project():
+    
+    load_project(PROJECT_STATE, APP_CONFIG["project_filename"])
+
+    return {
+        "message": "Project reloaded",
+        "project": PROJECT_STATE["project"].dict(),
+    }
+
+
 @app.get("/project/")
 async def get_project_info():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    return PROJECT.dict()
+    return {
+        "project": PROJECT_STATE["project"].dict(),
+    }
 
 
 @app.get("/components/")
 async def get_components():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
     res = []
-    for comp in PROJECT.system.components("#.*", "#.*"):
+    for comp in PROJECT_STATE["project"].system.components("#.*", "#.*"):
         comp_cur = {
             "cls": comp.className(),
             "name": comp.name(),
@@ -159,11 +206,11 @@ async def get_components():
 
 @app.post("/add_indicator/")
 async def add_indicator(indic_specs=Body(...)):
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
     # Call the add_indicator_var method with the parameters from the request
-    indic_added = PROJECT.system.add_indicator_var(**indic_specs)
+    indic_added = PROJECT_STATE["project"].system.add_indicator_var(**indic_specs)
     
     # Depending on the behavior of your add_indicator_var method,
     # you might need to return something or just confirm that the action was performed successfully.
@@ -176,13 +223,13 @@ async def add_indicator(indic_specs=Body(...)):
 
 @app.post("/simulate/")
 async def simulate(simu_params=Body(...)):
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
     # Load default parameters
     #system_model.loadParameters("system_params.xml")
     start_time = time.perf_counter()
-    PROJECT.system.simulate(**simu_params)
+    PROJECT_STATE["project"].system.simulate(**simu_params)
     end_time = time.perf_counter()
     process_time = end_time - start_time
     # Depending on the behavior of your add_indicator_var method,
@@ -193,94 +240,94 @@ async def simulate(simu_params=Body(...)):
 
 @app.post("/interactive_simulation/start/")
 async def interactive_simulation_start():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT.system.startInteractive()
-    PROJECT.system.stepForward()
+    PROJECT_STATE["project"].system.startInteractive()
+    PROJECT_STATE["project"].system.stepForward()
 
-    transitions = PROJECT.system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.fireable_transitions()
     
     return {"message": "Interactive simulation started",
-            "current_time": PROJECT.system.currentTime(),
+            "current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transitions}
 
 
 @app.post("/interactive_simulation/stop/")
 async def interactive_simulation_start():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT.system.stopInteractive()
+    PROJECT_STATE["project"].system.stopInteractive()
 
     return {"message": "Interactive simulation stopped"}
 
 
 @app.post("/interactive_simulation/forward/")
 async def interactive_simulation_forward():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT.system.stepForward()
+    PROJECT_STATE["project"].system.stepForward()
 
-    transitions = PROJECT.system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.fireable_transitions()
     
-    return {"current_time": PROJECT.system.currentTime(),
+    return {"current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transitions}
 
 
 @app.post("/interactive_simulation/backward/")
 async def interactive_simulation_backward():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT.system.stepBackward()
+    PROJECT_STATE["project"].system.stepBackward()
 
-    transitions = PROJECT.system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.fireable_transitions()
     
-    return {"current_time": PROJECT.system.currentTime(),
+    return {"current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transitions}
 
 
 @app.get("/interactive_simulation/active_transitions/")
 async def interactive_simulation_active_transitions():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    transitions, end_time_bound = PROJECT.system.active_transitions()
+    transitions, end_time_bound = PROJECT_STATE["project"].system.active_transitions()
     
     return {
-        "current_time": PROJECT.system.currentTime(),
+        "current_time": PROJECT_STATE["project"].system.currentTime(),
         "transitions": transitions,
         }
 
 
 @app.get("/interactive_simulation/fireable_transitions/")
 async def interactive_simulation_fireable_transitions():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    transitions = PROJECT.system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.fireable_transitions()
     
     return {
-        "current_time": PROJECT.system.currentTime(),
+        "current_time": PROJECT_STATE["project"].system.currentTime(),
         "transitions": transitions,
         }
 
 
 @app.post("/interactive_simulation/set_transition/")
 async def interactive_simulation_set_transition(transition_id: int, date: float = None, state_index: int = None):
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
     try:
-        PROJECT.system.set_transition(transition_id, date=date,
+        PROJECT_STATE["project"].system.set_transition(transition_id, date=date,
                                       state_index=state_index)
-        transitions = PROJECT.system.fireable_transitions()
+        transitions = PROJECT_STATE["project"].system.fireable_transitions()
 
         return {
             "message": "Transition planning updated and simulation stepped forward",
-            "current_time": PROJECT.system.currentTime(),
+            "current_time": PROJECT_STATE["project"].system.currentTime(),
             "active_transitions": transitions,
         }
     
@@ -292,10 +339,10 @@ async def interactive_simulation_set_transition(transition_id: int, date: float 
 
 @app.get("/system_viz/")
 async def get_system_viz():
-    if not PROJECT:
+    if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    system_viz = PROJECT.get_system_viz()
+    system_viz = PROJECT_STATE["project"].get_system_viz()
 
     return system_viz
 
@@ -311,9 +358,33 @@ app.add_middleware(
 if __name__ == "__main__":
 
     import uvicorn
-    uvicorn.run(
-        app,
-#        "main:app",
-        host="0.0.0.0",
-        port=int(APP_CONFIG.get("port")),
-    )
+
+   # Set up event handler and observer
+    event_handler = ProjectFileChangeHandler(
+        PROJECT_STATE,
+        APP_CONFIG["project_filename"],
+        logger)
+    observer = Observer()
+    observer.schedule(event_handler,
+                      path=PROJECT_STATE["project"].system_filename,
+                      recursive=False)
+    observer.schedule(event_handler,
+                      path=PROJECT_STATE["project"].viz_specs_filename,
+                      recursive=False)
+    observer.start()
+
+    try:
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=int(APP_CONFIG.get("port"))
+        )
+    finally:
+        observer.stop()
+        observer.join()
+
+    # uvicorn.run(
+    #     app,
+    #     host="0.0.0.0",
+    #     port=int(APP_CONFIG.get("port"))
+    # )

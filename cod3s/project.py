@@ -270,7 +270,6 @@ class COD3SProject(ObjCOD3S):
         system_module = importlib.util.module_from_spec(system_module_spec)
         sys.modules[system_module_name] = system_module
         system_module_spec.loader.exec_module(system_module)
-
         system_class = getattr(system_module, self.system_class_name)
         self.system = system_class(self.system_name)
 
