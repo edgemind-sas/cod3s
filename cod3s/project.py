@@ -7,6 +7,7 @@ import importlib.util
 import sys
 import os
 import re
+from datetime import datetime, timezone
 
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
@@ -254,6 +255,10 @@ class COD3SProject(ObjCOD3S):
 
     system: typing.Any = pydantic.Field(None, description="The system object")
 
+    ts_last_modification: float = \
+        pydantic.Field(None, description="Last modification timestamp in UTC")
+
+
     logger: typing.Any = pydantic.Field(None, description="Logger")
 
     def __init__(self, **data: typing.Any):
@@ -272,12 +277,18 @@ class COD3SProject(ObjCOD3S):
         system_module_spec.loader.exec_module(system_module)
         system_class = getattr(system_module, self.system_class_name)
         self.system = system_class(self.system_name)
-
+        
         if self.viz_specs_filename:
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
                                                      add_cls=True)
+
+        self.update_ts_last_modification()
             
-            
+
+    def update_ts_last_modification(self):
+
+        self.ts_last_modification = \
+            datetime.now(timezone.utc).timestamp()
         
     def dict(self, **kwrds):
 

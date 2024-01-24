@@ -172,6 +172,8 @@ async def reload_project():
     
     load_project(PROJECT_STATE, APP_CONFIG["project_filename"])
 
+    PROJECT_STATE["project"].update_ts_last_modification()
+    
     return {
         "message": "Project reloaded",
         "project": PROJECT_STATE["project"].dict(),
@@ -201,7 +203,9 @@ async def get_components():
             }
         res.append(comp_cur)
 
-    return res
+    return {
+        "components": res,
+    }
 
 
 @app.post("/add_indicator/")
@@ -214,6 +218,8 @@ async def add_indicator(indic_specs=Body(...)):
     
     # Depending on the behavior of your add_indicator_var method,
     # you might need to return something or just confirm that the action was performed successfully.
+    PROJECT_STATE["project"].update_ts_last_modification()
+
     return {
         "message": "Indicator(s) added successfully",
         "indicators": [indic.dict(exclude={"bkd", "values", "instants"})
@@ -234,6 +240,8 @@ async def simulate(simu_params=Body(...)):
     process_time = end_time - start_time
     # Depending on the behavior of your add_indicator_var method,
     # you might need to return something or just confirm that the action was performed successfully.
+    PROJECT_STATE["project"].update_ts_last_modification()
+
     return {"message": "Simulation ended successfully",
             "process_time": process_time}
 
@@ -247,7 +255,9 @@ async def interactive_simulation_start():
     PROJECT_STATE["project"].system.stepForward()
 
     transitions = PROJECT_STATE["project"].system.fireable_transitions()
-    
+
+    PROJECT_STATE["project"].update_ts_last_modification()
+
     return {"message": "Interactive simulation started",
             "current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transitions}
@@ -260,6 +270,8 @@ async def interactive_simulation_start():
 
     PROJECT_STATE["project"].system.stopInteractive()
 
+    PROJECT_STATE["project"].update_ts_last_modification()
+
     return {"message": "Interactive simulation stopped"}
 
 
@@ -271,7 +283,9 @@ async def interactive_simulation_forward():
     PROJECT_STATE["project"].system.stepForward()
 
     transitions = PROJECT_STATE["project"].system.fireable_transitions()
-    
+
+    PROJECT_STATE["project"].update_ts_last_modification()
+
     return {"current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transitions}
 
@@ -284,7 +298,9 @@ async def interactive_simulation_backward():
     PROJECT_STATE["project"].system.stepBackward()
 
     transitions = PROJECT_STATE["project"].system.fireable_transitions()
-    
+
+    PROJECT_STATE["project"].update_ts_last_modification()
+
     return {"current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transitions}
 
@@ -322,8 +338,10 @@ async def interactive_simulation_set_transition(transition_id: int, date: float 
 
     try:
         PROJECT_STATE["project"].system.set_transition(transition_id, date=date,
-                                      state_index=state_index)
+                                                       state_index=state_index)
         transitions = PROJECT_STATE["project"].system.fireable_transitions()
+
+        PROJECT_STATE["project"].update_ts_last_modification()
 
         return {
             "message": "Transition planning updated and simulation stepped forward",
@@ -345,6 +363,16 @@ async def get_system_viz():
     system_viz = PROJECT_STATE["project"].get_system_viz()
 
     return system_viz
+
+
+@app.get("/ts_last_modification/")
+async def get_ts_last_modification():
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    return {
+        "ts_last_modification": PROJECT_STATE["project"].ts_last_modification
+    }
 
 
 app.add_middleware(
