@@ -370,8 +370,8 @@ async def get_system_viz(update_only: bool = False):
     return system_viz
 
 
-@app.post("/update_viz/")
-async def update_viz():
+@app.post("/system_viz_update/")
+async def system_viz_update():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
