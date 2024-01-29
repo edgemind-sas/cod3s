@@ -2,7 +2,7 @@ import pydantic
 import typing
 import pkg_resources
 from .core import ObjCOD3S
-from .utils import update_dict_deep
+from .utils import update_dict_deep, dict_diff
 import importlib.util
 import sys
 import os
@@ -253,11 +253,13 @@ class COD3SProject(ObjCOD3S):
     
     viz_specs: COD3SVizSpecs = pydantic.Field(None, description="The system object")
 
+    system_viz_default: dict = \
+        pydantic.Field(None, description="System viz dictionnary by default")
+    
     system: typing.Any = pydantic.Field(None, description="The system object")
 
     ts_last_modification: float = \
         pydantic.Field(None, description="Last modification timestamp in UTC")
-
 
     logger: typing.Any = pydantic.Field(None, description="Logger")
 
@@ -282,6 +284,8 @@ class COD3SProject(ObjCOD3S):
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
                                                      add_cls=True)
 
+        self.system_viz_default = self.get_system_viz()
+        
         self.update_ts_last_modification()
             
 
@@ -300,16 +304,10 @@ class COD3SProject(ObjCOD3S):
             
         return super().dict(**kwrds)
 
-
     def get_system_viz(self):
         
         comp_viz_list = []
         for comp in self.system.components("#.*", "#.*"):
-
-            # comp_viz = {
-            #     "name": comp.name(),
-            #     "class_name": comp.className(),
-            # }
 
             # Hypothesis, we represent only component with viz specs
             if self.viz_specs:
@@ -324,21 +322,6 @@ class COD3SProject(ObjCOD3S):
 
                     port_target_cur = port_source_cur.cnct(cnx)
                     comp_target_cur = port_target_cur.parent()
-
-                    # comp_source_name = comp.basename()
-                    # comp_target_name = comp_target_cur.basename()
-
-                    # conn_viz_cur = {
-                    #     "comp_source": comp_source_name,
-                    #     "port_source": port_source_cur.basename(),
-                    #     "comp_target": comp_target_name,
-                    #     "port_target": port_target_cur.basename(),
-                    # }
-
-                    # # Test if the reverse connection is already in the connection to
-                    # # visualize
-                    # if reverse_conn_in_viz_list(conn_viz_cur, conn_viz_list):
-                    #     continue
 
                     if self.viz_specs:
                         conn_viz = \
@@ -357,7 +340,6 @@ class COD3SProject(ObjCOD3S):
             "connections": conn_viz_list,
         }
 
-            
-
-
-            
+    def get_system_viz_updates(self):
+        return dict_diff(self.system_viz_default,
+                         self.get_system_viz())

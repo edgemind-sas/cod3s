@@ -275,19 +275,19 @@ async def interactive_simulation_start():
     return {"message": "Interactive simulation stopped"}
 
 
-@app.post("/interactive_simulation/forward/")
-async def interactive_simulation_forward():
-    if not PROJECT_STATE["project"]:
-        raise HTTPException(status_code=404, detail="Project invalid")
+# @app.post("/interactive_simulation/forward/")
+# async def interactive_simulation_forward():
+#     if not PROJECT_STATE["project"]:
+#         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT_STATE["project"].system.stepForward()
+#     PROJECT_STATE["project"].system.stepForward()
 
-    transitions = PROJECT_STATE["project"].system.fireable_transitions()
+#     transitions = PROJECT_STATE["project"].system.fireable_transitions()
 
-    PROJECT_STATE["project"].update_ts_last_modification()
+#     PROJECT_STATE["project"].update_ts_last_modification()
 
-    return {"current_time": PROJECT_STATE["project"].system.currentTime(),
-            "transitions": transitions}
+#     return {"current_time": PROJECT_STATE["project"].system.currentTime(),
+#             "transitions": transitions}
 
 
 @app.post("/interactive_simulation/backward/")
@@ -331,20 +331,25 @@ async def interactive_simulation_fireable_transitions():
         }
 
 
-@app.post("/interactive_simulation/set_transition/")
-async def interactive_simulation_set_transition(transition_id: int, date: float = None, state_index: int = None):
+@app.post("/interactive_simulation/forward/")
+async def interactive_simulation_forward(transition_id: int = None,
+                                         date: float = None,
+                                         state_index: int = None):
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
     try:
-        PROJECT_STATE["project"].system.set_transition(transition_id, date=date,
-                                                       state_index=state_index)
+        if transition_id:
+            PROJECT_STATE["project"].system.set_transition(
+                transition_id, date=date, state_index=state_index)
+        else:
+            PROJECT_STATE["project"].system.stepForward()
+
         transitions = PROJECT_STATE["project"].system.fireable_transitions()
 
         PROJECT_STATE["project"].update_ts_last_modification()
 
         return {
-            "message": "Transition planning updated and simulation stepped forward",
             "current_time": PROJECT_STATE["project"].system.currentTime(),
             "active_transitions": transitions,
         }
@@ -356,11 +361,14 @@ async def interactive_simulation_set_transition(transition_id: int, date: float 
 
 
 @app.get("/system_viz/")
-async def get_system_viz():
+async def get_system_viz(update_only: bool = False):
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    system_viz = PROJECT_STATE["project"].get_system_viz()
+    if update_only:
+        system_viz = PROJECT_STATE["project"].get_system_viz_updates()
+    else:
+        system_viz = PROJECT_STATE["project"].system_viz_default
 
     return system_viz
 

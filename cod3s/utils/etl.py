@@ -70,6 +70,53 @@ def update_dict_deep(target, updates, key_attr):
             
     return target
 
+def dict_diff(dict_ref, dict_new):
+    """
+    Calculate the difference between two dictionaries, returning only the
+    items from dict_new that are not present in dict_ref. This function
+    recursively finds differences in nested dictionaries and lists.
+
+    Args:
+        dict_ref (dict): The reference dictionary.
+        dict_new (dict): The new dictionary with potential updates.
+
+    Returns:
+        dict: A dictionary containing items from dict_new that are not in dict_ref.
+    
+    Examples:
+    >>> dict_ref = {'a': 1, 'b': {'x': 10, 'y': 20}, 'c': [1, 2, 3]}
+    >>> dict_new = {'a': 1, 'b': {'x': 100, 'y': 20}, 'c': [1, 2, 3, 4]}
+    >>> dict_diff(dict_ref, dict_new)
+    {'b': {'x': 100}, 'c': [4]}
+
+    >>> dict_ref = {'a': 1, 'b': 2}
+    >>> dict_new = {'a': 1, 'b': 3}
+    >>> dict_diff(dict_ref, dict_new)
+    {'b': 3}
+    """
+    diff = {}
+    for key in dict_new:
+        # Key is not present in the reference dict, add to diff
+        if key not in dict_ref:
+            diff[key] = dict_new[key]
+        else:
+            # If both values are dictionaries, recurse
+            if isinstance(dict_new[key], dict) and isinstance(dict_ref[key], dict):
+                nested_diff = dict_diff(dict_ref[key], dict_new[key])
+                # Only add to diff if there's something different
+                if nested_diff:
+                    diff[key] = nested_diff
+            # If both values are lists, find the difference
+            elif isinstance(dict_new[key], list) and isinstance(dict_ref[key], list):
+                list_diff = [i for i in dict_new[key] if i not in dict_ref[key]]
+                # Only add to diff if there are new items
+                if list_diff:
+                    diff[key] = list_diff
+            # For non-dict, non-list values, check for inequality
+            elif dict_new[key] != dict_ref[key]:
+                diff[key] = dict_new[key]
+    return diff
+
 
 if __name__ == "__main__":
     import doctest
