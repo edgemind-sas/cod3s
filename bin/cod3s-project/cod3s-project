@@ -365,12 +365,22 @@ async def get_system_viz(update_only: bool = False):
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    if update_only:
-        system_viz = PROJECT_STATE["project"].get_system_viz_updates()
-    else:
-        system_viz = PROJECT_STATE["project"].system_viz_default
+    system_viz = PROJECT_STATE["project"].get_system_viz()
 
     return system_viz
+
+
+@app.post("/update_viz/")
+async def update_viz():
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    system_viz_update, system_viz_new = \
+        PROJECT_STATE["project"].get_system_viz_updates()
+
+    PROJECT_STATE["project"].system_viz_current = system_viz_new
+    
+    return system_viz_update
 
 
 @app.get("/ts_last_modification/")

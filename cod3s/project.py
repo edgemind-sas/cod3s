@@ -253,8 +253,8 @@ class COD3SProject(ObjCOD3S):
     
     viz_specs: COD3SVizSpecs = pydantic.Field(None, description="The system object")
 
-    system_viz_default: dict = \
-        pydantic.Field(None, description="System viz dictionnary by default")
+    system_viz_current: dict = \
+        pydantic.Field(None, description="System viz dictionnary current")
     
     system: typing.Any = pydantic.Field(None, description="The system object")
 
@@ -284,7 +284,7 @@ class COD3SProject(ObjCOD3S):
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
                                                      add_cls=True)
 
-        self.system_viz_default = self.get_system_viz()
+        self.system_viz_current = self.get_system_viz()
         
         self.update_ts_last_modification()
             
@@ -341,5 +341,9 @@ class COD3SProject(ObjCOD3S):
         }
 
     def get_system_viz_updates(self):
-        return dict_diff(self.system_viz_default,
-                         self.get_system_viz())
+        system_viz_new = self.get_system_viz()
+        viz_updates = \
+            dict_diff(self.system_viz_current,
+                      system_viz_new)
+        
+        return viz_updates, system_viz_new
