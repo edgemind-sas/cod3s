@@ -46,6 +46,10 @@ def load_project(project_state, project_filename, logger=None):
     project_state["project"].logger = logger
 
 
+def transition_to_indexed_dict(transitions):
+    return [dict(trans_id=i, **trans.dict())
+            for i, trans in enumerate(transitions) if trans]
+
 class ProjectFileChangeHandler(FileSystemEventHandler):
     def __init__(self, project_state, project_filename, logger):
         self.project_filename = project_filename
@@ -251,24 +255,23 @@ async def interactive_simulation_start():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT_STATE["project"].system.startInteractive()
-    PROJECT_STATE["project"].system.stepForward()
+    PROJECT_STATE["project"].system.isimu_start()
 
-    transitions = PROJECT_STATE["project"].system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
 
     PROJECT_STATE["project"].update_ts_last_modification()
 
     return {"message": "Interactive simulation started",
             "current_time": PROJECT_STATE["project"].system.currentTime(),
-            "transitions": transitions}
+            "transitions": transition_to_indexed_dict(transitions)}
 
 
 @app.post("/interactive_simulation/stop/")
-async def interactive_simulation_start():
+async def interactive_simulation_stop():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT_STATE["project"].system.stopInteractive()
+    PROJECT_STATE["project"].system.isimu_stop()
 
     PROJECT_STATE["project"].update_ts_last_modification()
 
@@ -282,7 +285,7 @@ async def interactive_simulation_start():
 
 #     PROJECT_STATE["project"].system.stepForward()
 
-#     transitions = PROJECT_STATE["project"].system.fireable_transitions()
+#     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
 
 #     PROJECT_STATE["project"].update_ts_last_modification()
 
@@ -295,14 +298,17 @@ async def interactive_simulation_backward():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT_STATE["project"].system.stepBackward()
+    trans_removed = PROJECT_STATE["project"].system.isimu_step_backward()
 
-    transitions = PROJECT_STATE["project"].system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
 
     PROJECT_STATE["project"].update_ts_last_modification()
 
-    return {"current_time": PROJECT_STATE["project"].system.currentTime(),
-            "transitions": transitions}
+    return {
+        "current_time": PROJECT_STATE["project"].system.currentTime(),
+        "transitions": transition_to_indexed_dict(transitions),
+        "transitions_removed": [trans.dict() for trans in trans_removed],
+    }
 
 
 @app.get("/interactive_simulation/active_transitions/")
@@ -310,11 +316,11 @@ async def interactive_simulation_active_transitions():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    transitions, end_time_bound = PROJECT_STATE["project"].system.active_transitions()
+    transitions = PROJECT_STATE["project"].system.isimu_active_transitions()
     
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
-        "transitions": transitions,
+        "transitions": [trans.dict() for trans in transitions],
         }
 
 
@@ -323,12 +329,23 @@ async def interactive_simulation_fireable_transitions():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    transitions = PROJECT_STATE["project"].system.fireable_transitions()
+    transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
     
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
-        "transitions": transitions,
+        "transitions": transition_to_indexed_dict(transitions),
         }
+
+
+@app.get("/interactive_simulation/sequence/")
+async def interactive_simulation_sequence():
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+    
+    return {
+        "current_time": PROJECT_STATE["project"].system.currentTime(),
+        "sequence": PROJECT_STATE["project"].system.isimu_sequence.dict(),
+    }
 
 
 @app.post("/interactive_simulation/forward/")
@@ -340,18 +357,21 @@ async def interactive_simulation_forward(transition_id: int = None,
 
     try:
         if transition_id:
-            PROJECT_STATE["project"].system.set_transition(
+            PROJECT_STATE["project"].system.isimu_set_transition(
                 transition_id, date=date, state_index=state_index)
-        else:
-            PROJECT_STATE["project"].system.stepForward()
 
-        transitions = PROJECT_STATE["project"].system.fireable_transitions()
+        trans_fired = PROJECT_STATE["project"].system.isimu_step_forward()
+        # else:
+        #     PROJECT_STATE["project"].system.stepForward()
+
+        transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
 
         PROJECT_STATE["project"].update_ts_last_modification()
 
         return {
             "current_time": PROJECT_STATE["project"].system.currentTime(),
-            "active_transitions": transitions,
+            "transitions": transition_to_indexed_dict(transitions),
+            "transitions_fired": [trans.dict() for trans in trans_fired],
         }
     
     except IndexError:
@@ -391,6 +411,14 @@ async def get_ts_last_modification():
     return {
         "ts_last_modification": PROJECT_STATE["project"].ts_last_modification
     }
+
+
+@app.post("/break_point/")
+async def break_point():
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+    system = PROJECT_STATE["project"].system
+    ipdb.set_trace()
 
 
 app.add_middleware(

@@ -9,6 +9,7 @@ import itertools
 import re
 from .indicator import PycVarIndicator, PycFunIndicator
 from .automaton import PycTransition
+from .sequence import PycSequence
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
@@ -59,6 +60,8 @@ class PycSystem(pyc.CSystem):
     def __init__(self, name):
         super().__init__(name)
         self.indicators = {}
+        self.isimu_sequence = None
+
 
     def add_indicator_var(self, **indic_specs):
         
@@ -186,31 +189,49 @@ class PycSystem(pyc.CSystem):
 
         return fig
 
-    
-    def active_transitions(self, exclude={"bkd"}, **kwargs):
+    def isimu_start(self, **kwargs):
+        self.startInteractive()
+        self.stepForward()
+        
+        self.isimu_sequence = PycSequence()
 
-        trans_list_bkd = self.activeTransitions()
+    def isimu_stop(self, **kwargs):
+        self.stopInteractive()
+        
+    def isimu_active_transitions(self, **kwargs):
 
-        trans_list = []
-        end_time_bound = float("inf")
-        for i, trans in enumerate(trans_list_bkd):
-            trans_cur = dict(
-                trans_id=i,
-                comp_name=trans.parent().name(),
-                comp_classname=trans.parent().className(),
-                end_time=trans.endTime() if trans.endTime() < float("inf") else None,
-                **PycTransition.from_bkd(trans).dict(exclude=exclude),
-            )
-            if trans.endTime() < end_time_bound:
-                end_time_bound = trans.endTime()
+        return [PycTransition.from_bkd(trans)
+                for trans in self.activeTransitions()]
+        
+        # end_time_bound = min([trans["bkd"].endTime()
+        #                       for trans in trans_list])
 
-            trans_list.append(trans_cur)
+        # for i, trans in enumerate(trans_list_bkd):
+        #     # trans_cur = dict(
+        #     #     trans_id=i,
+        #     #     # comp_name=trans.parent().name(),
+        #     #     # comp_classname=trans.parent().className(),
+        #     #     # end_time=trans.endTime() if trans.endTime() < float("inf") else None,
+        #     #     **PycTransition.from_bkd(trans).dict(exclude=exclude),
+        #     # )
 
-        return trans_list, end_time_bound
+        #     trans_cur = PycTransition.from_bkd(trans)
+            
+        #     if trans.endTime() < end_time_bound:
+        #         end_time_bound = trans.endTime()
 
-    def fireable_transitions(self, **kwargs):
+        #     trans_list.append(trans_cur)
 
-        trans_list, end_time_bound = self.active_transitions(exclude={})
+        # return trans_list, end_time_bound
+
+    def isimu_fireable_transitions(self, **kwargs):
+
+        trans_list = self.isimu_active_transitions()
+        if not trans_list:
+            return []
+        
+        end_time_bound = min([trans.bkd.endTime()
+                              for trans in trans_list])
 
         trans_list_fireable = []
         for trans in trans_list:
@@ -220,37 +241,77 @@ class PycSystem(pyc.CSystem):
 
             # if trans["comp_name"] == "S":
             #     ipdb.set_trace()
-            if trans["end_time"] is None:
+            if trans.end_time is None:
                 if self.currentTime() != end_time_bound:
-                    trans_list_fireable.append(trans)          
-            elif trans["end_time"] <= end_time_bound:
+                    trans_list_fireable.append(trans)
+                    continue
+            elif trans.end_time <= end_time_bound:
                 trans_list_fireable.append(trans)
+                continue
+
+            trans_list_fireable.append(None)
 
         return trans_list_fireable
+ 
+    def isimu_step_backward(self):
+        self.stepBackward()
+
+        trans_fireable = \
+            [trans for trans in self.isimu_fireable_transitions()
+             if trans]
+
+        trans_removed = []
+        for trans_f in trans_fireable:
+            i = len(self.isimu_sequence.transitions) - 1
+            while i >= 0:
+                trans_s_cur = self.isimu_sequence.transitions[i]
+                if trans_s_cur == trans_f:
+                    trans_rem = self.isimu_sequence.transitions.pop(i)
+                    trans_removed.append(trans_rem)
+                    break
+                i -= 1
+                
+        return trans_removed
     
+    def isimu_step_forward(self):
 
-    def set_transition(self, trans_id, date=None, state_index=None, **kwargs):
+        trans_fireable = self.isimu_fireable_transitions()
 
-        trans_list, end_time_bound = self.active_transitions(exclude={})
+        trans_fired = [trans for trans in trans_fireable
+                       if (trans and (trans.end_time is not None))]
 
-        selected_transition = None
-        for trans in trans_list:
+        self.isimu_sequence.transitions.extend(trans_fired)
+        
+        self.stepForward()
 
-            if trans["trans_id"] == trans_id:
-                selected_transition = trans
-                break
+        return trans_fired
+        
+    
+    def isimu_set_transition(self, trans_id=None, date=None, state_index=None, **kwargs):
+
+        if trans_id is None:
+            return self.isimu_step_forward()
+        
+        trans_list = self.isimu_active_transitions()
+        selected_transition = trans_list[trans_id]
+        # for trans in trans_list:
+
+        #     if trans["trans_id"] == trans_id:
+        #         selected_transition = trans
+        #         break
 
         if not selected_transition:
             raise IndexError(f"Incorrect transition id {trans_id}")
         
         if not date:
-            date = selected_transition["end_time"] \
-                if selected_transition["end_time"] else self.currentTime()
+            date = selected_transition.end_time \
+                if selected_transition.end_time else self.currentTime()
                 
         if not state_index:
             state_index = 0
 
-        self.setTransPlanning(selected_transition["bkd"], date, state_index)
-
+        self.setTransPlanning(selected_transition.bkd, date, state_index)
+        
         self.updatePlanningInt()
-        self.stepForward()
+        
+        #return self.step_forward()

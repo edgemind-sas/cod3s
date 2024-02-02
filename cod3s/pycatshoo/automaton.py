@@ -52,6 +52,7 @@ class TransitionModel(ObjCOD3S):
     target: str = pydantic.Field(..., description="Target state name")
     occ_law: OccurrenceDistributionModel = \
         pydantic.Field(..., description="Occurrence distribution")
+    end_time: float = pydantic.Field(None, description="Transition end time")
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
     @pydantic.validator('occ_law', pre=True)
@@ -169,6 +170,8 @@ class ExpOccDistribution(PycOccurrenceDistribution):
         return f"exp({self.rate})"
 
 class PycTransition(TransitionModel):
+    comp_name: str = pydantic.Field(None, description="transition component name")
+    comp_classname: str = pydantic.Field(None, description="transition component class name")
 
     is_interruptible: bool = \
         pydantic.Field(True, description="Indicates if the time to fire the transition is stopped when conditions are not met")
@@ -185,9 +188,12 @@ class PycTransition(TransitionModel):
 
         return basecls(
             name=trans_name,
+            comp_name=trans_bkd.parent().name(),
+            comp_classname=trans_bkd.parent().className(),
             source=state_source_bkd.basename(),
             target=state_target_bkd.basename(),
             occ_law=occ_law,
+            end_time=trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None,
             is_interruptible=trans_bkd.interruptible(),
             bkd=trans_bkd)
 
@@ -201,16 +207,31 @@ class PycTransition(TransitionModel):
         self.bkd.addTarget(state_target.bkd)
         self.bkd.setDistLaw(self.occ_law.to_bkd(self.bkd.parent()))
 
-    def to_dict(self):
+    def dict(self, **kwrds):
 
-        selfd = self.dict(exclude={"bkd"})
+        exclude_list = [
+            "bkd",
+        ]
+        if kwrds.get("exclude"):
+            [kwrds["exclude"].add(attr) for attr in exclude_list]
+        else:
+            kwrds["exclude"] = set(exclude_list)
+            
+        return super().dict(**kwrds)
 
-        selfd["component"] = self.bkd.parent().name()
-        selfd["occ_law"] = str(self.occ_law)
-        selfd["occ_planned"] = str(self.bkd.endTime())
-        #ipdb.set_trace()
-        return selfd
-        #selfd["occ_law"] = self.occ_law.str_short()
+    def __eq__(self, other):
+        return (self.comp_name == other.comp_name) and (self.name == other.name)
+        
+    # def to_dict(self):
+
+    #     selfd = self.dict(exclude={"bkd"})
+
+    #     selfd["component"] = self.bkd.parent().name()
+    #     selfd["occ_law"] = str(self.occ_law)
+    #     selfd["occ_planned"] = str(self.bkd.endTime())
+    #     #ipdb.set_trace()
+    #     return selfd
+    #     #selfd["occ_law"] = self.occ_law.str_short()
         
 
 class PycAutomaton(AutomatonModel):

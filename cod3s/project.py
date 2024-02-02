@@ -2,6 +2,7 @@ import pydantic
 import typing
 import pkg_resources
 from .core import ObjCOD3S
+from .pycatshoo import PycSequence
 from .utils import update_dict_deep, dict_diff
 import importlib.util
 import sys
@@ -296,7 +297,11 @@ class COD3SProject(ObjCOD3S):
         
     def dict(self, **kwrds):
 
-        exclude_list = ["system", "viz_specs", "logger"]
+        exclude_list = ["system",
+                        "interactive_simulation_sequence",
+                        "viz_specs",
+                        "logger",
+                        ]
         if kwrds.get("exclude"):
             [kwrds["exclude"].add(attr) for attr in exclude_list]
         else:
