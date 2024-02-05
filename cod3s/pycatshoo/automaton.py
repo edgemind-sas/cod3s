@@ -155,10 +155,10 @@ class DelayOccDistribution(PycOccurrenceDistribution):
         return pyc.IDistLaw.newLaw(
             comp_bkd, pyc.TLawType.defer, self.time)
 
-
     def __str__(self):
         return f"delay({self.time})"
-    
+
+
 class ExpOccDistribution(PycOccurrenceDistribution):
     rate: typing.Any = pydantic.Field(0, description="Occurrence rate (could be a variable)")
 
@@ -169,6 +169,19 @@ class ExpOccDistribution(PycOccurrenceDistribution):
     def __str__(self):
         return f"exp({self.rate})"
 
+
+class UniformOccDistribution(PycOccurrenceDistribution):
+    min: typing.Any = pydantic.Field(0, description="Occurrence min time (could be a variable)")
+    max: typing.Any = pydantic.Field(0, description="Occurrence max time (could be a variable)")
+
+    def to_bkd(self, comp_bkd):
+        return pyc.IDistLaw.newLaw(
+            comp_bkd, pyc.TLawType.uniform, self.min, self.max)
+
+    def __str__(self):
+        return f"unif({self.min}, {self.max})"
+
+    
 class PycTransition(TransitionModel):
     comp_name: str = pydantic.Field(None, description="transition component name")
     comp_classname: str = pydantic.Field(None, description="transition component class name")

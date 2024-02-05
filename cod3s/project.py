@@ -236,6 +236,7 @@ class COD3SVizSpecs(ObjCOD3S):
 
         return conn_viz
                         
+    
 
     
 class COD3SProject(ObjCOD3S):
@@ -250,6 +251,8 @@ class COD3SProject(ObjCOD3S):
 
     system_class_name: str = pydantic.Field(..., description="System class name")
 
+    system_params: dict = pydantic.Field({}, description="System params")
+    
     viz_specs_filename: str = pydantic.Field(None, description="The system object")
     
     viz_specs: COD3SVizSpecs = pydantic.Field(None, description="The system object")
@@ -279,7 +282,7 @@ class COD3SProject(ObjCOD3S):
         sys.modules[system_module_name] = system_module
         system_module_spec.loader.exec_module(system_module)
         system_class = getattr(system_module, self.system_class_name)
-        self.system = system_class(self.system_name)
+        self.system = system_class(self.system_name, **self.system_params)
         
         if self.viz_specs_filename:
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
