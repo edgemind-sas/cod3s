@@ -8,6 +8,7 @@ import importlib.util
 import sys
 import os
 import re
+import json
 from datetime import datetime, timezone
 
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
@@ -237,8 +238,6 @@ class COD3SVizSpecs(ObjCOD3S):
         return conn_viz
                         
     
-
-    
 class COD3SProject(ObjCOD3S):
 
     project_name: str = pydantic.Field(..., description="Project name")
@@ -252,7 +251,7 @@ class COD3SProject(ObjCOD3S):
     system_class_name: str = pydantic.Field(..., description="System class name")
 
     system_params: dict = pydantic.Field({}, description="System params")
-    
+
     viz_specs_filename: str = pydantic.Field(None, description="The system object")
     
     viz_specs: COD3SVizSpecs = pydantic.Field(None, description="The system object")
@@ -262,6 +261,11 @@ class COD3SProject(ObjCOD3S):
     
     system: typing.Any = pydantic.Field(None, description="The system object")
 
+    front_cfg_filename: typing.Any = pydantic.Field(".front_cfg.json",
+                                                    description="Front config filename")
+
+    front_cfg: dict = pydantic.Field({}, description="Front configuration")
+    
     ts_last_modification: float = \
         pydantic.Field(None, description="Last modification timestamp in UTC")
 
@@ -291,6 +295,38 @@ class COD3SProject(ObjCOD3S):
         self.system_viz_current = self.get_system_viz()
         
         self.update_ts_last_modification()
+
+        self.read_front_cfg()
+        
+
+    def read_front_cfg(self):
+        front_cfg_filename = \
+            os.path.join(self.project_path, self.front_cfg_filename)
+
+        if os.path.isfile(front_cfg_filename):
+            with open(front_cfg_filename, 'r') as f:
+                self.front_cfg = json.load(f)
+
+        self.front_cfg.setdefault("positions", {})
+        self.front_cfg["positions"].setdefault("components", {})
+        self.front_cfg["positions"].setdefault("connections", {})
+        
+    def write_front_cfg(self):
+        front_cfg_filename = \
+            os.path.join(self.project_path, self.front_cfg_filename)
+
+        with open(front_cfg_filename, 'w') as f:
+            json.dump(self.front_cfg, f)
+
+    def update_positions(self, positions):
+        # Update the components positions based on the input data
+        for position in positions.get("components", {}):
+            comp_name = position['comp_name']
+            self.front_cfg["positions"]["components"][comp_name] = {
+                "x": position['x'],
+                "y": position['y'],
+            }
+
             
 
     def update_ts_last_modification(self):
@@ -303,6 +339,7 @@ class COD3SProject(ObjCOD3S):
         exclude_list = ["system",
                         "interactive_simulation_sequence",
                         "viz_specs",
+                        "positions",
                         "logger",
                         ]
         if kwrds.get("exclude"):

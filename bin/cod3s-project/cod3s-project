@@ -194,6 +194,14 @@ async def get_project_info():
     }
 
 
+@app.get("/front_cfg/")
+async def get_front_cfg():
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    return PROJECT_STATE["project"].front_cfg
+
+
 @app.get("/components/")
 async def get_components():
     if not PROJECT_STATE["project"]:
@@ -388,6 +396,20 @@ async def get_system_viz(update_only: bool = False):
     system_viz = PROJECT_STATE["project"].get_system_viz()
 
     return system_viz
+
+
+@app.post("/positions_update/")
+async def positions_update(positions: dict):
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    PROJECT_STATE["project"].update_positions(positions)
+    PROJECT_STATE["project"].write_front_cfg()
+    
+    return {
+        "message": "Positions updated",
+    }
+
 
 
 @app.post("/system_viz_update/")
