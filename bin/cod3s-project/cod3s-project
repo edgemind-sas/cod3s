@@ -1,4 +1,40 @@
 #!/usr/bin/env python3
+
+"""
+COD3S Project Server Script.
+
+This script sets up and serves the COD3S web server using FastAPI. It includes API endpoints
+for managing, simulating, and visualizing a given system project. CLI arguments can configure
+the server, including the project YAML file path and server port. Filesystem event handling
+enables automatic project reloads when file changes are detected.
+
+Features/API Endpoints:
+- Root (`/`): Provides a basic welcome message.
+- Project Management (`/reload_project/`): Reloads project configuration from the specified YAML file.
+- Project Information (`/project/`, `/ts_last_modification/`): Retrieves state and last modification timestamp.
+- Project Configuration (`/front_cfg/`): Fetches front-end configuration.
+- Component Management (`/components/`, `/add_indicator/`): Manages system components and indicators.
+- Simulation (`/simulate/`): Carries out a system simulation with specified parameters.
+- Interactive Simulation: Start, stop, and manipulate step-by-step simulation process.
+- Visualization (`/system_viz/`, `/positions_update/`, `/system_viz_update/`): Manages system visualization.
+
+Run this script directly to start the server with `uvicorn`. CLI options allow you to specify
+the project file among other configurations.
+
+Usage:
+    $ ./cod3s_project.py [-j <project_filename>] [-P <port>] [-v] [-d]
+
+CLI Arguments:
+    -j, --project-filename: COD3S Project filename (default: 'project.yaml' in current working directory).
+    -P, --port: Port number for the server to listen on (default: 8000).
+    -p, --progress: Enable progress mode, showing progress bar in the console.
+    -v, --verbose: Enable verbose mode, displaying log information on standard output.
+    -d, --debug: Enable debug mode, displaying debug information on standard output.
+
+Requires: `fastapi`, `watchdog`, `importlib`, `uvicorn`, `argparse`, `logging`, `os`, `sys`
+Optional: `ipdb` for debugging purposes if installed.
+"""
+
 import argparse
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
