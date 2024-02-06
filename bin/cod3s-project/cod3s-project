@@ -22,7 +22,25 @@ if 'ipdb' in installed_pkg:
 
 # Utils functions
 # ---------------
-def load_project(project_state, project_filename, logger=None):
+def load_project(project_state: dict, project_filename: str, logger=None):
+    """Loads or reloads the COD3S project from a YAML file and updates the project state.
+
+    This function imports the COD3S package, reads the project definition from the project
+    YAML file, and updates the 'project' key in the `project_state` dictionary. If there
+    is an existing project, it ensures that the system is properly deleted before loading
+    the new one to avoid memory leaks or other issues.
+
+    Args:
+        project_state (dict): A dictionary containing the state of the project, including
+                              the current project instance under the 'project' key.
+        project_filename (str): The path to the YAML file containing the project definition.
+        logger (logging.Logger, optional): A logger to output messages during the project
+                                           loading operations.
+
+    Raises:
+        SystemExit: If the project file does not exist or another error occurs during project
+                    loading, log the error message and exit the program.
+    """
 
     importlib.reload(cod3s)
     
@@ -47,11 +65,55 @@ def load_project(project_state, project_filename, logger=None):
 
 
 def transition_to_indexed_dict(transitions):
+    """Converts a list of transition objects to a list of dictionaries with indexed IDs.
+
+    Each transition object in the input list is converted to a dictionary. An index is
+    added to each dictionary representing the transition's ID. If a transition is None,
+    it is skipped.
+
+    Args:
+        transitions (list): A list of transition objects that have a `dict()` method.
+
+    Returns:
+        list of dict: A list of dictionaries, each with a 'trans_id' key representing the
+                      transition's ID and the keys from the transition object's dictionary
+                      representation.
+
+    Example:
+        >>> transition_to_indexed_dict([Transition(...), None, Transition(...)])
+        [{'trans_id': 0, ...}, {'trans_id': 2, ...}]
+    """
     return [dict(trans_id=i, **trans.dict())
             for i, trans in enumerate(transitions) if trans]
 
+
 class ProjectFileChangeHandler(FileSystemEventHandler):
-    def __init__(self, project_state, project_filename, logger):
+    """Handler for filesystem events that affect the project file.
+
+    This class is a watchdog event handler that reloads the project when the project file
+    or its associated files are modified.
+
+    Attributes:
+        project_filename (str): The path to the main project YAML file.
+        project_state (dict): A dictionary to hold the state of the project.
+        logger (logging.Logger): A logger for logging the file modification event.
+
+    Methods:
+        on_modified: Responds to the 'modified' event for the project files.
+    """
+
+    def __init__(self,
+                 project_state: dict,
+                 project_filename: str,
+                 logger: None):
+        """Initializes the event handler with the current project state and logger.
+
+        Args:
+            project_state (dict): A dictionary containing the current state of the project.
+            project_filename (str): The path to the project YAML file.
+            logger (logging.Logger): A logger to output log messages.
+        """
+
         self.project_filename = project_filename
         self.project_state = project_state
         self.logger = logger
@@ -70,7 +132,7 @@ class ProjectFileChangeHandler(FileSystemEventHandler):
 # App config
 # ----------
 APP_CONFIG = dict(
-    app_name_short="cod3s",
+    app_name_short="cod3s-project",
     author="Developed by EdgeMind (www.edgemind.net) 2024-",
     version="1.0.0",
     project_filename=os.path.join(os.getcwd(), "project.yaml"),
@@ -168,45 +230,66 @@ if APP_CONFIG.get("verbose_mode") or APP_CONFIG.get("debug_mode"):
 
 @app.get("/", tags=["Root"])
 async def read_root():
-    return {"message": "Welcome to this fantastic app!"}
+    return {"message": "Welcome to {APP_CONFIG['app_name']} API"}
 
 
-@app.post("/reload_project/")
+@app.post("/reload_project/", tags=["Project Management"])
 async def reload_project():
-    
-    load_project(PROJECT_STATE, APP_CONFIG["project_filename"])
+    """
+    Reloads the current project.
 
+    Triggers project reloading by invoking the `load_project` function
+    with the existing project settings. Updates the project's last modification 
+    timestamp upon completion.
+
+    Returns confirmation of the action and a snapshot of the new project state.
+    """
+    load_project(PROJECT_STATE, APP_CONFIG["project_filename"])
     PROJECT_STATE["project"].update_ts_last_modification()
-    
     return {
         "message": "Project reloaded",
         "project": PROJECT_STATE["project"].dict(),
     }
 
 
-@app.get("/project/")
+@app.get("/project/", tags=["Project Information"])
 async def get_project_info():
+    """
+    Fetches project information.
+
+    Returns a dictionary with a snapshot of the current project's state.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     return {
         "project": PROJECT_STATE["project"].dict(),
     }
 
 
-@app.get("/front_cfg/")
+@app.get("/front_cfg/", tags=["Project Configuration"])
 async def get_front_cfg():
+    """
+    Retrieves front-end configuration.
+
+    Gets the configuration used by the front-end client of the project.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     return PROJECT_STATE["project"].front_cfg
 
 
-@app.get("/components/")
+@app.get("/components/", tags=["Component Management"])
 async def get_components():
+    """
+    Lists all components.
+
+    Returns the class name and name of each component in the system.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     res = []
     for comp in PROJECT_STATE["project"].system.components("#.*", "#.*"):
         comp_cur = {
@@ -214,24 +297,24 @@ async def get_components():
             "name": comp.name(),
             }
         res.append(comp_cur)
-
     return {
         "components": res,
     }
 
-
-@app.post("/add_indicator/")
+@app.post("/add_indicator/", tags=["Indicator Management"])
 async def add_indicator(indic_specs=Body(...)):
+    """
+    Adds a new indicator based on specifications.
+
+    Accepts indicator specifications and adds the indicator to the system.
+    Returns confirmation of the addition and the added indicators stripped of
+    backend-specific details.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
-    # Call the add_indicator_var method with the parameters from the request
     indic_added = PROJECT_STATE["project"].system.add_indicator_var(**indic_specs)
-    
-    # Depending on the behavior of your add_indicator_var method,
-    # you might need to return something or just confirm that the action was performed successfully.
     PROJECT_STATE["project"].update_ts_last_modification()
-
     return {
         "message": "Indicator(s) added successfully",
         "indicators": [indic.dict(exclude={"bkd", "values", "instants"})
@@ -239,79 +322,76 @@ async def add_indicator(indic_specs=Body(...)):
     }
 
 
-@app.post("/simulate/")
+@app.post("/simulate/", tags=["Simulation"])
 async def simulate(simu_params=Body(...)):
+    """
+    Simulates the system based on provided parameters.
+
+    Begins the simulation process with the given parameters, measures the 
+    computational time, and returns a message upon the simulation's completion.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
-    # Load default parameters
-    #system_model.loadParameters("system_params.xml")
     start_time = time.perf_counter()
     PROJECT_STATE["project"].system.simulate(**simu_params)
     end_time = time.perf_counter()
     process_time = end_time - start_time
-    # Depending on the behavior of your add_indicator_var method,
-    # you might need to return something or just confirm that the action was performed successfully.
     PROJECT_STATE["project"].update_ts_last_modification()
-
     return {"message": "Simulation ended successfully",
             "process_time": process_time}
 
 
-@app.post("/interactive_simulation/start/")
+@app.post("/interactive_simulation/start/", tags=["Interactive Simulation"])
 async def interactive_simulation_start():
+    """
+    Initiates interactive simulation.
+
+    Starts the interactive simulation, retrieves fireable transitions, updates the 
+    project modification timestamp, and returns relevant information.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     PROJECT_STATE["project"].system.isimu_start()
-
     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-
     PROJECT_STATE["project"].update_ts_last_modification()
-
     return {"message": "Interactive simulation started",
             "current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transition_to_indexed_dict(transitions)}
 
 
-@app.post("/interactive_simulation/stop/")
+@app.post("/interactive_simulation/stop/", tags=["Interactive Simulation"])
 async def interactive_simulation_stop():
+    """
+    Stops interactive simulation.
+
+    Ends the interactive simulation and updates the project's last
+    modification timestamp.
+    Returns a message indicating that the interactive simulation has stopped.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     PROJECT_STATE["project"].system.isimu_stop()
-
     PROJECT_STATE["project"].update_ts_last_modification()
-
     return {"message": "Interactive simulation stopped"}
 
 
-# @app.post("/interactive_simulation/forward/")
-# async def interactive_simulation_forward():
-#     if not PROJECT_STATE["project"]:
-#         raise HTTPException(status_code=404, detail="Project invalid")
-
-#     PROJECT_STATE["project"].system.stepForward()
-
-#     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-
-#     PROJECT_STATE["project"].update_ts_last_modification()
-
-#     return {"current_time": PROJECT_STATE["project"].system.currentTime(),
-#             "transitions": transitions}
-
-
-@app.post("/interactive_simulation/backward/")
+@app.post("/interactive_simulation/backward/", tags=["Interactive Simulation"])
 async def interactive_simulation_backward():
+    """
+    Moves the interactive simulation one step backward.
+
+    Reverts the simulation state by one step, retrieves the current state of the system, 
+    including fireable transitions, and returns updated information.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     trans_removed = PROJECT_STATE["project"].system.isimu_step_backward()
-
     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-
     PROJECT_STATE["project"].update_ts_last_modification()
-
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
         "transitions": transition_to_indexed_dict(transitions),
@@ -319,124 +399,158 @@ async def interactive_simulation_backward():
     }
 
 
-@app.get("/interactive_simulation/active_transitions/")
+@app.get("/interactive_simulation/active_transitions/", tags=["Interactive Simulation"])
 async def interactive_simulation_active_transitions():
+    """
+    Retrieves currently active transitions in the interactive simulation.
+
+    Returns the current time and a list of active transitions.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     transitions = PROJECT_STATE["project"].system.isimu_active_transitions()
-    
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
         "transitions": [trans.dict() for trans in transitions],
-        }
+    }
 
 
-@app.get("/interactive_simulation/fireable_transitions/")
+@app.get("/interactive_simulation/fireable_transitions/", tags=["Interactive Simulation"])
 async def interactive_simulation_fireable_transitions():
+    """
+    Retrieves transitions that can be fired in the current state of interactive simulation.
+
+    Returns the current time and a list of fireable transitions.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-    
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
         "transitions": transition_to_indexed_dict(transitions),
-        }
+    }
 
 
-@app.get("/interactive_simulation/sequence/")
+@app.get("/interactive_simulation/sequence/", tags=["Interactive Simulation"])
 async def interactive_simulation_sequence():
+    """
+    Fetches the sequence of events in the interactive simulation.
+
+    Returns the current time and the sequence of transitions that have occurred in the simulation.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-    
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
         "sequence": PROJECT_STATE["project"].system.isimu_sequence.dict(),
     }
 
 
-@app.post("/interactive_simulation/forward/")
-async def interactive_simulation_forward(transition_id: int = None,
-                                         date: float = None,
-                                         state_index: int = None):
+@app.post("/interactive_simulation/forward/", tags=["Interactive Simulation"])
+async def interactive_simulation_forward(transition_id: int = None, date: float = None, state_index: int = None):
+    """
+    Advances interactive simulation by firing a transition.
+
+    Optionally accepts a transition ID, date, and state index to guide the simulation step.
+    Returns the current system time, a list of now fireable transitions, and a list of the 
+    transitions that were fired.
+    Raises an HTTP 404 error if the project state is invalid or if the specified transition was not found.
+    Raises an HTTP 500 error for any other unexpected error.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     try:
-        if transition_id:
-            PROJECT_STATE["project"].system.isimu_set_transition(
-                transition_id, date=date, state_index=state_index)
-
+        if transition_id is not None:
+            PROJECT_STATE["project"].system.isimu_set_transition(transition_id, date=date, state_index=state_index)
         trans_fired = PROJECT_STATE["project"].system.isimu_step_forward()
-        # else:
-        #     PROJECT_STATE["project"].system.stepForward()
-
         transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-
         PROJECT_STATE["project"].update_ts_last_modification()
-
         return {
             "current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transition_to_indexed_dict(transitions),
             "transitions_fired": [trans.dict() for trans in trans_fired],
         }
-    
     except IndexError:
         raise HTTPException(status_code=404, detail=f"Transition {transition_id} not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/system_viz/")
+@app.get("/system_viz/", tags=["Visualization"])
 async def get_system_viz(update_only: bool = False):
+    """
+    Retrieves the system visualization data.
+
+    If 'update_only' is True, only the updates since the last request will be returned.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     system_viz = PROJECT_STATE["project"].get_system_viz()
-
     return system_viz
 
 
-@app.post("/positions_update/")
+@app.post("/positions_update/", tags=["Visualization"])
 async def positions_update(positions: dict):
+    """
+    Updates the positions of components or connections in the visualization.
+
+    Accepts a dictionary representing the new positions of various elements and updates 
+    the project's configuration.
+    Returns a confirmation message after the positions are updated.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     PROJECT_STATE["project"].update_positions(positions)
     PROJECT_STATE["project"].write_front_cfg()
-    
     return {
         "message": "Positions updated",
     }
 
 
-
-@app.post("/system_viz_update/")
+@app.post("/system_viz_update/", tags=["Visualization"])
 async def system_viz_update():
+    """
+    Updates the visualization representation of the system.
+
+    Calculates the differences between the current and new visualization data, updates the 
+    project's current visualization state, and returns the visualization updates.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
-    system_viz_update, system_viz_new = \
-        PROJECT_STATE["project"].get_system_viz_updates()
-
+    system_viz_update, system_viz_new = PROJECT_STATE["project"].get_system_viz_updates()
     PROJECT_STATE["project"].system_viz_current = system_viz_new
-    
     return system_viz_update
 
 
-@app.get("/ts_last_modification/")
+@app.get("/ts_last_modification/", tags=["Project Information"])
 async def get_ts_last_modification():
+    """
+    Obtains the timestamp of the last modification to the project.
+
+    Returns a dictionary with the key 'ts_last_modification' showing the precise time of the last project update.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-
     return {
         "ts_last_modification": PROJECT_STATE["project"].ts_last_modification
     }
 
 
-@app.post("/break_point/")
+@app.post("/break_point/", tags=["Debugging"])
 async def break_point():
+    """
+    Debugging-only endpoint to trigger a breakpoint.
+
+    Triggers an IPDB breakpoint in the server process for debugging purposes.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
     system = PROJECT_STATE["project"].system
@@ -452,6 +566,16 @@ app.add_middleware(
 )
 
 if __name__ == "__main__":
+    """
+    Main entry point of the application.
+
+    Sets up a file system observer to watch for changes to the project files and starts the
+    FastAPI app server. When the server shuts down, the observer is also stopped and
+    joined to ensure a clean exit.
+
+    Note:
+        This block will only be executed if the script is run as the main program.
+    """
 
     import uvicorn
 
@@ -461,15 +585,20 @@ if __name__ == "__main__":
         APP_CONFIG["project_filename"],
         logger)
     observer = Observer()
+
+    # Monitor the project files for changes
     observer.schedule(event_handler,
                       path=PROJECT_STATE["project"].system_filename,
                       recursive=False)
     observer.schedule(event_handler,
                       path=PROJECT_STATE["project"].viz_specs_filename,
                       recursive=False)
+
+    # Start the file system observer
     observer.start()
 
     try:
+        # Start the FastAPI server
         uvicorn.run(
             app,
             host="0.0.0.0",
@@ -478,9 +607,3 @@ if __name__ == "__main__":
     finally:
         observer.stop()
         observer.join()
-
-    # uvicorn.run(
-    #     app,
-    #     host="0.0.0.0",
-    #     port=int(APP_CONFIG.get("port"))
-    # )
