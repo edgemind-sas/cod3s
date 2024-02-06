@@ -16,7 +16,32 @@ if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
 
 # Utility functions
+# -----------------
 def reverse_conn_in_viz_list(conn_viz: dict, conn_viz_list: list) -> bool:
+    """Checks if the reverse of a given connection exists in the connection visualization list.
+
+    This function iterates over the connection visualization list and compares each
+    element to the provided connection visualization dictionary (`conn_viz`). It checks
+    if a connection with reversed source and target components and ports is present in
+    the list.
+
+    Args:
+        conn_viz (dict): A dictionary representing a single connection visualization with
+                         keys 'comp_source', 'port_source', 'comp_target', 'port_target'.
+        conn_viz_list (list): A list of dictionaries, each representing a connection
+                              visualization.
+
+    Returns:
+        bool: True if a connection with the reverse source and target is in the list,
+              otherwise False.
+
+    Example:
+        >>> reverse_conn_in_viz_list({'comp_source': 'A', 'port_source': 'out',
+                                      'comp_target': 'B', 'port_target': 'in'}, 
+                                     [{'comp_target': 'A', 'port_target': 'out',
+                                       'comp_source': 'B', 'port_source': 'in'}])
+        True
+    """
     for existing_conn_viz in conn_viz_list:
         if (existing_conn_viz['comp_target'] == conn_viz['comp_source'] and
                 existing_conn_viz['port_target'] == conn_viz['port_source'] and
@@ -26,25 +51,77 @@ def reverse_conn_in_viz_list(conn_viz: dict, conn_viz_list: list) -> bool:
     return False
 
 
+# Utility classes
+# ===============
+
 class RenamingSpecs(pydantic.BaseModel):
+    """A Pydantic model that specifies renaming rules to apply to a document attribute.
+
+    Attributes:
+        attr (str): The attribute within the document to apply the renaming pattern.
+        pattern (str): The regular expression pattern to match for renaming.
+        replace (str): The replacement string to use when the pattern is matched.
+
+    Methods:
+        transform: Applies the renaming rule to a given document if the attribute
+                   matches the renaming pattern.
+    """
 
     attr: str = pydantic.Field(..., description="Attribute to rename")
     pattern: str = pydantic.Field(..., description="Pattern to rename")
     replace: str = pydantic.Field(..., description="Replace value")
 
     def transform(self, document):
+        """Applies renaming transformation to the specified attribute within the document.
 
+        Checks if the `attr` attribute exists and is a string within the given document.
+        If true, it replaces occurrences of the `pattern` within the attribute's value
+        with the `replace` value.
+
+        Args:
+            document (dict): The document containing the attribute to be transformed.
+
+        Raises:
+            KeyError: If the `attr` is not present in the document.
+            re.error: If the `pattern` is not a valid regular expression.
+        """
         attr_val = document.get(self.attr)
         if attr_val and isinstance(attr_val, str):
             document[self.attr] = re.sub(self.pattern, self.raplace, attr_val)
 
 
 class StyleConditionSpecs(pydantic.BaseModel):
+    """Defines a style condition with an expression to evaluate and a style to apply.
+
+    Attributes:
+        expr (str): A string representing a boolean expression to evaluate.
+        style (dict): A dictionary representing styling information to be applied if the expression evaluates to True.
+
+    Methods:
+        check: Evaluates the boolean expression against a provided mapper and determines if the style should be applied.
+    """
 
     expr: str = pydantic.Field(..., description="Boolean expression to evaluate")
     style: dict = pydantic.Field({}, description="Style to be applied")
 
     def check(self, mapper):
+        """Determines if the style should be applied based on evaluating the expression.
+
+        Evaluates the boolean `expr` attribute using the `mapper` dictionary to substitute
+        values into variables in the expression. If the evaluation succeeds and the result
+        is True, the style is applicable. If the expression evaluates to False or an
+        exception occurs during evaluation, the style is not applicable.
+
+        Args:
+            mapper (dict): The dictionary containing values to be substituted into the expression.
+
+        Returns:
+            bool: True if the expression evaluates to True, otherwise False.
+
+        Example:
+            Assume `expr` is "mapper['size'] > 10" and `mapper` is {"size": 12},
+            the check method will return True.
+        """
         try:
             res = eval(self.expr.format(**{k: f"mapper['{k}']" for k in mapper.keys()}))
         except:
@@ -55,13 +132,46 @@ class StyleConditionSpecs(pydantic.BaseModel):
 
 
 class PortVizSpec(pydantic.BaseModel):
+    """Specification for the visual representation of a port in the system's visualization.
+
+    Attributes:
+        name (str): A regular expression pattern that matches the name of the port.
+                    Default is ".*", which matches any name.
+        spot (str): Specifies the location of the port on the component. It could be a
+                    label like 'left', 'right', 'top', 'bottom', or a custom identifier.
+                    Default is None, implying no specific spot is defined.
+        color (str): Defines the color used to represent the port. Colors are typically
+                     specified in formats that are recognized by visualization tools such
+                     as hexadecimal color codes. Default is None, meaning the color is
+                     unspecified.
+    """
+
     name: str = pydantic.Field(".*", description="Port name pattern")
     spot: str = pydantic.Field(None, description="Port spot")
     color: str = pydantic.Field(None, description="Port color")
 
     
 class ComponentVizSpecs(pydantic.BaseModel):
+    """Defines the visual representation specifications of system components.
 
+    Attributes:
+        name (str): Regular expression pattern that matches the name of the components.
+                    Default is ".*" to match any component name.
+        type (str): Regular expression pattern that matches the class type of the components.
+                    Default is ".*" to match any component class.
+        renaming (typing.List[RenamingSpecs]): List of RenamingSpecs instances which define
+                                               how component attributes should be renamed.
+        ports (typing.List[PortVizSpec]): List of PortVizSpec instances specifying the 
+                                          visual representation of each port in a component.
+        style (dict): A dictionary specifying styling attributes such as color or size for 
+                      the visual representation of the component.
+        conditions (typing.List[StyleConditionSpecs]): List of StyleConditionSpecs instances which define
+                                                       the conditions under which certain styles should
+                                                       be applied.
+
+    Methods:
+        apply_ports_specs: Applies the port visualization specifications to the ports of a given component.
+    """
     name: str = pydantic.Field(".*", description="Component name pattern")
 
     type: str = pydantic.Field(".*", description="Component class regex")
@@ -78,6 +188,15 @@ class ComponentVizSpecs(pydantic.BaseModel):
 
 
     def apply_ports_specs(self, comp):
+        """Applies visualization specifications to the ports of a component.
+
+        Args:
+            comp: The component object whose ports are to be visually specified.
+
+        Returns:
+            A list of dictionaries where each dictionary contains visual representation information
+            for each port that matches the specified port visualization rules.
+        """
 
         port_viz_list = []
 
@@ -86,7 +205,8 @@ class ComponentVizSpecs(pydantic.BaseModel):
             port_viz = {}
                 
             port_name_cur = mb.basename()
-
+            
+            # Apply each port specifications to the matching port names.
             for port_specs in self.ports:
                 is_match_name = re.search(port_specs.name, port_name_cur) \
                     if port_specs.name else True
@@ -116,6 +236,27 @@ class ComponentVizSpecs(pydantic.BaseModel):
 
 
 class ConnectionVizSpecs(pydantic.BaseModel):
+    """Specification for the visual representation of connections between components.
+
+    This model defines the visualization specifications for connections including the naming
+    patterns for source and target components and ports, the style to apply to the visualization,
+    and whether or not to ignore the connection.
+
+    Attributes:
+        comp_source (str): Regular expression pattern that matches the name of the source components.
+                           Default is ".*" to match any component name.
+        port_source (str): Regular expression pattern that matches the name of the source component ports.
+                           Default is ".*" to match any port name.
+        comp_target (str): Regular expression pattern that matches the name of the target components.
+                           Default is ".*" to match any component name.
+        port_target (str): Regular expression pattern that matches the name of the target component ports.
+                           Default is ".*" to match any port name.
+        style (dict): A dictionary specifying style attributes such as color or width for the connection.
+        ignore (bool): Indicates if the connection should be ignored in the visualization.
+                       Default is False, meaning the connection is not ignored.
+        renaming (typing.List[RenamingSpecs]): List of RenamingSpecs instances which define
+                                               how the connection attributes should be renamed.
+    """
 
     comp_source: str = pydantic.Field(".*", description="Source component name pattern")
     port_source: str = pydantic.Field(".*", description="Source component port name pattern")
@@ -129,7 +270,23 @@ class ConnectionVizSpecs(pydantic.BaseModel):
 
     
 class COD3SVizSpecs(ObjCOD3S):
+    """Defines the visualization specifications for components and connections in a COD3S system.
 
+    This class includes methods for applying those specifications to given system components and connections,
+    updating their visual representation accordingly.
+
+    Attributes:
+        components (typing.Dict[str, ComponentVizSpecs]): A dictionary where each key is an identifier
+                                                          for a component visualization specifications and
+                                                          the value is a `ComponentVizSpecs` instance.
+        connections (typing.Dict[str, ConnectionVizSpecs]): A dictionary where each key is an identifier
+                                                            for a connection visualization specifications and
+                                                            the value is a `ConnectionVizSpecs` instance.
+
+    Methods:
+        apply_comp_specs: Processes and applies component visualization specifications to a given component.
+        apply_connection_specs: Processes and applies connection visualization specifications to a given connection.
+    """
     components: typing.Dict[str, ComponentVizSpecs] = \
         pydantic.Field({}, description="List of component viz specs")
 
@@ -144,6 +301,7 @@ class COD3SVizSpecs(ObjCOD3S):
             "class_name": comp.className(),
         }
 
+        # Apply component specs and handles renaming and conditions.
         for comp_specs in self.components.values():
             is_match_name = re.search(comp_specs.name, comp.name()) \
                 if comp_specs.name else True
@@ -186,6 +344,18 @@ class COD3SVizSpecs(ObjCOD3S):
                                port_source,
                                comp_target,
                                port_target):
+        """Applies connection visualization specifications to a given connection.
+
+        Args:
+            comp_source: The source component of the connection.
+            port_source: The source port of the connection.
+            comp_target: The target component of the connection.
+            port_target: The target port of the connection.
+
+        Returns:
+            A dictionary with the visualization specifications for the given connection or `None` if the
+            connection is specified to be ignored.
+        """
 
         comp_source_name = comp_source.basename()
         comp_target_name = comp_target.basename()
@@ -199,6 +369,7 @@ class COD3SVizSpecs(ObjCOD3S):
             "port_target": port_target_name,
         }
 
+        # Apply connection specs and handles renaming.
         for conn_specs in self.connections.values():
 
             is_match_comp_source_name = re.search(conn_specs.comp_source,
@@ -239,6 +410,32 @@ class COD3SVizSpecs(ObjCOD3S):
                         
     
 class COD3SProject(ObjCOD3S):
+    """
+    COD3SProject manages the state and visualization specifications of a COD3S project.
+
+    Attributes:
+        project_name (str): Name of the project.
+        project_path (str): Filesystem path to the project.
+        system_name (str): Name of the system within the project.
+        system_filename (str): Filename of the system definition script.
+        system_class_name (str): Name of the system's class.
+        system_params (dict): Parameters for initializing the system.
+        viz_specs_filename (str): Filename of the visualization specifications.
+        viz_specs (COD3SVizSpecs): Visualization specifications object.
+        system_viz_current (dict): Current state of system visualization.
+        system (typing.Any): Instance of the system.
+        front_cfg_filename (typing.Any): Configuration file for frontend interactions.
+        front_cfg (dict): Loaded frontend configuration.
+        ts_last_modification (float): Timestamp of the last modification in UTC.
+        logger (typing.Any): Logging handler.
+
+    Methods:
+        read_front_cfg: Reads the frontend configuration from `front_cfg_filename` into `front_cfg`.
+        write_front_cfg: Writes the `front_cfg` dictionary into the `front_cfg_filename` path as JSON.
+        update_positions: Updates position data in `front_cfg` based on passed positions.
+        get_system_viz: Retrieves the current state visualization of the system.
+        get_system_viz_updates: Gives the updates between the current and new visualization states of the system.
+    """
 
     project_name: str = pydantic.Field(..., description="Project name")
 
@@ -272,11 +469,29 @@ class COD3SProject(ObjCOD3S):
     logger: typing.Any = pydantic.Field(None, description="Logger")
 
     def __init__(self, **data: typing.Any):
+        """Initializes the COD3SProject with provided data.
+
+        This initialization ensures that the project path is included in the system
+        path, dynamically imports the system module defined by
+        `system_filename`, instantiates the system using the defined class name,
+        loads visualization specifications, sets up the current system visualization,
+        timestamps the last modification, and reads the frontend configuration.
+
+        Args:
+            data: Arbitrary keyword arguments that are passed to the parent class
+                  and used for project initialization.
+
+        Raises:
+            ImportError: If the module or class specified for the system cannot be imported.
+            FileNotFoundError: If the `viz_specs_filename` does not point to a valid file.
+            Exception: If any other unforeseen error occurs during initialization.
+        """
         super().__init__(**data)
 
         # Ensure the project path  is in the Python path
         sys.path.insert(0, os.path.dirname(self.project_path))
 
+        # Dynamically import the system using specified filename and class name.
         system_module_name = self.system_filename.replace(".py", "")
         system_module_spec = \
             importlib.util.spec_from_file_location(
@@ -286,32 +501,61 @@ class COD3SProject(ObjCOD3S):
         sys.modules[system_module_name] = system_module
         system_module_spec.loader.exec_module(system_module)
         system_class = getattr(system_module, self.system_class_name)
+
+        # Create an instance of the system.
         self.system = system_class(self.system_name, **self.system_params)
-        
+
+        # Load visualization specifications, if provided.
         if self.viz_specs_filename:
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
                                                      add_cls=True)
 
+        # Set up the current visualization of the system.    
         self.system_viz_current = self.get_system_viz()
-        
+
+        # Update the timestamp of the last modification.
         self.update_ts_last_modification()
 
+        # Read the frontend configuration.
         self.read_front_cfg()
         
 
     def read_front_cfg(self):
+        """Reads the frontend configuration from a JSON file.
+
+        The configuration file location is determined by the `front_cfg_filename`
+        attribute. If found, it loads the JSON content into the `front_cfg`
+        attribute; otherwise, it initializes `front_cfg` with default values for
+        positions, components, and connections.
+
+        The default positions structure is set if the JSON file does not exist or
+        does not contain the 'positions' key. The structure includes 'positions',
+        'components', and 'connections' dictionaries.
+        """
         front_cfg_filename = \
             os.path.join(self.project_path, self.front_cfg_filename)
 
+        # Load existing configuration if the file is present.
         if os.path.isfile(front_cfg_filename):
             with open(front_cfg_filename, 'r') as f:
                 self.front_cfg = json.load(f)
 
+        # Ensure that 'positions', 'components', and 'connections' keys are set.
         self.front_cfg.setdefault("positions", {})
         self.front_cfg["positions"].setdefault("components", {})
         self.front_cfg["positions"].setdefault("connections", {})
         
     def write_front_cfg(self):
+        """Writes the current frontend configuration to a JSON file.
+        
+        The file is saved to the path specified by combining the `front_cfg_filename` with
+        the `project_path`. If the file already exists, it will be overwritten.
+        
+        Raises:
+            FileNotFoundError: If the directory specified in `project_path` does not exist.
+            IOError: If the file could not be written to for other reasons, such as permissions.
+        """
+
         front_cfg_filename = \
             os.path.join(self.project_path, self.front_cfg_filename)
 
@@ -319,6 +563,28 @@ class COD3SProject(ObjCOD3S):
             json.dump(self.front_cfg, f)
 
     def update_positions(self, positions):
+        """Updates the position data for components within the frontend configuration.
+
+        It processes the provided `positions` dictionary to update the location of each
+        component in the `front_cfg`. Existing positions can be modified or new ones can be
+        added.
+
+        Args:
+            positions (dict): A dictionary containing the updated positions data with
+                              "components" as a key and a list of component positions, each
+                              containing a component name and new x, y coordinates.
+
+        For example:
+            positions = {
+                "components": [
+                    {"comp_name": "component1", "x": 100, "y": 150},
+                    {"comp_name": "component2", "x": 200, "y": 250},
+                ]
+            }
+
+        This method modifies the `front_cfg` attribute in place.
+        """
+
         # Update the components positions based on the input data
         for position in positions.get("components", {}):
             comp_name = position['comp_name']
@@ -328,9 +594,13 @@ class COD3SProject(ObjCOD3S):
             }
 
             
-
     def update_ts_last_modification(self):
+        """Updates the timestamp of the last modification to the current UTC time.
 
+        This method sets `ts_last_modification` to the current timestamp in UTC.
+        The timestamp is a float representing the time elapsed since the Unix
+        epoch in seconds.
+        """
         self.ts_last_modification = \
             datetime.now(timezone.utc).timestamp()
         
@@ -339,7 +609,7 @@ class COD3SProject(ObjCOD3S):
         exclude_list = ["system",
                         "interactive_simulation_sequence",
                         "viz_specs",
-                        "positions",
+                        "front_cfg",
                         "logger",
                         ]
         if kwrds.get("exclude"):
@@ -350,11 +620,29 @@ class COD3SProject(ObjCOD3S):
         return super().dict(**kwrds)
 
     def get_system_viz(self):
-        
+        """Retrieves the visualization data for all components and connections in the system.
+
+        This method iterates over all the components and their connections in the system
+        and applies the visualization specifications to them. If visualization
+        specifications (`viz_specs`) are defined, they are applied to each component
+        and connection to generate the visualization representation.
+
+        Returns:
+            A dictionary with two keys "components" and "connections", each containing
+            lists of dictionaries representing the visual properties of system components
+            and their connections, respectively, according to the visualization
+            specifications.
+
+        Note:
+            It is assumed that visualization representations are only needed for
+            components and connections with defined visualization specifications
+            (`viz_specs`).
+        """
+
         comp_viz_list = []
         for comp in self.system.components("#.*", "#.*"):
 
-            # Hypothesis, we represent only component with viz specs
+            # We include components with viz specs in the visualization.
             if self.viz_specs:
                 comp_viz = self.viz_specs.apply_comp_specs(comp)
                 comp_viz_list.append(comp_viz)
@@ -386,6 +674,20 @@ class COD3SProject(ObjCOD3S):
         }
 
     def get_system_viz_updates(self):
+        """Calculates changes between the current and new system visualizations.
+
+        This method gets the latest visualization data of the system and compares it 
+        with the current visualization data to find any updates.
+
+        Returns:
+            A tuple containing two elements:
+            1. A dictionary representing the updates between the current and new
+               visualization data.
+            2. The new visualization data as a dictionary.
+
+        The `dict_diff` function is used to calculate the differences between the
+        current and new visualization data.
+        """
         system_viz_new = self.get_system_viz()
         viz_updates = \
             dict_diff(self.system_viz_current,
