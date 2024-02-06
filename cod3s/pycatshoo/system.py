@@ -60,7 +60,7 @@ class PycSystem(pyc.CSystem):
     def __init__(self, name):
         super().__init__(name)
         self.indicators = {}
-        self.isimu_sequence = None
+        self.isimu_sequence = PycSequence()
 
 
     def add_indicator_var(self, **indic_specs):

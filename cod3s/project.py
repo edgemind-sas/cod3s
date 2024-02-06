@@ -510,15 +510,14 @@ class COD3SProject(ObjCOD3S):
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
                                                      add_cls=True)
 
+        # Read the frontend configuration.
+        self.read_front_cfg()
+
         # Set up the current visualization of the system.    
         self.system_viz_current = self.get_system_viz()
 
         # Update the timestamp of the last modification.
         self.update_ts_last_modification()
-
-        # Read the frontend configuration.
-        self.read_front_cfg()
-        
 
     def read_front_cfg(self):
         """Reads the frontend configuration from a JSON file.
@@ -645,6 +644,9 @@ class COD3SProject(ObjCOD3S):
             # We include components with viz specs in the visualization.
             if self.viz_specs:
                 comp_viz = self.viz_specs.apply_comp_specs(comp)
+                comp_viz["position"] = \
+                    self.front_cfg["positions"]["components"].get(comp.name(), {})
+                
                 comp_viz_list.append(comp_viz)
 
         conn_viz_list = []
