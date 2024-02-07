@@ -19,6 +19,7 @@ class PycState(StateModel):
     id: str = pydantic.Field(..., description="State id")
     comp_name: str = pydantic.Field(None, description="Parent component name")
     aut_name: str = pydantic.Field(None, description="Parent automaton name")
+    is_active: bool = pydantic.Field(None, description="State is active ?")
 
     @classmethod
     def from_bkd(basecls, bkd):
@@ -27,6 +28,7 @@ class PycState(StateModel):
             name=bkd.basename(),
             comp_name=bkd.parent().name(),
             aut_name=bkd.automaton().basename(),
+            is_active=bkd.isActive(),
             bkd=bkd,
         )
 
@@ -176,7 +178,7 @@ class UniformOccDistribution(PycOccurrenceDistribution):
 
     def to_bkd(self, comp_bkd):
         return pyc.IDistLaw.newLaw(
-            comp_bkd, pyc.TLawType.uniform, self.min, self.max)
+            comp_bkd, pyc.TLawType.uniforme, self.min, self.max)
 
     def __str__(self):
         return f"unif({self.min}, {self.max})"

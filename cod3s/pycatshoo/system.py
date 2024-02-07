@@ -10,6 +10,7 @@ import re
 from .indicator import PycVarIndicator, PycFunIndicator
 from .automaton import PycTransition
 from .sequence import PycSequence
+from .component import PycComponent
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
@@ -61,7 +62,27 @@ class PycSystem(pyc.CSystem):
         super().__init__(name)
         self.indicators = {}
         self.isimu_sequence = PycSequence()
+        # REMINDER: comp dictionnary is populated by PycComponent register method at init
+        self.comp = {}
+        
+    def add_component(self, **comp_specs):
 
+        comp_name = comp_specs.get("name")
+        if comp_name in self.comp:
+            raise ValueError(f"Component {comp_name} already exists")
+        else:
+
+            # if "SPF" in comp_name:
+            #     ipdb.set_trace()
+            comp_new = PycComponent.from_dict(**comp_specs)
+            #self.comp[comp_new.name()] = comp_new
+
+        return comp_new
+
+
+    def get_components(self, pattern="^.*$"):
+        return {k: v for k, v in self.comp.items()
+                if re.search(f"^({pattern})$", k)}
 
     def add_indicator_var(self, **indic_specs):
         
@@ -197,6 +218,9 @@ class PycSystem(pyc.CSystem):
 
     def isimu_stop(self, **kwargs):
         self.stopInteractive()
+
+        self.isimu_sequence = PycSequence()
+
         
     def isimu_active_transitions(self, **kwargs):
 
@@ -276,14 +300,14 @@ class PycSystem(pyc.CSystem):
     def isimu_step_forward(self):
 
         trans_fireable = self.isimu_fireable_transitions()
-
+        
         trans_fired = [trans for trans in trans_fireable
                        if (trans and (trans.end_time is not None))]
 
         self.isimu_sequence.transitions.extend(trans_fired)
         
         self.stepForward()
-
+        
         return trans_fired
         
     

@@ -3,6 +3,7 @@ from .indicator import PycIndicator, PycFunIndicator, PycVarIndicator
 from .automaton import PycAutomaton, PycTransition
 from .system import PycSystem
 from .sequence import PycSequence
+from .component import PycComponent
 
 #from .kb import PycKB
 #from .study import PycStudy

@@ -317,25 +317,27 @@ async def get_front_cfg():
 
 
 @app.get("/components/", tags=["Component Management"])
-async def get_components():
+async def get_components(name: str = ".*"):
     """
-    Lists all components.
+    Lists all components matching a given regular expression.
 
-    Returns the class name and name of each component in the system.
-    Raises an HTTP 404 error if the project state is invalid.
+    Args:
+        name (str, optional): Regular expression pattern used to filter components by name.
+                              Defaults to ".*" (all components).
+
+    Returns:
+        A list containing the description of each component matching the regex pattern.
+    Raises:
+        HTTPException: If the project state is invalid, an HTTP 404 error is raised.
     """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-    res = []
-    for comp in PROJECT_STATE["project"].system.components("#.*", "#.*"):
-        comp_cur = {
-            "cls": comp.className(),
-            "name": comp.name(),
-            }
-        res.append(comp_cur)
+    res = [comp.describe() for comp in
+           PROJECT_STATE["project"].system.get_components(name).values()]
     return {
         "components": res,
     }
+
 
 @app.post("/add_indicator/", tags=["Indicator Management"])
 async def add_indicator(indic_specs=Body(...)):

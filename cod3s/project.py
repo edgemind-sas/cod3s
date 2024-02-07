@@ -256,6 +256,10 @@ class ConnectionVizSpecs(pydantic.BaseModel):
                        Default is False, meaning the connection is not ignored.
         renaming (typing.List[RenamingSpecs]): List of RenamingSpecs instances which define
                                                how the connection attributes should be renamed.
+        conditions (typing.List[StyleConditionSpecs]): List of StyleConditionSpecs instances which define
+                                                       the conditions under which certain styles should
+                                                       be applied.
+
     """
 
     comp_source: str = pydantic.Field(".*", description="Source component name pattern")
@@ -267,6 +271,8 @@ class ConnectionVizSpecs(pydantic.BaseModel):
 
     renaming: typing.List[RenamingSpecs] = \
         pydantic.Field([], description="Renamming specs")
+    conditions: typing.List[StyleConditionSpecs] = \
+        pydantic.Field([], description="Styling conditions")
 
     
 class COD3SVizSpecs(ObjCOD3S):
@@ -398,11 +404,21 @@ class COD3SVizSpecs(ObjCOD3S):
                                              "port_source",
                                              "comp_target",
                                              "port_target",
+                                             "conditions",
                                              "renaming"})
                 conn_viz_cur = {k: v for k, v in conn_viz_cur.items() if v}
+                conn_viz_cur.setdefault("style", {})
 
                 for renaming_inst in conn_specs.renaming:
                     renaming_inst.transform(conn_viz_cur)
+
+                for cond in conn_specs.conditions:
+                    if cond.check(mapper={
+                            "CS": comp_source,
+                            "PS": port_source,
+                            "CT": comp_target,
+                            "PT": port_target}):
+                        conn_viz_cur["style"].update(cond.style)
 
                 conn_viz.update(conn_viz_cur)
 

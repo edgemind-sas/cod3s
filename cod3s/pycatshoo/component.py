@@ -5,6 +5,8 @@ import typing
 import pandas as pd
 from ..core import ObjCOD3S
 from .automaton import PycAutomaton, PycState
+import Pycatshoo as pyc
+import copy
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
@@ -29,7 +31,87 @@ class PycVariable(ObjCOD3S):
             value_current=bkd.value(),
             bkd=bkd)
 
+
+class PycComponent(pyc.CComponent):
+
+    def __init__(self, name,
+                 label=None,
+                 description=None,
+                 metadata={}, **kwargs):
+
+        super().__init__(name)
+
+        self.label = name if label is None else label
+        self.description = self.label if description is None else description
+
+        self.metadata = copy.deepcopy(metadata)
+
+        # Register the component in comp dictionnary
+        self.system().comp[name] = self
+
+
+    @classmethod
+    def get_subclasses(cls, recursive=True):
+        """ Enumerates all subclasses of a given class.
+
+        # Arguments
+        cls: class. The class to enumerate subclasses for.
+        recursive: bool (default: True). If True, recursively finds all sub-classes.
+
+        # Return value
+        A list of subclasses of `cls`.
+        """
+        sub = cls.__subclasses__()
+        if recursive:
+            for cls in sub:
+                sub.extend(cls.get_subclasses(recursive))
+        return sub
+
+    @classmethod
+    def from_dict(basecls, **specs):
+        
+        cls_sub_dict = {
+            cls.__name__: cls for cls in basecls.get_subclasses()}
+
+        clsname = specs.pop("cls")
+        cls = cls_sub_dict.get(clsname)
+        if cls is None:
+            raise ValueError(
+                f"{clsname} is not a subclass of {basecls.__name__}")
+
+        return cls(**specs)
+
+    def describe(self):
+
+        # comp = basecls(name=bkd.name(), bkd=bkd)
+        # comp.variables = \
+        #     [PycVariable.from_bkd(elt) for elt in self.getVariables()]
+        # comp.states = \
+        #     [PycState.from_bkd(elt) for elt in bkd.getStates()]
+        # comp.automata = \
+        #     [PycAutomaton.from_bkd(elt) for elt in bkd.getAutomata()]
+
+        return {
+            "name": self.name(),
+            "cls": self.className(),
+            "variables": [PycVariable.from_bkd(elt).dict(exclude={"bkd"})
+                          for elt in self.variables()],
+            "states": [PycState.from_bkd(elt).dict(exclude={"bkd"})
+                       for elt in self.states()],
+        }
+
+
     
+    # @pydantic.validator('flows', pre=True)
+    # def check_flows(cls, value, values, **kwargs):
+    #     value = [PycFlowModel.from_dict(**v) for v in value]
+    #     return value
+
+    # @pydantic.validator('automata', pre=True)
+    # def check_automata(cls, value, values, **kwargs):
+    #     value = [PycAutomaton(**v) for v in value]
+    #     return value
+
 # class PycComponent(ObjCOD3S):
 
 #     name: str = pydantic.Field(..., description="Component name")
