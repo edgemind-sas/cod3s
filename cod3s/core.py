@@ -2,6 +2,8 @@ import pydantic
 import copy
 import yaml
 import pkg_resources
+from .utils import update_dict_deep
+
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
 if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
@@ -30,6 +32,7 @@ class ObjCOD3S(pydantic.BaseModel):
                   add_cls=True,
                   attr_header=None,
                   cls_attr=None,
+                  data={},
                   ):
         with open(file_path, 'r', encoding="utf-8") as yaml_file:
             obj_dict = yaml.load(yaml_file, Loader=yaml.SafeLoader)
@@ -39,6 +42,9 @@ class ObjCOD3S(pydantic.BaseModel):
                 obj_dict.setdefault("cls", cls.__name__)
             if cls_attr:
                 obj_dict["cls"] = cls_attr
+
+            update_dict_deep(obj_dict, data)
+            
             return cls.from_dict(obj_dict)
 
     # @classmethod

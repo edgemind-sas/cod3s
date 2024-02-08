@@ -4,43 +4,66 @@ if 'ipdb' in installed_pkg:
     import ipdb  # noqa: F401
 
 
-def update_dict_deep(target, updates, key_attr):
+def update_dict_deep(target, updates, key_attr=None):
     """
     Recursively update a dictionary with another dictionary's values.
-
+    
     Args:
         target (dict): The target dictionary to be updated.
         updates (dict): The dictionary with updates to apply to target.
-        key_attr (str): The attribute name used as a key for matching items
-                        in lists of dictionaries.
+        key_attr (str, optional): The attribute name used as a key for matching items
+                                  in lists of dictionaries. Default is None, which means
+                                  that lists will be replaced rather than merged.
 
     Returns:
         dict: The updated target dictionary.
 
-    >>> target_dict = {
-    ...     'name': 'original',
-    ...     'components': [
-    ...         {'name': 'a', 'value': 1},
-    ...         {'name': 'b', 'value': 2}
-    ...     ]
-    ... }
-    >>> updates_dict = {
-    ...     'name': 'updated',
-    ...     'components': [
-    ...         {'name': 'a', 'value': 10},
-    ...         {'name': 'c', 'value': 3}
-    ...     ]
-    ... }
-    >>> updated_dict = update_dict_deep(target_dict, updates_dict, 'name')
-    >>> updated_dict == {
-    ...     'name': 'updated',
-    ...     'components': [
-    ...         {'name': 'a', 'value': 10},
-    ...         {'name': 'b', 'value': 2},
-    ...         {'name': 'c', 'value': 3}
-    ...     ]
-    ... }
-    True
+    Examples:
+        >>> target_dict = {
+        ...     'name': 'original',
+        ...     'components': [
+        ...         {'name': 'a', 'value': 1},
+        ...         {'name': 'b', 'value': 2}
+        ...     ]
+        ... }
+        >>> updates_dict = {
+        ...     'name': 'updated',
+        ...     'components': [
+        ...         {'name': 'a', 'value': 10},
+        ...         {'name': 'c', 'value': 3}
+        ...     ]
+        ... }
+        >>> update_dict_deep(target_dict, updates_dict, 'name') == {
+        ...     'name': 'updated',
+        ...     'components': [
+        ...         {'name': 'a', 'value': 10},
+        ...         {'name': 'b', 'value': 2},
+        ...         {'name': 'c', 'value': 3}
+        ...     ]
+        ... }
+        True
+        >>> target_dict = {
+        ...     'name': 'original',
+        ...     'components': [
+        ...         {'id': 1, 'value': 'one'},
+        ...         {'id': 2, 'value': 'two'}
+        ...     ]
+        ... }
+        >>> updates_dict = {
+        ...     'name': 'updated',
+        ...     'components': [
+        ...         {'id': 1, 'value': 'uno'},
+        ...         {'id': 3, 'value': 'tres'}
+        ...     ]
+        ... }
+        >>> update_dict_deep(target_dict, updates_dict) == {
+        ...     'name': 'updated',
+        ...     'components': [
+        ...         {'id': 1, 'value': 'uno'},
+        ...         {'id': 3, 'value': 'tres'}
+        ...     ]
+        ... }
+        True
 
     Note:
         If the corresponding item in the target does not exist, it will be added.
@@ -53,22 +76,27 @@ def update_dict_deep(target, updates, key_attr):
         if key not in target:
             target[key] = updates_value
         elif isinstance(target[key], list) and isinstance(updates_value, list):
-            # Merge lists of dictionaries by key_attr
-            target_list = {d[key_attr]: d for d in target[key] if key_attr in d}
-            updates_list = {d[key_attr]: d for d in updates_value if key_attr in d}
-
-            # Update existing items
-            for item_key in updates_list:
-                if item_key in target_list:
-                    update_dict_deep(target_list[item_key], updates_list[item_key], key_attr)
-                else:
-                    target[key].append(updates_list[item_key])
+            if key_attr:
+                # Merge lists of dictionaries by key_attr
+                target_list = {d.get(key_attr): d for d in target[key] if key_attr in d}
+                updates_list = {d.get(key_attr): d for d in updates_value if key_attr in d}
+                # Update existing items and append new items
+                for item in updates_value:
+                    item_key = item.get(key_attr)
+                    if item_key in target_list:
+                        update_dict_deep(target_list[item_key], updates_list[item_key], key_attr)
+                    else:
+                        target[key].append(item)
+            else:
+                # Replace the list in target with the list from updates
+                target[key] = updates_value
         elif isinstance(target[key], dict) and isinstance(updates_value, dict):
             update_dict_deep(target[key], updates_value, key_attr)
         else:
             target[key] = updates_value
             
     return target
+
 
 def dict_diff(dict_ref, dict_new):
     """

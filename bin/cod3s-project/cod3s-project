@@ -41,6 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import importlib
 import cod3s
+import Pycatshoo
 import logging
 import os
 import sys
@@ -58,7 +59,8 @@ if 'ipdb' in installed_pkg:
 
 # Utils functions
 # ---------------
-def load_project(project_state: dict, project_filename: str, logger=None):
+def load_project(project_state: dict, project_filename: str,
+                 data_extra: dict = {}, logger=None):
     """Loads or reloads the COD3S project from a YAML file and updates the project state.
 
     This function imports the COD3S package, reads the project definition from the project
@@ -70,6 +72,7 @@ def load_project(project_state: dict, project_filename: str, logger=None):
         project_state (dict): A dictionary containing the state of the project, including
                               the current project instance under the 'project' key.
         project_filename (str): The path to the YAML file containing the project definition.
+        data_extra (dict): A dictionary with additional data for the project loading function.
         logger (logging.Logger, optional): A logger to output messages during the project
                                            loading operations.
 
@@ -79,25 +82,25 @@ def load_project(project_state: dict, project_filename: str, logger=None):
     """
 
     importlib.reload(cod3s)
+    importlib.reload(Pycatshoo)
     
     project_filename_path = Path(project_filename)
     if project_filename_path.exists():
-        try:
-            if project_state.get("project"):
+        if project_state.get("project"):
+            if project_state["project"].system:
                 project_state["project"].system.deleteSys()
-                
-            project_state["project"] = cod3s.COD3SProject.from_yaml(
-                file_path=project_filename_path.as_posix(),
-                cls_attr="COD3SProject",
-            )
-        except Exception as e:
-            sys.stdout.write(f"Something's wrong when loading COD3S project: {e}")
-            sys.exit(1)
+
+        project_state["project"] = cod3s.COD3SProject.from_yaml(
+            file_path=project_filename_path.as_posix(),
+            cls_attr="COD3SProject",
+            data=data_extra,
+        )
+
+        project_state["project"].logger = logger
+
     else:
         sys.stdout.write(f"Project file {project_filename_path.as_posix()} doesn't exist")
         sys.exit(1)
-
-    project_state["project"].logger = logger
 
 
 def transition_to_indexed_dict(transitions):
@@ -270,17 +273,21 @@ async def read_root():
 
 
 @app.post("/reload_project/", tags=["Project Management"])
-async def reload_project():
-    """
-    Reloads the current project.
+async def reload_project(data_extra: dict = {}):
+    """Reloads the current project with additional data.
 
-    Triggers project reloading by invoking the `load_project` function
-    with the existing project settings. Updates the project's last modification 
-    timestamp upon completion.
-
-    Returns confirmation of the action and a snapshot of the new project state.
+    Calls the `load_project` function and passes any additional data provided in the request to update the project settings.
+    
+    Args:
+        data_extra (dict, optional): A dictionary of additional data to pass to the project loading function.
+    
+    Returns:
+        dict: A confirmation message and a snapshot of the new project state.
+    
+    Raises:
+        HTTPException: If the project cannot be reloaded, an HTTP error is raised.
     """
-    load_project(PROJECT_STATE, APP_CONFIG["project_filename"])
+    load_project(PROJECT_STATE, APP_CONFIG["project_filename"], data_extra=data_extra)
     PROJECT_STATE["project"].update_ts_last_modification()
     return {
         "message": "Project reloaded",

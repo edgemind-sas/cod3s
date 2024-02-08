@@ -60,6 +60,7 @@ class PycSystem(pyc.CSystem):
 
     def __init__(self, name):
         super().__init__(name)
+        
         self.indicators = {}
         self.isimu_sequence = PycSequence()
         # REMINDER: comp dictionnary is populated by PycComponent register method at init

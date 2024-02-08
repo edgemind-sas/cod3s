@@ -519,7 +519,11 @@ class COD3SProject(ObjCOD3S):
         system_class = getattr(system_module, self.system_class_name)
 
         # Create an instance of the system.
-        self.system = system_class(self.system_name, **self.system_params)
+        try:
+            self.system = system_class(self.system_name, **self.system_params)
+        except Exception as e:
+            sys.stdout.write(f"Something's wrong when loading COD3S project: {e}")
+            return
 
         # Load visualization specifications, if provided.
         if self.viz_specs_filename:
