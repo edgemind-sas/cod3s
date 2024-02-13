@@ -80,7 +80,6 @@ class PycSystem(pyc.CSystem):
 
         return comp_new
 
-
     def get_components(self, pattern="^.*$"):
         return {k: v for k, v in self.comp.items()
                 if re.search(f"^({pattern})$", k)}
