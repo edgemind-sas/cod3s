@@ -400,7 +400,7 @@ async def interactive_simulation_start():
         raise HTTPException(status_code=404, detail="Project invalid")
     PROJECT_STATE["project"].system.isimu_start()
     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-    PROJECT_STATE["project"].update_ts_last_modification()
+    #PROJECT_STATE["project"].update_ts_last_modification()
     return {"message": "Interactive simulation started",
             "current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transition_to_indexed_dict(transitions)}
@@ -419,7 +419,7 @@ async def interactive_simulation_stop():
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
     PROJECT_STATE["project"].system.isimu_stop()
-    PROJECT_STATE["project"].update_ts_last_modification()
+    #PROJECT_STATE["project"].update_ts_last_modification()
     return {"message": "Interactive simulation stopped"}
 
 
@@ -436,7 +436,7 @@ async def interactive_simulation_backward():
         raise HTTPException(status_code=404, detail="Project invalid")
     trans_removed = PROJECT_STATE["project"].system.isimu_step_backward()
     transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-    PROJECT_STATE["project"].update_ts_last_modification()
+    #PROJECT_STATE["project"].update_ts_last_modification()
     return {
         "current_time": PROJECT_STATE["project"].system.currentTime(),
         "transitions": transition_to_indexed_dict(transitions),
@@ -512,7 +512,7 @@ async def interactive_simulation_forward(transition_id: int = None, date: float 
             PROJECT_STATE["project"].system.isimu_set_transition(transition_id, date=date, state_index=state_index)
         trans_fired = PROJECT_STATE["project"].system.isimu_step_forward()
         transitions = PROJECT_STATE["project"].system.isimu_fireable_transitions()
-        PROJECT_STATE["project"].update_ts_last_modification()
+        #PROJECT_STATE["project"].update_ts_last_modification()
         return {
             "current_time": PROJECT_STATE["project"].system.currentTime(),
             "transitions": transition_to_indexed_dict(transitions),
