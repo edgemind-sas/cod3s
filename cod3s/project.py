@@ -474,8 +474,11 @@ class COD3SProject(ObjCOD3S):
     
     system: typing.Any = pydantic.Field(None, description="The system object")
 
-    front_cfg_filename: typing.Any = pydantic.Field(".front_cfg.json",
-                                                    description="Front config filename")
+    cfg_dir: str = pydantic.Field(".cod3s-project",
+                                  description="Front config filename")
+    
+    front_cfg_filename: str = pydantic.Field(".front_cfg.json",
+                                             description="Front config filename")
 
     front_cfg: dict = pydantic.Field({}, description="Front configuration")
     
@@ -484,7 +487,7 @@ class COD3SProject(ObjCOD3S):
 
     logger: typing.Any = pydantic.Field(None, description="Logger")
 
-    def __init__(self, **data: typing.Any):
+    def __init__(self, init_system_only=False, **data: typing.Any):
         """Initializes the COD3SProject with provided data.
 
         This initialization ensures that the project path is included in the system
@@ -518,13 +521,11 @@ class COD3SProject(ObjCOD3S):
         system_module_spec.loader.exec_module(system_module)
         system_class = getattr(system_module, self.system_class_name)
 
-        # Create an instance of the system.
-        try:
-            self.system = system_class(self.system_name, **self.system_params)
-        except Exception as e:
-            sys.stdout.write(f"Something's wrong when loading COD3S project: {e}")
-            return
+        self.system = system_class(self.system_name, **self.system_params)
 
+        if init_system_only:
+            return
+        
         # Load visualization specifications, if provided.
         if self.viz_specs_filename:
             self.viz_specs = COD3SVizSpecs.from_yaml(self.viz_specs_filename,
@@ -552,7 +553,7 @@ class COD3SProject(ObjCOD3S):
         'components', and 'connections' dictionaries.
         """
         front_cfg_filename = \
-            os.path.join(self.project_path, self.front_cfg_filename)
+            os.path.join(self.project_path, self.cfg_dir, self.front_cfg_filename)
 
         # Load existing configuration if the file is present.
         if os.path.isfile(front_cfg_filename):
@@ -622,11 +623,28 @@ class COD3SProject(ObjCOD3S):
         """
         self.ts_last_modification = \
             datetime.now(timezone.utc).timestamp()
-        
+
+    def json(self, **kwrds):
+
+        exclude_list = ["system",
+                        "interactive_simulation_sequence",
+                        "system_viz_current",
+                        "viz_specs",
+                        "front_cfg",
+                        "logger",
+                        ]
+        if kwrds.get("exclude"):
+            [kwrds["exclude"].add(attr) for attr in exclude_list]
+        else:
+            kwrds["exclude"] = set(exclude_list)
+            
+        return super().json(**kwrds)
+
     def dict(self, **kwrds):
 
         exclude_list = ["system",
                         "interactive_simulation_sequence",
+                        "system_viz_current",
                         "viz_specs",
                         "front_cfg",
                         "logger",

@@ -6,6 +6,7 @@ import plotly.express as px
 import typing
 import pkg_resources
 import itertools
+import warnings
 import re
 from .indicator import PycVarIndicator, PycFunIndicator
 from .automaton import PycTransition
@@ -69,16 +70,17 @@ class PycSystem(pyc.CSystem):
     def add_component(self, **comp_specs):
 
         comp_name = comp_specs.get("name")
+    
         if comp_name in self.comp:
-            raise ValueError(f"Component {comp_name} already exists")
+            warnings.warn(f"Component {comp_name} already exists", UserWarning)
+            return None
         else:
 
             # if "SPF" in comp_name:
             #     ipdb.set_trace()
             comp_new = PycComponent.from_dict(**comp_specs)
             #self.comp[comp_new.name()] = comp_new
-
-        return comp_new
+            return comp_new
 
     def get_components(self, pattern="^.*$"):
         return {k: v for k, v in self.comp.items()
@@ -123,10 +125,10 @@ class PycSystem(pyc.CSystem):
         return indic_added_list
                 
 
-    def prepare_simu(self, **params):
+    def prepare_simu(self, simu_params: PycMCSimulationParam):
 
         #self.run_before_hook()
-        simu_params = PycMCSimulationParam(**params)
+        #simu_params = PycMCSimulationParam(**params)
         
         # Set instants
         instants_list = simu_params.get_instants_list()
@@ -147,15 +149,14 @@ class PycSystem(pyc.CSystem):
         for instant in instants_list:
             self.addInstant(instant)
 
-        if simu_params.seed:
+        if simu_params.seed is not None:
             self.setRNGSeed(simu_params.seed)
 
-        if simu_params.nb_runs:
+        if simu_params.nb_runs is not None:
             self.setNbSeqToSim(simu_params.nb_runs)
 
-    def simulate(self, **simu_params):
-        
-        self.prepare_simu(**simu_params)
+    def simulate(self, simu_params: PycMCSimulationParam):
+        self.prepare_simu(simu_params)
 
         super().simulate()
 

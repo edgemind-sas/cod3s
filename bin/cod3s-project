@@ -47,6 +47,9 @@ import os
 import sys
 import pkg_resources
 import time
+import uuid
+from subprocess import Popen, PIPE
+
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -81,8 +84,8 @@ def load_project(project_state: dict, project_filename: str,
                     loading, log the error message and exit the program.
     """
 
-    importlib.reload(cod3s)
-    importlib.reload(Pycatshoo)
+    # importlib.reload(cod3s)
+    # importlib.reload(Pycatshoo)
     
     project_filename_path = Path(project_filename)
     if project_filename_path.exists():
@@ -97,6 +100,13 @@ def load_project(project_state: dict, project_filename: str,
         )
 
         project_state["project"].logger = logger
+
+        # Create config directory if not exist
+        cfg_dir_path = os.path.join(
+            project_state["project"].project_path,
+            project_state["project"].cfg_dir,
+            )
+        Path(cfg_dir_path).mkdir(exist_ok=True)
 
     else:
         sys.stdout.write(f"Project file {project_filename_path.as_posix()} doesn't exist")
@@ -124,6 +134,27 @@ def transition_to_indexed_dict(transitions):
     """
     return [dict(trans_id=i, **trans.dict())
             for i, trans in enumerate(transitions) if trans]
+
+
+def simulate_in_process(simu_params, project_master, simulation_session_id):
+
+    #ipdb.set_trace()
+    project_tmp = cod3s.COD3SProject(init_system_only=True,
+                                     **project_master.dict())
+    system = project_tmp.system
+    ipdb.set_trace()
+    # Create .cod3s and simulation.<simulation_session_id> directories
+    base_dir = Path(".cod3s-project")
+    base_dir.mkdir(exist_ok=True)
+    cfg_dir = os.path.join(project_tmp.project_path, project_tmp.cfg_dir)
+    session_dir = os.path.join(cfg_dir, f"simulation.{simulation_session_id}")
+    Path(session_dir).mkdir(exist_ok=True)
+    
+    # Change the working directory to the session directory
+    os.chdir(session_dir)
+
+    system.simulate(simu_params)
+
 
 
 class ProjectFileChangeHandler(FileSystemEventHandler):
@@ -244,6 +275,7 @@ APP_CONFIG.update(vars(APP_ARG_PARSER.parse_args()))
 PROJECT_STATE = {
     "project": None, 
 }
+
 
 load_project(PROJECT_STATE, APP_CONFIG.get("project_filename"))
 
@@ -368,23 +400,76 @@ async def add_indicator(indic_specs=Body(...)):
 
 
 @app.post("/simulate/", tags=["Simulation"])
-async def simulate(simu_params=Body(...)):
+async def simulate(simu_params: cod3s.PycMCSimulationParam,
+                   session_id: str = Body(default=None)):
     """
-    Simulates the system based on provided parameters.
+    Initiates a COD3S simulation process with the given parameters in a new environment.
 
-    Begins the simulation process with the given parameters, measures the 
-    computational time, and returns a message upon the simulation's completion.
-    Raises an HTTP 404 error if the project state is invalid.
+    This endpoint takes the simulation parameters and an optional session ID as inputs. 
+    It generates a unique session ID if one is not provided. The simulation parameters and 
+    the project's current state are serialized into JSON and passed as arguments to the 
+    `cod3s-simulate` CLI script. The script is expected to be in the system PATH or located 
+    in the same directory as this endpoint's module.
+
+    The `cod3s-simulate` script runs the simulation in a separate process or environment, 
+    ensuring that if the system's state can only exist once per Python session, it is handled 
+    properly. The script is responsible for deserializing the parameters, re-creating the 
+    project and simulation instances, and initiating the simulation.
+
+    Args:
+        simu_params (PycMCSimulationParam): A Pydantic model containing the parameters for the simulation.
+        session_id (str, optional): A unique identifier to associate with this simulation session. If not 
+                                    provided, a UUID will be generated.
+
+    Raises:
+        HTTPException: If the project state is invalid (HTTP status 404) or if the subprocess 
+                       encounters an error (HTTP status 500).
+
+    Returns:
+        dict: A dictionary with a single key `simulation_session_id` corresponding to the session ID 
+              of the initiated simulation.
+
+    Example:
+        POST /simulate/
+        Body: {
+            "simu_params": { 
+                "nb_runs": 10,
+                "schedule": [{"start": 0.0, "end": 10.0, "nvalues": 5}],
+                "time_unit": "seconds",
+                "seed": 42
+            },
+            "session_id": "optional-custom-session-id"
+        }
     """
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
-    start_time = time.perf_counter()
-    PROJECT_STATE["project"].system.simulate(**simu_params)
-    end_time = time.perf_counter()
-    process_time = end_time - start_time
-    PROJECT_STATE["project"].update_ts_last_modification()
-    return {"message": "Simulation ended successfully",
-            "process_time": process_time}
+
+    # Create a unique simulation session ID if none provided
+    simulation_session_id = session_id or str(uuid.uuid4())
+
+    # Serialize simulation parameters and project state
+    simu_params_json = simu_params.json()
+    project_main_json = PROJECT_STATE["project"].json()
+        
+    # Start the simulation in a separate Python environment using subprocess
+    command = [
+        "cod3s-simulate",  # Use the script name directly since it's in PATH
+        "--simu-params", simu_params_json,
+        "--project", project_main_json,
+        "--session-id", simulation_session_id
+    ]
+
+    print(simu_params_json)
+    print(project_main_json)
+    
+    process = Popen(command, stdout=PIPE, stderr=PIPE, text=True)
+    stdout, stderr = process.communicate()
+
+    if process.returncode != 0:
+        # Handle errors if the simulation failed
+        raise HTTPException(status_code=500, detail=stderr)
+    
+    return {"simulation_session_id": simulation_session_id}
 
 
 @app.post("/interactive_simulation/start/", tags=["Interactive Simulation"])

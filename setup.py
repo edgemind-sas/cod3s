@@ -53,6 +53,7 @@ setup(name='cod3s',
       ],
       zip_safe=False,
       scripts=[
-          'bin/cod3s-project/cod3s-project',
+          'bin/cod3s-project',
+          'bin/cod3s-simulate',
       ],
       )
