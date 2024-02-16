@@ -477,7 +477,7 @@ class COD3SProject(ObjCOD3S):
     cfg_dir: str = pydantic.Field(".cod3s-project",
                                   description="Front config filename")
     
-    front_cfg_filename: str = pydantic.Field(".front_cfg.json",
+    front_cfg_filename: str = pydantic.Field("front_cfg.json",
                                              description="Front config filename")
 
     front_cfg: dict = pydantic.Field({}, description="Front configuration")
@@ -577,7 +577,7 @@ class COD3SProject(ObjCOD3S):
         """
 
         front_cfg_filename = \
-            os.path.join(self.project_path, self.front_cfg_filename)
+            os.path.join(self.project_path, self.cfg_dir, self.front_cfg_filename)
 
         with open(front_cfg_filename, 'w') as f:
             json.dump(self.front_cfg, f)

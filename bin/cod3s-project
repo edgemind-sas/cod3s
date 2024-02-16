@@ -39,15 +39,17 @@ import argparse
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-import importlib
+# import importlib
 import cod3s
-import Pycatshoo
+# import Pycatshoo
 import logging
 import os
 import sys
 import pkg_resources
 import time
 import uuid
+import pandas as pd
+import numpy as np
 from subprocess import Popen, PIPE
 
 from watchdog.observers import Observer
@@ -134,27 +136,6 @@ def transition_to_indexed_dict(transitions):
     """
     return [dict(trans_id=i, **trans.dict())
             for i, trans in enumerate(transitions) if trans]
-
-
-def simulate_in_process(simu_params, project_master, simulation_session_id):
-
-    #ipdb.set_trace()
-    project_tmp = cod3s.COD3SProject(init_system_only=True,
-                                     **project_master.dict())
-    system = project_tmp.system
-    ipdb.set_trace()
-    # Create .cod3s and simulation.<simulation_session_id> directories
-    base_dir = Path(".cod3s-project")
-    base_dir.mkdir(exist_ok=True)
-    cfg_dir = os.path.join(project_tmp.project_path, project_tmp.cfg_dir)
-    session_dir = os.path.join(cfg_dir, f"simulation.{simulation_session_id}")
-    Path(session_dir).mkdir(exist_ok=True)
-    
-    # Change the working directory to the session directory
-    os.chdir(session_dir)
-
-    system.simulate(simu_params)
-
 
 
 class ProjectFileChangeHandler(FileSystemEventHandler):
@@ -273,7 +254,7 @@ APP_INPUT_ARGS = APP_ARG_PARSER.parse_args()
 APP_CONFIG.update(vars(APP_ARG_PARSER.parse_args()))
 
 PROJECT_STATE = {
-    "project": None, 
+    "project": None,
 }
 
 
@@ -399,9 +380,9 @@ async def add_indicator(indic_specs=Body(...)):
     }
 
 
-@app.post("/simulate/", tags=["Simulation"])
-async def simulate(simu_params: cod3s.PycMCSimulationParam,
-                   session_id: str = Body(default=None)):
+@app.post("/simulation/run/", tags=["Simulation"])
+async def simulation_run(simu_params: cod3s.PycMCSimulationParam,
+                         session_id: str = Body(default=None)):
     """
     Initiates a COD3S simulation process with the given parameters in a new environment.
 
@@ -426,11 +407,11 @@ async def simulate(simu_params: cod3s.PycMCSimulationParam,
                        encounters an error (HTTP status 500).
 
     Returns:
-        dict: A dictionary with a single key `simulation_session_id` corresponding to the session ID 
+        dict: A dictionary with a single key `session_id` corresponding to the session ID 
               of the initiated simulation.
 
     Example:
-        POST /simulate/
+        POST /simulation/run/
         Body: {
             "simu_params": { 
                 "nb_runs": 10,
@@ -445,7 +426,7 @@ async def simulate(simu_params: cod3s.PycMCSimulationParam,
         raise HTTPException(status_code=404, detail="Project invalid")
 
     # Create a unique simulation session ID if none provided
-    simulation_session_id = session_id or str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
 
     # Serialize simulation parameters and project state
     simu_params_json = simu_params.json()
@@ -456,11 +437,11 @@ async def simulate(simu_params: cod3s.PycMCSimulationParam,
         "cod3s-simulate",  # Use the script name directly since it's in PATH
         "--simu-params", simu_params_json,
         "--project", project_main_json,
-        "--session-id", simulation_session_id
+        "--session-id", session_id
     ]
 
-    print(simu_params_json)
-    print(project_main_json)
+    # print(simu_params_json)
+    # print(project_main_json)
     
     process = Popen(command, stdout=PIPE, stderr=PIPE, text=True)
     stdout, stderr = process.communicate()
@@ -469,7 +450,50 @@ async def simulate(simu_params: cod3s.PycMCSimulationParam,
         # Handle errors if the simulation failed
         raise HTTPException(status_code=500, detail=stderr)
     
-    return {"simulation_session_id": simulation_session_id}
+    return {"session_id": session_id}
+
+
+@app.get("/simulation/indicators/", tags=["Simulation"])
+async def get_simulation_indicators(session_id: str):
+    """
+    Retrieves indicators from a session-specific 'indicators.csv' file and returns the data as JSON.
+
+    Looks for an 'indicators.csv' file in the directory corresponding to the provided session_id, 
+    reads the CSV file, and returns the data as JSON records.
+
+    Args:
+        session_id (str): The identifier for the simulation session.
+    
+    Returns:
+        JSON: A JSON representation of the records in 'indicators.csv'.
+
+    Raises:
+        HTTPException: If the project state is invalid, the session_id does not exist, 
+                       or the 'indicators.csv' file is not found, or if there is an error 
+                       reading the CSV file.
+    """
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    project = PROJECT_STATE["project"]
+    session_dir = Path(project.project_path) / project.cfg_dir / f"simulation.{session_id}"
+    indicators_csv = session_dir / "indicators.csv"
+
+    if not indicators_csv.exists():
+        raise HTTPException(status_code=404, detail="Indicators file not found")
+
+#    try:
+    # Reading the CSV file into a pandas DataFrame and converting to JSON
+    df = pd.read_csv(indicators_csv)
+
+    # Converting NaN values to None for JSON serialization
+    df.replace(np.nan, None, inplace=True)
+
+    records = df.to_dict(orient='records')
+
+    return records
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/interactive_simulation/start/", tags=["Interactive Simulation"])

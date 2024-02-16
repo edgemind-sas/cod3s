@@ -61,10 +61,15 @@ def simulate(simu_params, project_main, session_id):
     
     # Change the working directory to the session directory
     # NOTE: Is it really necessary ?
-    os.chdir(session_dir)
+    #os.chdir(session_dir)
 
     system.simulate(simu_params)
 
+    indics_df = system.indic_to_frame()
+    indics_filename = os.path.join(session_dir, "indicators.csv")
+    indics_df.to_csv(indics_filename,
+                     index=False)
+    
     
 
 
