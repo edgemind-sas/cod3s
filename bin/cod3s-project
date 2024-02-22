@@ -323,19 +323,6 @@ async def get_project_info():
     }
 
 
-@app.get("/front_cfg/", tags=["Project Configuration"])
-async def get_front_cfg():
-    """
-    Retrieves front-end configuration.
-
-    Gets the configuration used by the front-end client of the project.
-    Raises an HTTP 404 error if the project state is invalid.
-    """
-    if not PROJECT_STATE["project"]:
-        raise HTTPException(status_code=404, detail="Project invalid")
-    return PROJECT_STATE["project"].front_cfg
-
-
 @app.get("/components/", tags=["Component Management"])
 async def get_components(name: str = ".*"):
     """
@@ -647,25 +634,6 @@ async def get_system_viz(update_only: bool = False):
     return system_viz
 
 
-@app.post("/positions_update/", tags=["Visualization"])
-async def positions_update(positions: dict):
-    """
-    Updates the positions of components or connections in the visualization.
-
-    Accepts a dictionary representing the new positions of various elements and updates 
-    the project's configuration.
-    Returns a confirmation message after the positions are updated.
-    Raises an HTTP 404 error if the project state is invalid.
-    """
-    if not PROJECT_STATE["project"]:
-        raise HTTPException(status_code=404, detail="Project invalid")
-    PROJECT_STATE["project"].update_positions(positions)
-    PROJECT_STATE["project"].write_front_cfg()
-    return {
-        "message": "Positions updated",
-    }
-
-
 @app.post("/system_viz_update/", tags=["Visualization"])
 async def system_viz_update():
     """
@@ -696,13 +664,56 @@ async def get_ts_last_modification():
         "ts_last_modification": PROJECT_STATE["project"].ts_last_modification
     }
 
-@app.post("/update_front_config/", tags=["Configuration"])
-async def update_front_config(data: dict = Body(...)):
-    PROJECT_STATE["project"].update_front_cfg(data)
-    return {"message": "Front-end configuration updated", "config": PROJECT_STATE["project"].front_cfg['layout']}
+@app.get("/front_cfg/", tags=["Project Configuration"])
+async def get_front_cfg():
+    """
+    Retrieves front-end configuration.
 
-@app.get("/update_front_config/", tags=["Configuration"])
-async def get_front_config():
+    Gets the configuration used by the front-end client of the project.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+    return PROJECT_STATE["project"].front_cfg
+
+@app.post("/front_cfg/positions/", tags=["Visualization"])
+async def front_cfg_positions_update(positions: dict):
+    """
+    Updates the positions of components or connections in the visualization.
+
+    Accepts a dictionary representing the new positions of various elements and updates 
+    the project's configuration.
+    Returns a confirmation message after the positions are updated.
+    Raises an HTTP 404 error if the project state is invalid.
+    """
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+    PROJECT_STATE["project"].update_positions(positions)
+    PROJECT_STATE["project"].write_front_cfg()
+    return {
+        "message": "Positions updated",
+    }
+
+
+@app.post("/front_cfg/layout/", tags=["Configuration"])
+async def front_config_layout_update(data: dict = Body(...)):
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
+    PROJECT_STATE["project"].update_front_cfg(data)
+    # Save the updated config
+    PROJECT_STATE["project"].write_front_cfg()
+
+    return {
+        "message": "Front-end configuration updated",
+#        "layout": PROJECT_STATE["project"].front_cfg['layout'],
+    }
+
+@app.get("/front_cfg/layout/", tags=["Configuration"])
+async def front_config_layout():
+    if not PROJECT_STATE["project"]:
+        raise HTTPException(status_code=404, detail="Project invalid")
+
     layout_config = PROJECT_STATE["project"].front_cfg.get('layout', {})
     return {"layout": layout_config}
 
