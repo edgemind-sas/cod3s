@@ -696,6 +696,17 @@ async def get_ts_last_modification():
         "ts_last_modification": PROJECT_STATE["project"].ts_last_modification
     }
 
+@app.post("/update_front_config/", tags=["Configuration"])
+async def update_front_config(data: dict = Body(...)):
+    PROJECT_STATE["project"].update_front_cfg(data)
+    return {"message": "Front-end configuration updated", "config": PROJECT_STATE["project"].front_cfg['layout']}
+
+@app.get("/update_front_config/", tags=["Configuration"])
+async def get_front_config():
+    layout_config = PROJECT_STATE["project"].front_cfg.get('layout', {})
+    return {"layout": layout_config}
+
+
 
 @app.post("/break_point/", tags=["Debugging"])
 async def break_point():

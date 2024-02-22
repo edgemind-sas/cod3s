@@ -734,3 +734,21 @@ class COD3SProject(ObjCOD3S):
                       system_viz_new)
         
         return viz_updates, system_viz_new
+    
+    def update_front_cfg(self, update_data: dict):
+        """Updates or initializes the 'layout' key in the front-end configuration.
+
+        Args:
+            update_data (dict): A dictionary containing the updates, expected to be
+                                in the form {"layout": {"is_panel_width": <value>}}
+        """
+        # Initialize 'layout' if it doesn't exist
+        if 'layout' not in self.front_cfg:
+            self.front_cfg['layout'] = {}
+
+        # Update 'layout' with new 'is_panel_width' value
+        layout_update = update_data.get('layout', {})
+        self.front_cfg['layout'].update(layout_update)
+
+        # Save the updated config
+        self.write_front_cfg()
