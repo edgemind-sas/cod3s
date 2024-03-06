@@ -423,7 +423,12 @@ class COD3SVizSpecs(ObjCOD3S):
                 conn_viz.update(conn_viz_cur)
 
         return conn_viz
-                        
+
+    
+class COD3SProjectInitConfig(pydantic.BaseModel):
+    no_front: bool = pydantic.Field(False, description="Indicates if no front is used")
+    skip_system_init: bool = pydantic.Field(False, description="Indicates if system is not mount at init")
+
     
 class COD3SProject(ObjCOD3S):
     """
@@ -465,6 +470,10 @@ class COD3SProject(ObjCOD3S):
 
     system_params: dict = pydantic.Field({}, description="System params")
 
+    init_config: COD3SProjectInitConfig = \
+        pydantic.Field(COD3SProjectInitConfig(),
+                       description="COD3S prokect Init config")
+    
     viz_specs_filename: str = pydantic.Field(None, description="The system object")
     
     viz_specs: COD3SVizSpecs = pydantic.Field(None, description="The system object")
@@ -487,7 +496,7 @@ class COD3SProject(ObjCOD3S):
 
     logger: typing.Any = pydantic.Field(None, description="Logger")
 
-    def __init__(self, init_system_only=False, **data: typing.Any):
+    def __init__(self, **data: typing.Any):
         """Initializes the COD3SProject with provided data.
 
         This initialization ensures that the project path is included in the system
@@ -507,23 +516,13 @@ class COD3SProject(ObjCOD3S):
         """
         super().__init__(**data)
 
-        # Ensure the project path  is in the Python path
-        sys.path.insert(0, os.path.dirname(self.project_path))
+        if self.init_config.skip_system_init:
+            # If system is not init, no front can be used
+            return
+        
+        self.system_init()
 
-        # Dynamically import the system using specified filename and class name.
-        system_module_name = self.system_filename.replace(".py", "")
-        system_module_spec = \
-            importlib.util.spec_from_file_location(
-                system_module_name,
-                self.system_filename)
-        system_module = importlib.util.module_from_spec(system_module_spec)
-        sys.modules[system_module_name] = system_module
-        system_module_spec.loader.exec_module(system_module)
-        system_class = getattr(system_module, self.system_class_name)
-
-        self.system = system_class(self.system_name, **self.system_params)
-
-        if init_system_only:
+        if self.init_config.no_front:
             return
         
         # Load visualization specifications, if provided.
@@ -540,6 +539,23 @@ class COD3SProject(ObjCOD3S):
         # Update the timestamp of the last modification.
         self.update_ts_last_modification()
 
+    def system_init(self):
+        # Ensure the project path  is in the Python path
+        sys.path.insert(0, os.path.dirname(self.project_path))
+
+        # Dynamically import the system using specified filename and class name.
+        system_module_name = self.system_filename.replace(".py", "")
+        system_module_spec = \
+            importlib.util.spec_from_file_location(
+                system_module_name,
+                self.system_filename)
+        system_module = importlib.util.module_from_spec(system_module_spec)
+        sys.modules[system_module_name] = system_module
+        system_module_spec.loader.exec_module(system_module)
+        system_class = getattr(system_module, self.system_class_name)
+
+        self.system = system_class(self.system_name, **self.system_params)
+        
     def read_front_cfg(self):
         """Reads the frontend configuration from a JSON file.
 
@@ -735,7 +751,7 @@ class COD3SProject(ObjCOD3S):
         
         return viz_updates, system_viz_new
     
-    def update_front_cfg(self, update_data: dict):
+    def front_cfg_layout_update(self, update_data: dict):
         """Updates or initializes the 'layout' key in the front-end configuration.
 
         Args:

@@ -34,7 +34,7 @@ CLI Arguments:
 Requires: `fastapi`, `watchdog`, `importlib`, `uvicorn`, `argparse`, `logging`, `os`, `sys`
 Optional: `ipdb` for debugging purposes if installed.
 """
-
+import uvicorn
 import argparse
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -114,7 +114,28 @@ def load_project(project_state: dict, project_filename: str,
         sys.stdout.write(f"Project file {project_filename_path.as_posix()} doesn't exist")
         sys.exit(1)
 
+        
+def run_simulation_in_subprocess(
+        project: cod3s.COD3SProject,
+        simu_params: cod3s.PycMCSimulationParam,
+        session_id: str):
+    
+    project_main_json = project.json()
+    simu_params_json = simu_params.json()
+    
+    command = [
+        "cod3s-simulate",
+        "--simu-params", simu_params_json,
+        "--project", project_main_json,
+        "--session-id", session_id
+    ]
+    
+    process = Popen(command, stdout=PIPE, stderr=PIPE, text=True)
+    stdout, stderr = process.communicate()
 
+    return process, stdout, stderr
+
+        
 def transition_to_indexed_dict(transitions):
     """Converts a list of transition objects to a list of dictionaries with indexed IDs.
 
@@ -220,6 +241,14 @@ APP_ARG_PARSER.add_argument(
 #     help='Reset DB.')
 
 APP_ARG_PARSER.add_argument(
+    '--state-less',
+    dest='state_less',
+    action='store_true',
+    default=False,
+    help='Run the server in state-less mode without loading PROJECT_STATE.'
+)
+
+APP_ARG_PARSER.add_argument(
     '-P', '--port',
     dest='port',
     action='store',
@@ -258,7 +287,7 @@ PROJECT_STATE = {
 }
 
 
-load_project(PROJECT_STATE, APP_CONFIG.get("project_filename"))
+# load_project(PROJECT_STATE, APP_CONFIG.get("project_filename"))
 
 app = FastAPI()
 
@@ -410,28 +439,32 @@ async def simulation_run(simu_params: cod3s.PycMCSimulationParam,
         }
     """
     if not PROJECT_STATE["project"]:
-        raise HTTPException(status_code=404, detail="Project invalid")
+        raise HTTPException(status_code=404, detail="Project not loaded")
 
     # Create a unique simulation session ID if none provided
-    session_id = session_id or str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())[:8]
 
-    # Serialize simulation parameters and project state
-    simu_params_json = simu_params.json()
-    project_main_json = PROJECT_STATE["project"].json()
-        
-    # Start the simulation in a separate Python environment using subprocess
-    command = [
-        "cod3s-simulate",  # Use the script name directly since it's in PATH
-        "--simu-params", simu_params_json,
-        "--project", project_main_json,
-        "--session-id", session_id
-    ]
+    process, stdout, stderr = \
+        run_simulation_in_subprocess(PROJECT_STATE["project"],
+                                     simu_params,
+                                     session_id)
 
-    # print(simu_params_json)
-    # print(project_main_json)
+    if process.returncode != 0:
+        # Handle errors if the simulation failed
+        raise HTTPException(status_code=500, detail=stderr)
     
-    process = Popen(command, stdout=PIPE, stderr=PIPE, text=True)
-    stdout, stderr = process.communicate()
+    return {"session_id": session_id}
+
+
+@app.post("/simulation/run_stateless/", tags=["Simulation"])
+async def simulation_run_stateless(project: cod3s.COD3SProject,
+                                   simu_params: cod3s.PycMCSimulationParam):
+    
+    session_id = str(uuid.uuid4())[:8]
+
+    process, stdout, stderr = \
+        run_simulation_in_subprocess(
+            project, simu_params, session_id)
 
     if process.returncode != 0:
         # Handle errors if the simulation failed
@@ -700,7 +733,7 @@ async def front_config_layout_update(data: dict = Body(...)):
     if not PROJECT_STATE["project"]:
         raise HTTPException(status_code=404, detail="Project invalid")
 
-    PROJECT_STATE["project"].update_front_cfg(data)
+    PROJECT_STATE["project"].front_cfg_layout_update(data)
     # Save the updated config
     PROJECT_STATE["project"].write_front_cfg()
 
@@ -753,33 +786,33 @@ if __name__ == "__main__":
         This block will only be executed if the script is run as the main program.
     """
 
-    import uvicorn
+    if not APP_CONFIG["state_less"]:
+        load_project(PROJECT_STATE, APP_CONFIG.get("project_filename"))
 
-   # Set up event handler and observer
-    event_handler = ProjectFileChangeHandler(
-        PROJECT_STATE,
-        APP_CONFIG["project_filename"],
-        logger)
-    observer = Observer()
+       # Set up event handler and observer
+        event_handler = ProjectFileChangeHandler(
+            PROJECT_STATE,
+            APP_CONFIG["project_filename"],
+            logger)
+        observer = Observer()
 
-    # Monitor the project files for changes
-    observer.schedule(event_handler,
-                      path=PROJECT_STATE["project"].system_filename,
-                      recursive=False)
-    observer.schedule(event_handler,
-                      path=PROJECT_STATE["project"].viz_specs_filename,
-                      recursive=False)
+        # Monitor the project files for changes
+        observer.schedule(event_handler,
+                          path=PROJECT_STATE["project"].system_filename,
+                          recursive=False)
+        observer.schedule(event_handler,
+                          path=PROJECT_STATE["project"].viz_specs_filename,
+                          recursive=False)
 
-    # Start the file system observer
-    observer.start()
-
-    try:
-        # Start the FastAPI server
-        uvicorn.run(
-            app,
-            host="0.0.0.0",
-            port=int(APP_CONFIG.get("port"))
-        )
-    finally:
+        # Start the file system observer
+        observer.start()
         observer.stop()
         observer.join()
+
+
+    # Start the FastAPI server
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(APP_CONFIG.get("port"))
+    )
