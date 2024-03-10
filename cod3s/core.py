@@ -98,7 +98,8 @@ class ObjCOD3S(pydantic.BaseModel):
     def update(self, **new_data):
         if len(new_data) > 0:
             for field, value in new_data.items():
-                setattr(self, field, value)
+                if field != "cls":
+                    setattr(self, field, value)
 
     def dict(self, **kwrds):
         return dict({"cls": self.__class__.__name__},

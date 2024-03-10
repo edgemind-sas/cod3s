@@ -458,15 +458,15 @@ class COD3SProject(ObjCOD3S):
         get_system_viz_updates: Gives the updates between the current and new visualization states of the system.
     """
 
-    project_name: str = pydantic.Field(..., description="Project name")
+    project_name: str = pydantic.Field(None, description="Project name")
 
     project_path: str = pydantic.Field(".", description="Project path")    
 
-    system_name: str = pydantic.Field(..., description="System name")
+    system_name: str = pydantic.Field(None, description="System name")
 
-    system_filename: str = pydantic.Field(..., description="System filename")
+    system_filename: str = pydantic.Field(None, description="System filename")
 
-    system_class_name: str = pydantic.Field(..., description="System class name")
+    system_class_name: str = pydantic.Field(None, description="System class name")
 
     system_params: dict = pydantic.Field({}, description="System params")
 
