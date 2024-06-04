@@ -1,5 +1,5 @@
 # ipdb is a debugger (pip install ipdb)
-import pkg_resources
+
 import pydantic
 import typing
 import pandas as pd
@@ -7,9 +7,6 @@ from ..core import ObjCOD3S
 from .automaton import PycAutomaton, PycState
 import Pycatshoo as pyc
 import copy
-installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
-if 'ipdb' in installed_pkg:
-    import ipdb  # noqa: F401
 
 
 class PycVariable(ObjCOD3S):
@@ -22,23 +19,18 @@ class PycVariable(ObjCOD3S):
 
     @classmethod
     def from_bkd(basecls, bkd):
-
         return basecls(
             id=bkd.name(),
             name=bkd.basename(),
             comp_name=bkd.parent().name(),
             value_init=bkd.initValue(),
             value_current=bkd.value(),
-            bkd=bkd)
+            bkd=bkd,
+        )
 
 
 class PycComponent(pyc.CComponent):
-
-    def __init__(self, name,
-                 label=None,
-                 description=None,
-                 metadata={}, **kwargs):
-
+    def __init__(self, name, label=None, description=None, metadata={}, **kwargs):
         super().__init__(name)
 
         self.label = name if label is None else label
@@ -49,10 +41,9 @@ class PycComponent(pyc.CComponent):
         # Register the component in comp dictionnary
         self.system().comp[name] = self
 
-
     @classmethod
     def get_subclasses(cls, recursive=True):
-        """ Enumerates all subclasses of a given class.
+        """Enumerates all subclasses of a given class.
 
         # Arguments
         cls: class. The class to enumerate subclasses for.
@@ -69,20 +60,17 @@ class PycComponent(pyc.CComponent):
 
     @classmethod
     def from_dict(basecls, **specs):
-        
-        cls_sub_dict = {
-            cls.__name__: cls for cls in basecls.get_subclasses()}
+        cls_sub_dict = {cls.__name__: cls for cls in basecls.get_subclasses()}
+        cls_sub_dict[basecls.__name__] = basecls
 
         clsname = specs.pop("cls")
         cls = cls_sub_dict.get(clsname)
         if cls is None:
-            raise ValueError(
-                f"{clsname} is not a subclass of {basecls.__name__}")
+            raise ValueError(f"{clsname} is not a subclass of {basecls.__name__}")
 
         return cls(**specs)
 
     def describe(self):
-
         # comp = basecls(name=bkd.name(), bkd=bkd)
         # comp.variables = \
         #     [PycVariable.from_bkd(elt) for elt in self.getVariables()]
@@ -94,14 +82,15 @@ class PycComponent(pyc.CComponent):
         return {
             "name": self.name(),
             "cls": self.className(),
-            "variables": [PycVariable.from_bkd(elt).dict(exclude={"bkd"})
-                          for elt in self.variables()],
-            "states": [PycState.from_bkd(elt).dict(exclude={"bkd"})
-                       for elt in self.states()],
+            "variables": [
+                PycVariable.from_bkd(elt).dict(exclude={"bkd"})
+                for elt in self.variables()
+            ],
+            "states": [
+                PycState.from_bkd(elt).dict(exclude={"bkd"}) for elt in self.states()
+            ],
         }
 
-
-    
     # @pydantic.validator('flows', pre=True)
     # def check_flows(cls, value, values, **kwargs):
     #     value = [PycFlowModel.from_dict(**v) for v in value]
@@ -111,6 +100,7 @@ class PycComponent(pyc.CComponent):
     # def check_automata(cls, value, values, **kwargs):
     #     value = [PycAutomaton(**v) for v in value]
     #     return value
+
 
 # class PycComponent(ObjCOD3S):
 
@@ -151,7 +141,7 @@ class PycComponent(pyc.CComponent):
 
 #         raise ValueError(f"Variable {name} is not part of component {self.name}")
 
-    
+
 #     @classmethod
 #     def from_bkd(basecls, bkd):
 
@@ -167,7 +157,7 @@ class PycComponent(pyc.CComponent):
 
 
 #     def dict(self, **kwrds):
-    
+
 
 #     def to_df(self):
 
@@ -190,10 +180,10 @@ class PycComponent(pyc.CComponent):
 #             )
 
 #             aut_dict_list.append(aut_dict)
-            
+
 #         df_aut = pd.DataFrame(aut_dict_list)
 #         df_aut["type"] = "ST"
-            
+
 #         df = pd.concat([df_var, df_aut],
 #                        axis=0, ignore_index=True)
 

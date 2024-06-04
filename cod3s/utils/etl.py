@@ -1,13 +1,7 @@
-import pkg_resources
-installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
-if 'ipdb' in installed_pkg:
-    import ipdb  # noqa: F401
-
-
 def update_dict_deep(target, updates, key_attr=None):
     """
     Recursively update a dictionary with another dictionary's values.
-    
+
     Args:
         target (dict): The target dictionary to be updated.
         updates (dict): The dictionary with updates to apply to target.
@@ -71,7 +65,7 @@ def update_dict_deep(target, updates, key_attr=None):
     """
     if not isinstance(target, dict) or not isinstance(updates, dict):
         return updates
-    
+
     for key, updates_value in updates.items():
         if key not in target:
             target[key] = updates_value
@@ -79,12 +73,16 @@ def update_dict_deep(target, updates, key_attr=None):
             if key_attr:
                 # Merge lists of dictionaries by key_attr
                 target_list = {d.get(key_attr): d for d in target[key] if key_attr in d}
-                updates_list = {d.get(key_attr): d for d in updates_value if key_attr in d}
+                updates_list = {
+                    d.get(key_attr): d for d in updates_value if key_attr in d
+                }
                 # Update existing items and append new items
                 for item in updates_value:
                     item_key = item.get(key_attr)
                     if item_key in target_list:
-                        update_dict_deep(target_list[item_key], updates_list[item_key], key_attr)
+                        update_dict_deep(
+                            target_list[item_key], updates_list[item_key], key_attr
+                        )
                     else:
                         target[key].append(item)
             else:
@@ -94,7 +92,7 @@ def update_dict_deep(target, updates, key_attr=None):
             update_dict_deep(target[key], updates_value, key_attr)
         else:
             target[key] = updates_value
-            
+
     return target
 
 
@@ -110,7 +108,7 @@ def dict_diff(dict_ref, dict_new):
 
     Returns:
         dict: A dictionary containing items from dict_new that are not in dict_ref.
-    
+
     Examples:
     >>> dict_ref = {'a': 1, 'b': {'x': 10, 'y': 20}, 'c': [1, 2, 3]}
     >>> dict_new = {'a': 1, 'b': {'x': 100, 'y': 20}, 'c': [1, 2, 3, 4]}
@@ -148,4 +146,5 @@ def dict_diff(dict_ref, dict_new):
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

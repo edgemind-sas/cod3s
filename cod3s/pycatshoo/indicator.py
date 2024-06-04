@@ -25,6 +25,7 @@ class IndicatorModel(ObjCOD3S):
         metadata (dict): Dictionary of metadata.
         bkd (typing.Any): Indicator backend handler.
     """
+
     name: str = pydantic.Field(None, description="Indicator short name")
     label: str = pydantic.Field(None, description="Indicator long name")
     description: str = pydantic.Field("", description="Indicator description")
@@ -41,7 +42,7 @@ class IndicatorModel(ObjCOD3S):
     @pydantic.model_validator(mode="after")
     def cls_validator(cls, obj):
         """
-        Validates the class after initialization.
+        Validate the class after initialization.
 
         Args:
             obj: The object to validate.
@@ -104,7 +105,7 @@ class PycIndicator(IndicatorModel):
 
     def set_indicator(self, system_bkd):
         """
-        Sets the indicator in the system backend.
+        Set the indicator in the system backend.
 
         Args:
             system_bkd: The system backend.
@@ -114,9 +115,7 @@ class PycIndicator(IndicatorModel):
         self.update_computation()
 
     def update_restitution(self):
-        """
-        Updates the restitution of the indicator.
-        """
+        """Update the restitution of the indicator."""
         restitution = 0
         for stat in self.stats:
             if stat == "mean":
@@ -131,9 +130,7 @@ class PycIndicator(IndicatorModel):
         self.bkd.setRestitutions(restitution)
 
     def update_computation(self):
-        """
-        Updates the computation of the indicator.
-        """
+        """Update the computation of the indicator."""
         if self.measure == "value":
             computation = pyc.TComputationType.simple
         elif self.measure == "sojourn-time":
@@ -151,7 +148,7 @@ class PycIndicator(IndicatorModel):
 
     def to_pyc_stats(self, stat_name):
         """
-        Converts the statistic name to Pycatshoo stats.
+        Convert the statistic name to Pycatshoo stats.
 
         Args:
             stat_name (str): The name of the statistic.
@@ -181,11 +178,12 @@ class PycFunIndicator(PycIndicator):
         create_bkd: Creates the indicator backend.
         update_values: Updates the values of the indicator.
     """
+
     fun: typing.Any = pydantic.Field(..., description="Indicator function")
 
     def create_bkd(self, system_bkd):
         """
-        Creates the indicator backend.
+        Create the indicator backend.
 
         Args:
             system_bkd: The system backend.
@@ -194,7 +192,7 @@ class PycFunIndicator(PycIndicator):
 
     def update_values(self, system_bkd=None):
         """
-        Updates the values of the indicator.
+        Update the values of the indicator.
 
         Args:
             system_bkd: The system backend.
@@ -245,6 +243,7 @@ class PycVarIndicator(PycIndicator):
         create_bkd: Creates the indicator backend.
         update_values: Updates the values of the indicator.
     """
+
     component: str = pydantic.Field(..., description="Component name")
     var: str = pydantic.Field(..., description="Variable name")
     operator: str = pydantic.Field("==", description="Operator on variable")
@@ -252,7 +251,7 @@ class PycVarIndicator(PycIndicator):
 
     def get_type(self):
         """
-        Returns the type of the indicator.
+        Return the type of the indicator.
 
         Returns:
             str: The type of the indicator.
@@ -261,7 +260,7 @@ class PycVarIndicator(PycIndicator):
 
     def get_comp_name(self):
         """
-        Returns the component name.
+        Return the component name.
 
         Returns:
             str: The component name.
@@ -270,7 +269,7 @@ class PycVarIndicator(PycIndicator):
 
     def get_attr_name(self):
         """
-        Returns the attribute name.
+        Return the attribute name.
 
         Returns:
             str: The attribute name.
@@ -279,17 +278,17 @@ class PycVarIndicator(PycIndicator):
 
     def get_expr(self):
         """
-        Returns the expression of the indicator.
+        Return the expression of the indicator.
 
         Returns:
             str: The expression of the indicator.
         """
         return f"{self.component}.{self.var}"
 
-    @pydantic.model_validator(mode="after")
+    @pydantic.model_validator(mode="before")
     def cls_validator(cls, obj):
         """
-        Validates the class after initialization.
+        Validate the class before initialization.
 
         Args:
             obj: The object to validate.
@@ -310,7 +309,7 @@ class PycVarIndicator(PycIndicator):
 
     def create_bkd(self, system_bkd):
         """
-        Creates the indicator backend.
+        Create the indicator backend.
 
         Args:
             system_bkd: The system backend.

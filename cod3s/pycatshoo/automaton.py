@@ -1,12 +1,7 @@
-import pkg_resources
 import pydantic
 import typing
 import Pycatshoo as pyc
 from ..core import ObjCOD3S
-
-installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
-if "ipdb" in installed_pkg:
-    import ipdb  # noqa: F401
 
 
 class StateModel(ObjCOD3S):
@@ -58,7 +53,7 @@ class TransitionModel(ObjCOD3S):
     end_time: float = pydantic.Field(None, description="Transition end time")
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
-    @pydantic.validator("occ_law", pre=True)
+    @pydantic.field_validator("occ_law", mode="before")
     def check_occ_law(cls, value, values, **kwargs):
         if not (isinstance(value, OccurrenceDistributionModel)):
             clsname = value.get("cls")
@@ -83,7 +78,7 @@ class AutomatonModel(ObjCOD3S):
     )
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
-    @pydantic.validator("states", pre=True)
+    @pydantic.field_validator("states", mode="before")
     def check_states(cls, value, values, **kwargs):
         states_new = []
         for state in value:
@@ -269,7 +264,7 @@ class PycAutomaton(AutomatonModel):
     id: str = pydantic.Field(None, description="State id")
     comp_name: str = pydantic.Field(None, description="Parent component name")
 
-    @pydantic.validator("transitions", pre=True)
+    @pydantic.field_validator("transitions", mode="before")
     def check_transitions(cls, value, values, **kwargs):
         value = [PycTransition(**v) for v in value]
         return value
