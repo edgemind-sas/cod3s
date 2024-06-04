@@ -30,7 +30,7 @@ class IndicatorModel(ObjCOD3S):
     bkd: typing.Any = pydantic.Field(None, description="Indicator backend handler")
 
 
-    @pydantic.model_validator()
+    @pydantic.model_validator(mode='after')
     def cls_validator(cls, obj):
         if obj.label is None:
             obj.label = obj.name
