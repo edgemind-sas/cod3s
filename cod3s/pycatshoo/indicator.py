@@ -154,7 +154,7 @@ class PycVarIndicator(PycIndicator):
         return f"{self.component}.{self.var}"
 
 
-    @pydantic.root_validator()
+    @pydantic.model_validator(mode='after', skip_on_failure=True)
     def cls_validator(cls, obj):
 
         if obj.get('name') is None:
