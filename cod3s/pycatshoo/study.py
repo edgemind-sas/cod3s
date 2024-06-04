@@ -14,22 +14,42 @@ if 'ipdb' in installed_pkg:
 
 
 class PycMCSimulationParam(MCSimulationParam):
-    pass
+    """
+    A class representing Monte Carlo Simulation parameters for Pycatshoo.
+    """
 
 
 class PycStudy(StudyModel):
 
+    """
+    A class representing a study in Pycatshoo.
+
+    Attributes:
+        system_model (PycSystem): The system model.
+        simu_params (PycMCSimulationParam): The simulation parameters.
+        indicators (typing.List[PycVarIndicator]): The list of indicators.
+    """
+
     system_model: PycSystem = pydantic.Field(
-        None, description="System model")
+        None, description="System model"
+    )
 
     simu_params: PycMCSimulationParam = pydantic.Field(
-        None, description="Simulator parametters")
+        None, description="Simulator parameters"
+    )
 
     indicators: typing.List[PycVarIndicator] = pydantic.Field(
-        [], description="List of indicators")
+        [], description="List of indicators"
+    )
 
     def prepare_simu(self, **kwargs):
 
+        """
+        Prepare the simulation by setting up the system model and indicators.
+
+        Args:
+            **kwargs: Additional keyword arguments.
+        """
         self.run_before_hook()
 
         # Set instants
