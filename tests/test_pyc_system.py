@@ -1,7 +1,7 @@
 import pytest
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def pyc_system():
     return PycSystem(name="TestSystem")
 
