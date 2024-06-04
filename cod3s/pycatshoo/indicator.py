@@ -30,13 +30,13 @@ class IndicatorModel(ObjCOD3S):
     bkd: typing.Any = pydantic.Field(None, description="Indicator backend handler")
 
 
-    @pydantic.root_validator()
+    @pydantic.model_validator()
     def cls_validator(cls, obj):
-        if obj.get('label') is None:
-            obj['label'] = obj['name']
+        if obj.label is None:
+            obj.label = obj.name
 
-        if obj.get('description') is None:
-            obj['description'] = obj['label']
+        if obj.description is None:
+            obj.description = obj.label
 
         return obj
 
