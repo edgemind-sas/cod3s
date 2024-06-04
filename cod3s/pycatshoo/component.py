@@ -107,7 +107,7 @@ class PycComponent(pyc.CComponent):
     #     value = [PycFlowModel.from_dict(**v) for v in value]
     #     return value
 
-    # @pydantic.validator('automata', pre=True)
+    # @pydantic.field_validator('automata', mode='before')
     # def check_automata(cls, value, values, **kwargs):
     #     value = [PycAutomaton(**v) for v in value]
     #     return value
