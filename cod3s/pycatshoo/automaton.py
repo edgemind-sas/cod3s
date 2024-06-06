@@ -88,22 +88,22 @@ class AutomatonModel(ObjCOD3S):
 
     @pydantic.model_validator(mode="after")
     def check_consistency(cls, values):
-        states_name_list = [st.name for st in values.get("states", [])]
-        init_state = values.get("init_state")
+        states_name_list = [st.name for st in values.states]
+        init_state = values.init_state
 
-        if not (init_state is None) and not (init_state in states_name_list):
+        if (init_state is not None) and (init_state not in states_name_list):
             raise ValueError(
                 f"Init state '{init_state}' not in automaton states list {states_name_list}"
             )
 
-        for trans in values.get("transitions", []):
+        for trans in values.transitions:
             st_source = trans.source
-            if not (st_source in states_name_list):
+            if st_source not in states_name_list:
                 raise ValueError(
                     f"Transition '{trans.name}' source state '{st_source}' not in automaton states list {states_name_list}"
                 )
             st_target = trans.target
-            if not (st_target in states_name_list):
+            if st_target not in states_name_list:
                 raise ValueError(
                     f"Transition '{trans.name}' target state '{st_target}' not in automaton states list {states_name_list}"
                 )

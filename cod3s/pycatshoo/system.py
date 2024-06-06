@@ -181,7 +181,13 @@ class PycSystem(pyc.CSystem):
             )
 
     def indic_px_line(
-        self, x="instant", y="values", color="name", markers=True, layout={}, **px_conf
+        self,
+        x="instant",
+        y="values",
+        color="name",
+        markers=True,
+        layout={},
+        **px_conf,
     ):
         indic_df = self.indic_to_frame()
 
@@ -193,7 +199,6 @@ class PycSystem(pyc.CSystem):
         indic_sel_df = indic_df.loc[idx_stat_sel]
 
         fig = px.line(indic_sel_df, x=x, y=y, color=color, markers=markers, **px_conf)
-
         fig.update_layout(**layout)
 
         return fig
