@@ -50,10 +50,14 @@ setup(name='cod3s',
           "uvicorn==0.25.0",
           "PyYAML==6.0",
           "watchdog==3.0.0",
+          "motor==3.4.0", 
+          "dnspython==2.6.1",
+          "pymongo==4.6.3",
+          "passlib==1.7.4"
       ],
       zip_safe=False,
       scripts=[
           'bin/cod3s-project',
-          'bin/cod3s-simulate',
+          'bin/cod3s-simulate'
       ],
       )
