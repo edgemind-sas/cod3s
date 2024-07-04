@@ -141,6 +141,8 @@ class PycOccurrenceDistribution(OccurrenceDistributionModel):
             return DelayOccDistribution(time=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
         elif pyc_occ_law.name() == "exp":
             return ExpOccDistribution(rate=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
+        elif pyc_occ_law.name() == "inst":
+            return InstOccDistribution(rate=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
         else:
             raise ValueError(
                 f"Pycatshoo distribution {pyc_occ_law.name()} is not supported by COD3S"
@@ -171,6 +173,19 @@ class ExpOccDistribution(PycOccurrenceDistribution):
         return f"exp({self.rate})"
 
 
+class InstOccDistribution(PycOccurrenceDistribution):
+    rate: typing.Any = pydantic.Field(
+        0, description="Occurrence rate (could be a variable)"
+    )
+
+    def to_bkd(self, comp_bkd):
+        return pyc.IDistLaw.newLaw(comp_bkd, pyc.TLawType.expo, self.rate)
+
+    def __str__(self):
+        return f"exp({self.rate})"
+
+
+# TO BE IMPLEMENTED
 class UniformOccDistribution(PycOccurrenceDistribution):
     min: typing.Any = pydantic.Field(
         0, description="Occurrence min time (could be a variable)"
@@ -213,9 +228,9 @@ class PycTransition(TransitionModel):
             source=state_source_bkd.basename(),
             target=state_target_bkd.basename(),
             occ_law=occ_law,
-            end_time=trans_bkd.endTime()
-            if trans_bkd.endTime() < float("inf")
-            else None,
+            end_time=(
+                trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None
+            ),
             is_interruptible=trans_bkd.interruptible(),
             bkd=trans_bkd,
         )
