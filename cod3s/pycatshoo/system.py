@@ -267,6 +267,7 @@ class PycSystem(pyc.CSystem):
             # if trans["comp_name"] == "S":
             #     ipdb.set_trace()
             if trans.end_time is None:
+                trans.end_time = 0.0 
                 if self.currentTime() != end_time_bound:
                     trans_list_fireable.append(trans)
                     continue
