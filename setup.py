@@ -40,7 +40,7 @@ setup(
     platforms="ALL",
     python_requires=">=3.8",
     install_requires=[
-        "pandas==1.5.3",
+        "pandas==2.2.2",
         "pydantic==2.7.1",
         "xlsxwriter==3.0.9",
         "plotly==5.13.1",
