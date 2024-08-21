@@ -44,9 +44,9 @@ setup(
         "pydantic==2.7.1",
         "xlsxwriter==3.0.9",
         "plotly==5.13.1",
-        "lxml==4.9.2",
+        "lxml==5.3.0",
         "colored==1.4.4",
-        "PyYAML==6.0"
+        "PyYAML==6.0.2"
     ],
     zip_safe=False,
     scripts=[
