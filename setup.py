@@ -41,16 +41,12 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "pandas==1.5.3",
-        "numpy==1.24.2",
         "pydantic==2.7.1",
         "xlsxwriter==3.0.9",
         "plotly==5.13.1",
         "lxml==4.9.2",
         "colored==1.4.4",
-        "fastapi==0.111.0",
-        "uvicorn==0.25.0",
-        "PyYAML==6.0",
-        "watchdog==3.0.0",
+        "PyYAML==6.0"
     ],
     zip_safe=False,
     scripts=[
