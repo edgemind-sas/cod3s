@@ -9,7 +9,7 @@ exec(open("cod3s/version.py").read())
 setup(
     name="cod3s",
     version=__version__,
-    url="https://github.com/edgemind-sas/pyctools",
+    url="https://github.com/edgemind-sas/cod3s",
     author="Roland Donat",
     author_email="roland.donat@gmail.com, roland.donat@edgemind.net",
     maintainer="Roland Donat",
@@ -38,7 +38,7 @@ setup(
     description="COmplexe Dynamic Stochastic System Simulation librairy",
     license="MIT",
     platforms="ALL",
-    python_requires=">=3.8",
+    python_requires=">=3.6,<3.11",
     install_requires=[
         "pandas==2.2.2",
         "pydantic==2.7.1",
@@ -46,11 +46,7 @@ setup(
         "plotly==5.13.1",
         "lxml==5.3.0",
         "colored==1.4.4",
-        "PyYAML==6.0.2"
+        "PyYAML==6.0.2",
     ],
     zip_safe=False,
-    scripts=[
-        "bin/cod3s-project",
-        "bin/cod3s-simulate",
-    ],
 )
