@@ -1,4 +1,4 @@
-<PY_PARAM NAME="system" TRACE="2" RES_FILE="system_results.xml">
+<PY_PARAM NAME="system" TRACE="2">
 
 	<!-- Simulation parameters -->
 	<!-- <TRACE_TR NAME="." LEVEL="1"/> -->

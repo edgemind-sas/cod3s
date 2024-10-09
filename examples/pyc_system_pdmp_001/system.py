@@ -209,9 +209,9 @@ class Tank(ObjFlow):
 
         else:
 
-            if not self.is_empty():
-                iflow_demand = self.compute_iflow_demand()
-                self.v_flow_out.setValue(iflow_demand)
+            # if not self.is_empty():
+            #     iflow_demand = self.compute_iflow_demand()
+            #     self.v_flow_out.setValue(iflow_demand)
 
             self.v_flow_demand_export.setValue(0)
 
@@ -219,10 +219,13 @@ class Tank(ObjFlow):
 
         if self.is_empty():
             self.v_flow_out.setValue(0)
-        elif self.is_full():
-            super().update_flow()
         else:
-            pass
+            iflow_demand = self.compute_iflow_demand()
+            self.v_flow_out.setValue(iflow_demand)
+
+        #     super().update_flow()
+        # else:
+        #     pass
 
 
 # TODO !!!
@@ -272,12 +275,16 @@ class Pump(ObjFlow):
         return f"{self.flow_type}_" if self.flow_type else ""
 
     def start_required(self):
-        return (self.r_cmd.cnctCount() > 0) and cod3s.compute_reference_mean(
-            self.r_cmd
-        ) > 0
+        if self.r_cmd.cnctCount() > 0:
+            return cod3s.compute_reference_mean(self.r_cmd) > 0
+        else:
+            return False
 
     def stop_required(self):
-        return (self.r_cmd.cnctCount() > 0) and (not self.start_required())
+        if self.r_cmd.cnctCount() > 0:
+            return cod3s.compute_reference_mean(self.r_cmd) < 0
+        else:
+            return False
 
     # def update_flow(self):
 
@@ -307,7 +314,7 @@ class Pump(ObjFlow):
 
             # self.v_flow_in.setDValue(self.p_flow_prod.dValue())
         else:
-            self.v_flow_demand_export.setDValue(iflow_demand)
+            self.v_flow_demand_export.setDValue(0)
             # self.v_flow_out.setDValue(0)
             # self.v_flow_in.setDValue(0)
 
@@ -354,7 +361,7 @@ class Automaton(cod3s.PycComponent):
         )
 
         self.r_signal_in = self.addReference("signal_in")
-        self.v_signal_out = self.addVariable("signal_out", Pyc.TVarType.t_int, -1)
+        self.v_signal_out = self.addVariable("signal_out", Pyc.TVarType.t_int, 0)
 
         # States and automata
         self.add_automaton(
@@ -421,9 +428,9 @@ class Automaton(cod3s.PycComponent):
         if self.logic_active():
             self.v_signal_out.setValue(1)
         elif self.logic_inactive():
-            self.v_signal_out.setValue(0)
-        else:
             self.v_signal_out.setValue(-1)
+        else:
+            self.v_signal_out.setValue(0)
 
 
 class MySystem(cod3s.PycSystem):
@@ -462,10 +469,15 @@ class MySystem(cod3s.PycSystem):
         self.add_component(
             name="AP1",
             cls="Automaton",
-            active_threshold="< 30",
-            inactive_threshold="> 0",
+            active_threshold="< 0",
+            inactive_threshold="> 30",
         )
-        self.add_component(name="AP2", cls="Automaton", active_threshold="> 5")
+        self.add_component(
+            name="AP2",
+            cls="Automaton",
+            active_threshold="> 20",
+            inactive_threshold="< 5",
+        )
 
         # self.T1 = Tank("T1", capacity=500, content_ini=450)
         # self.P1 = Pump("P1")
@@ -573,14 +585,16 @@ if __name__ == "__main__":
     system.simulate(
         {
             "nb_runs": 1,
-            "schedule": [{"start": 0, "end": 24, "nvalues": 25}],
+            "schedule": [{"start": 0, "end": 56, "nvalues": 100}],
         }
     )
 
     # __import__("ipdb").set_trace()
 
     fig_indics = system.indic_px_line(
-        markers=True, title="System monitoring", facet_row="comp"
+        markers=True,
+        title="System monitoring",
+        facet_row="comp",
     )
 
     # Uncomment to save graphic on disk
