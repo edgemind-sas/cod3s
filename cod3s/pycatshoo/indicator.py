@@ -225,6 +225,119 @@ class PycFunIndicator(PycIndicator):
         self.values = pd.concat(data_list, axis=0, ignore_index=True)
 
 
+class PycAttrIndicator(PycIndicator):
+    """
+    A class representing a variable-based indicator in Pycatshoo.
+
+    Attributes:
+        component (str): Component name.
+        var (str): Variable name.
+        operator (str): Operator on variable.
+        value_test (typing.Any): Value to be checked.
+
+    Methods:
+        get_type: Returns the type of the indicator.
+        get_comp_name: Returns the component name.
+        get_attr_name: Returns the attribute name.
+        get_expr: Returns the expression of the indicator.
+        create_bkd: Creates the indicator backend.
+        update_values: Updates the values of the indicator.
+    """
+
+    component: str = pydantic.Field(..., description="Component name")
+    attr_name: str = pydantic.Field(..., description="Attribute name")
+    attr_type: str = pydantic.Field("VAR", description="Attribute type : VAR, ST, etc")
+    operator: str = pydantic.Field("==", description="Operator on variable")
+    value_test: typing.Any = pydantic.Field(None, description="Value to be checked")
+
+    def get_comp_name(self):
+        """
+        Return the component name.
+
+        Returns:
+            str: The component name.
+        """
+        return f"{self.component}"
+
+    def get_expr(self):
+        """
+        Return the expression of the indicator.
+
+        Returns:
+            str: The expression of the indicator.
+        """
+        return f"{self.component}.{self.attr_name}"
+
+    @pydantic.model_validator(mode="before")
+    def cls_validator(cls, obj):
+        """
+        Validate the class before initialization.
+
+        Args:
+            obj: The object to validate.
+
+        Returns:
+            The validated object.
+        """
+        if obj.get("name") is None:
+            obj["name"] = f"{obj['component']}.{obj['attr_name']}"
+
+        if obj.get("label") is None:
+            obj["label"] = obj["name"]
+
+        if obj.get("description") is None:
+            obj["description"] = obj["label"]
+
+        return obj
+
+    def create_bkd(self, system_bkd):
+        """
+        Create the indicator backend.
+
+        Args:
+            system_bkd: The system backend.
+        """
+        if self.value_test is None:
+            # if self.attr_type == "AUT":
+            self.bkd = system_bkd.addIndicator(
+                self.name, self.get_expr(), self.attr_type
+            )
+        else:
+            self.bkd = system_bkd.addIndicator(
+                self.name,
+                self.get_expr(),
+                self.attr_type,
+                self.operator,
+                self.value_test,
+            )
+
+    def update_values(self, system_bkd=None):
+        if not (self.instants) and system_bkd:
+            self.instants = list(system_bkd.instants())
+
+        data_list = []
+        for stat in self.stats:
+            data_core = {
+                "name": self.name,
+                "label": self.label,
+                "description": self.description,
+                "comp": self.get_comp_name(),
+                "attr": self.attr_name,
+                "operator": self.operator,
+                "value_test": self.value_test,
+                "type": self.attr_type,
+                "measure": self.measure,
+                "stat": stat,
+                "instant": self.instants,
+                "values": self.to_pyc_stats(stat)(),
+                "unit": self.unit,
+            }
+
+            data_list.append(pd.DataFrame(dict(data_core, **self.metadata)))
+
+        self.values = pd.concat(data_list, axis=0, ignore_index=True)
+
+
 class PycVarIndicator(PycIndicator):
     """
     A class representing a variable-based indicator in Pycatshoo.
@@ -247,7 +360,7 @@ class PycVarIndicator(PycIndicator):
     component: str = pydantic.Field(..., description="Component name")
     var: str = pydantic.Field(..., description="Variable name")
     operator: str = pydantic.Field("==", description="Operator on variable")
-    value_test: typing.Any = pydantic.Field(True, description="Value to be checked")
+    value_test: typing.Any = pydantic.Field(None, description="Value to be checked")
 
     def get_type(self):
         """
@@ -314,8 +427,131 @@ class PycVarIndicator(PycIndicator):
         Args:
             system_bkd: The system backend.
         """
+        if self.value_test is None:
+            self.bkd = system_bkd.addIndicator(self.name, self.get_expr(), "VAR")
+        else:
+            self.bkd = system_bkd.addIndicator(
+                self.name, self.get_expr(), "VAR", self.operator, self.value_test
+            )
+
+    def update_values(self, system_bkd=None):
+        if not (self.instants) and system_bkd:
+            self.instants = list(system_bkd.instants())
+
+        data_list = []
+        for stat in self.stats:
+            data_core = {
+                "name": self.name,
+                "label": self.label,
+                "description": self.description,
+                "comp": self.get_comp_name(),
+                "attr": self.get_attr_name(),
+                "operator": self.operator,
+                "value_test": self.value_test,
+                "type": self.get_type(),
+                "measure": self.measure,
+                "stat": stat,
+                "instant": self.instants,
+                "values": self.to_pyc_stats(stat)(),
+                "unit": self.unit,
+            }
+
+            data_list.append(pd.DataFrame(dict(data_core, **self.metadata)))
+
+        self.values = pd.concat(data_list, axis=0, ignore_index=True)
+
+
+class PycSTIndicator(PycIndicator):
+    """
+    A class representing a variable-based indicator in Pycatshoo.
+
+    Attributes:
+        component (str): Component name.
+        var (str): Variable name.
+        operator (str): Operator on variable.
+        value_test (typing.Any): Value to be checked.
+
+    Methods:
+        get_type: Returns the type of the indicator.
+        get_comp_name: Returns the component name.
+        get_attr_name: Returns the attribute name.
+        get_expr: Returns the expression of the indicator.
+        create_bkd: Creates the indicator backend.
+        update_values: Updates the values of the indicator.
+    """
+
+    component: str = pydantic.Field(..., description="Component name")
+    state: str = pydantic.Field(..., description="State name")
+    operator: str = pydantic.Field("==", description="Operator on state")
+    value_test: typing.Any = pydantic.Field(True, description="Value to be checked")
+
+    def get_type(self):
+        """
+        Return the type of the indicator.
+
+        Returns:
+            str: The type of the indicator.
+        """
+        return "ST"
+
+    def get_comp_name(self):
+        """
+        Return the component name.
+
+        Returns:
+            str: The component name.
+        """
+        return f"{self.component}"
+
+    def get_attr_name(self):
+        """
+        Return the attribute name.
+
+        Returns:
+            str: The attribute name.
+        """
+        return f"{self.state}"
+
+    def get_expr(self):
+        """
+        Return the expression of the indicator.
+
+        Returns:
+            str: The expression of the indicator.
+        """
+        return f"{self.component}.{self.state}"
+
+    @pydantic.model_validator(mode="before")
+    def cls_validator(cls, obj):
+        """
+        Validate the class before initialization.
+
+        Args:
+            obj: The object to validate.
+
+        Returns:
+            The validated object.
+        """
+        if obj.get("name") is None:
+            obj["name"] = f"{obj['component']}.{obj['state']}"
+
+        if obj.get("label") is None:
+            obj["label"] = obj["name"]
+
+        if obj.get("description") is None:
+            obj["description"] = obj["label"]
+
+        return obj
+
+    def create_bkd(self, system_bkd):
+        """
+        Create the indicator backend.
+
+        Args:
+            system_bkd: The system backend.
+        """
         self.bkd = system_bkd.addIndicator(
-            self.name, self.get_expr(), "VAR", self.operator, self.value_test
+            self.name, self.get_expr(), "ST", self.operator, self.value_test
         )
 
     def update_values(self, system_bkd=None):

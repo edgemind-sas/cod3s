@@ -33,7 +33,7 @@ class PycState(StateModel):
 
 
 class OccurrenceDistributionModel(ObjCOD3S):
-    # bkd: typing.Any = pydantic.Field(None, description="Backend handler")
+    bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
     @staticmethod
     def get_clsname(**specs):
@@ -43,30 +43,89 @@ class OccurrenceDistributionModel(ObjCOD3S):
         return clsname
 
 
+class StateProbModel(pydantic.BaseModel):
+    state: str = pydantic.Field(..., description="State name")
+    prob: float = pydantic.Field(..., description="State probability")
+
+
 class TransitionModel(ObjCOD3S):
     name: str = pydantic.Field(..., description="transition name")
     source: str = pydantic.Field(..., description="Source state name")
-    target: str = pydantic.Field(..., description="Target state name")
+    target: str | typing.List[StateProbModel] = pydantic.Field(
+        ..., description="Target state name"
+    )
     occ_law: OccurrenceDistributionModel = pydantic.Field(
-        ..., description="Occurrence distribution"
+        None, description="Occurrence distribution"
     )
     end_time: float = pydantic.Field(None, description="Transition end time")
+    condition: typing.Any = pydantic.Field(None, description="Transition condition")
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
-    @pydantic.field_validator("occ_law", mode="before")
-    def check_occ_law(cls, value, values, **kwargs):
-        if not (isinstance(value, OccurrenceDistributionModel)):
-            clsname = value.get("cls")
+    @staticmethod
+    def sanitize_occ_law(occ_law_specs):
+        if occ_law_specs is None:
+            return occ_law_specs
+        if not (isinstance(occ_law_specs, OccurrenceDistributionModel)):
+            clsname = occ_law_specs.get("cls")
             if clsname:
                 clsname = clsname.capitalize() + "OccDistribution"
-                value["cls"] = clsname
+                occ_law_specs["cls"] = clsname
             else:
                 raise AttributeError(
                     "Missing attribute 'cls' in OccurrenceDistributionModel"
                 )
 
-            value = OccurrenceDistributionModel.from_dict(value)
+            value = OccurrenceDistributionModel.from_dict(occ_law_specs)
         return value
+
+    @pydantic.model_validator(mode="before")
+    def check_model(cls, values, **kwargs):
+        target = values["target"]
+        if isinstance(target, str):
+            # This is a timed transition => Must check occ distribution
+            if values.get("occ_law") is not None:
+                values["occ_law"] = cls.sanitize_occ_law(values["occ_law"])
+        else:
+            # Case INST distribution
+            probs_tot_tmp = sum([st.get("prob", 0) for st in target])
+            states_no_prob = [st for st in target if "prob" not in st]
+            nb_states_no_prob = len(states_no_prob)
+            if nb_states_no_prob > 0:
+                probs_comp = (1 - probs_tot_tmp) / nb_states_no_prob
+                [st.setdefault("prob", probs_comp) for st in target]
+            else:
+                for st in target:
+                    st["prob"] /= probs_tot_tmp
+
+        return values
+
+
+# class TransitionTimeModel(TransitionModel):
+#     target: str = pydantic.Field(..., description="Target state name")
+#     occ_law: OccurrenceDistributionModel = pydantic.Field(
+#         ..., description="Occurrence distribution"
+#     )
+
+#     @pydantic.field_validator("occ_law", mode="before")
+#     def check_occ_law(cls, value, values, **kwargs):
+#         if not (isinstance(value, OccurrenceDistributionModel)):
+#             clsname = value.get("cls")
+#             if clsname:
+#                 clsname = clsname.capitalize() + "OccDistribution"
+#                 value["cls"] = clsname
+#             else:
+#                 raise AttributeError(
+#                     "Missing attribute 'cls' in OccurrenceDistributionModel"
+#                 )
+
+#             value = OccurrenceDistributionModel.from_dict(value)
+#         return value
+
+
+# class TransitionInstModel(TransitionModel):
+#     target: typing.List[StateProbModel] = pydantic.Field(
+#         ..., description="List of target states probability"
+#     )
 
 
 class AutomatonModel(ObjCOD3S):
@@ -103,10 +162,20 @@ class AutomatonModel(ObjCOD3S):
                     f"Transition '{trans.name}' source state '{st_source}' not in automaton states list {states_name_list}"
                 )
             st_target = trans.target
-            if st_target not in states_name_list:
-                raise ValueError(
-                    f"Transition '{trans.name}' target state '{st_target}' not in automaton states list {states_name_list}"
-                )
+
+            if isinstance(st_target, str):
+                # transition is a timed transition
+                if st_target not in states_name_list:
+                    raise ValueError(
+                        f"Transition '{trans.name}' target state '{st_target}' not in automaton states list {states_name_list}"
+                    )
+            else:
+                # transition is an inst transition
+                for st in st_target:
+                    if st.state not in states_name_list:
+                        raise ValueError(
+                            f"Transition '{trans.name}' (INST) target state '{st.state}' not in automaton states list {states_name_list}"
+                        )
 
         # pw1, pw2 = values.get('password1'), values.get('password2')
         # if pw1 is not None and pw2 is not None and pw1 != pw2:
@@ -142,7 +211,13 @@ class PycOccurrenceDistribution(OccurrenceDistributionModel):
         elif pyc_occ_law.name() == "exp":
             return ExpOccDistribution(rate=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
         elif pyc_occ_law.name() == "inst":
-            return InstOccDistribution(rate=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
+            if pyc_occ_law.nbParam >= 2:
+                probs = [
+                    pyc_occ_law.parameter(i) for i in range(pyc_occ_law.nbParam - 1)
+                ]
+            else:
+                probs = [1]
+            return InstOccDistribution(probs=probs, bkd=pyc_occ_law)
         else:
             raise ValueError(
                 f"Pycatshoo distribution {pyc_occ_law.name()} is not supported by COD3S"
@@ -174,15 +249,18 @@ class ExpOccDistribution(PycOccurrenceDistribution):
 
 
 class InstOccDistribution(PycOccurrenceDistribution):
-    rate: typing.Any = pydantic.Field(
-        0, description="Occurrence rate (could be a variable)"
+    probs: typing.List[typing.Any] = pydantic.Field(
+        [], description="Occurrence probabilité (could be a variable)"
     )
 
     def to_bkd(self, comp_bkd):
-        return pyc.IDistLaw.newLaw(comp_bkd, pyc.TLawType.expo, self.rate)
+        law = pyc.IDistLaw.newLaw(comp_bkd, pyc.TLawType.inst, 1)
+        if len(self.probs) >= 2:
+            [law.setParameter(pi, i) for i, pi in enumerate(self.probs[:-1])]
+        return law
 
     def __str__(self):
-        return f"exp({self.rate})"
+        return f"inst({self.probs})"
 
 
 # TO BE IMPLEMENTED
@@ -215,23 +293,31 @@ class PycTransition(TransitionModel):
     @classmethod
     def from_bkd(basecls, trans_bkd):
         trans_name = trans_bkd.basename()
+        comp_name = trans_bkd.parent().name()
+        comp_classname = trans_bkd.parent().className()
+        is_interruptible = trans_bkd.interruptible()
+        end_time = trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None
 
         state_source_bkd = trans_bkd.startState()
-        state_target_bkd = trans_bkd.target(0)
+        source = state_source_bkd.basename()
 
         occ_law = PycOccurrenceDistribution.from_bkd(trans_bkd.distLaw())
 
+        if isinstance(occ_law, InstOccDistribution):
+            __import__("ipdb").set_trace()
+        else:
+            state_target_bkd = trans_bkd.target(0)
+            target = state_target_bkd.basename()
+
         return basecls(
             name=trans_name,
-            comp_name=trans_bkd.parent().name(),
-            comp_classname=trans_bkd.parent().className(),
-            source=state_source_bkd.basename(),
-            target=state_target_bkd.basename(),
+            comp_name=comp_name,
+            comp_classname=comp_classname,
+            source=source,
+            target=target,
             occ_law=occ_law,
-            end_time=(
-                trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None
-            ),
-            is_interruptible=trans_bkd.interruptible(),
+            end_time=end_time,
+            is_interruptible=is_interruptible,
             bkd=trans_bkd,
         )
 
@@ -239,10 +325,26 @@ class PycTransition(TransitionModel):
         state_source = automaton.get_state_by_name(self.source)
         self.bkd = state_source.bkd.addTransition(self.name)
         self.bkd.setInterruptible(self.is_interruptible)
+        if self.condition is not None:
+            self.bkd.setCondition(self.condition)
 
-        state_target = automaton.get_state_by_name(self.target)
-        self.bkd.addTarget(state_target.bkd)
-        self.bkd.setDistLaw(self.occ_law.to_bkd(self.bkd.parent()))
+        if isinstance(self.target, str):
+            # The transition is a timed transition
+            state_target = automaton.get_state_by_name(self.target)
+            self.bkd.addTarget(state_target.bkd)
+            if self.occ_law is not None:
+                self.bkd.setDistLaw(self.occ_law.to_bkd(self.bkd.parent()))
+        else:
+            # The transition is an INST transition
+            # NOT WORKING: PARAMETERS DOES NOT SEEMED TO BE ASSIGNED...
+            probs = []
+            for st in self.target:
+                state_target = automaton.get_state_by_name(st.state)
+                self.bkd.addTarget(state_target.bkd)
+                probs.append(st.prob)
+
+            occ_law = InstOccDistribution(probs=probs)
+            self.bkd.setDistLaw(occ_law.to_bkd(self.bkd.parent()))
 
     def dict(self, **kwrds):
         exclude_list = [
@@ -283,6 +385,15 @@ class PycAutomaton(AutomatonModel):
     def check_transitions(cls, value, values, **kwargs):
         value = [PycTransition(**v) for v in value]
         return value
+
+    def set_init_state(self, state):
+
+        if isinstance(state, str):
+            st = self.get_state_by_name(state).bkd
+        else:
+            st = state.bkd
+
+        self.bkd.setInitState(st)
 
     def update_bkd(self, comp):
         self.bkd = comp.addAutomaton(self.name)

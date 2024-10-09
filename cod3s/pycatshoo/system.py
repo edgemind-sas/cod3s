@@ -7,10 +7,16 @@ import typing
 import itertools
 import warnings
 import re
-from .indicator import PycVarIndicator, PycFunIndicator
+from .indicator import (
+    PycAttrIndicator,
+    PycVarIndicator,
+    PycSTIndicator,
+    PycFunIndicator,
+)
 from .automaton import PycTransition
 from .sequence import PycSequence
 from .component import PycComponent
+from .common import get_pyc_attr_list_name
 
 
 class InstantLinearRange(pydantic.BaseModel):
@@ -75,6 +81,52 @@ class PycSystem(pyc.CSystem):
     def get_components(self, pattern="^.*$"):
         return {k: v for k, v in self.comp.items() if re.search(f"^({pattern})$", k)}
 
+    def add_indicator(self, **indic_specs):
+        stats = indic_specs.pop("stats", ["mean"])
+        comp_pat = indic_specs.pop("component", ".*")
+        attr_name_pat = indic_specs.pop("attr_name", ".*")
+        attr_type = indic_specs.pop("attr_type")
+        indic_name = indic_specs.pop("name", "")
+        measure_name = indic_specs.get("measure", "")
+
+        pyc_attr_list_name = get_pyc_attr_list_name(attr_type)
+
+        indic_added_list = []
+        for comp in self.components("#" + comp_pat, "#.*"):
+
+            attr_list = [
+                attr.basename()
+                for attr in getattr(comp, pyc_attr_list_name)()
+                if re.search(attr_name_pat, attr.basename())
+            ]
+
+            for attr in attr_list:
+                if indic_name:
+                    indic_name_cur = f"{indic_name}_{attr}"
+                else:
+                    indic_name_cur = f"{comp.basename()}_{attr}"
+
+                if measure_name:
+                    indic_name_cur += f"_{measure_name}"
+
+                indic = PycAttrIndicator(
+                    name=indic_name_cur,
+                    component=comp.basename(),
+                    attr_type=attr_type,
+                    attr_name=attr,
+                    stats=stats,
+                    **indic_specs,
+                )
+
+                # if "MES" in comp_pat:
+                #     ipdb.set_trace()
+
+                self.indicators[indic_name_cur] = indic
+
+                indic_added_list.append(indic)
+
+        return indic_added_list
+
     def add_indicator_var(self, **indic_specs):
         stats = indic_specs.pop("stats", ["mean"])
         comp_pat = indic_specs.pop("component", ".*")
@@ -103,6 +155,47 @@ class PycSystem(pyc.CSystem):
                     name=indic_name_cur,
                     component=comp.basename(),
                     var=var,
+                    stats=stats,
+                    **indic_specs,
+                )
+
+                # if "MES" in comp_pat:
+                #     ipdb.set_trace()
+
+                self.indicators[indic_name_cur] = indic
+
+                indic_added_list.append(indic)
+
+        return indic_added_list
+
+    def add_indicator_state(self, **indic_specs):
+        stats = indic_specs.pop("stats", ["mean"])
+        comp_pat = indic_specs.pop("component", ".*")
+        state_pat = indic_specs.pop("state", ".*")
+        indic_name = indic_specs.pop("name", "")
+        measure_name = indic_specs.get("measure", "")
+
+        indic_added_list = []
+        for comp in self.components("#" + comp_pat, "#.*"):
+            state_list = [
+                state.basename()
+                for state in comp.states()
+                if re.search(state_pat, state.basename())
+            ]
+
+            for state in state_list:
+                if indic_name:
+                    indic_name_cur = f"{indic_name}_{state}"
+                else:
+                    indic_name_cur = f"{comp.basename()}_{state}"
+
+                if measure_name:
+                    indic_name_cur += f"_{measure_name}"
+
+                indic = PycSTIndicator(
+                    name=indic_name_cur,
+                    component=comp.basename(),
+                    state=state,
                     stats=stats,
                     **indic_specs,
                 )
@@ -253,7 +346,7 @@ class PycSystem(pyc.CSystem):
             # if trans["comp_name"] == "S":
             #     ipdb.set_trace()
             if trans.end_time is None:
-                trans.end_time = 0.0 
+                trans.end_time = 0.0
                 if self.currentTime() != end_time_bound:
                     trans_list_fireable.append(trans)
                     continue

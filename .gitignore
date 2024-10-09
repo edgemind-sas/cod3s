@@ -163,3 +163,4 @@ cython_debug/
 # Archive
 archive/
 Pipfile.lock
+docs

@@ -1,0 +1,11 @@
+<PY_PARAM NAME="system" TRACE="2" RES_FILE="system_results.xml">
+
+	<!-- Simulation parameters -->
+	<!-- <TRACE_TR NAME="." LEVEL="1"/> -->
+	<TRACE_VAR NAME="T1." LEVEL="2"/>
+	<TRACE_VAR NAME="P1." LEVEL="2"/>
+	<TRACE_VAR NAME="P2." LEVEL="2"/>
+	<TRACE_VAR NAME="S1." LEVEL="2"/>
+	<TRACE_AUT NAME="." LEVEL="1"/>
+	<!-- <TRACE_ST NAME="." LEVEL="1"/> -->
+</PY_PARAM>

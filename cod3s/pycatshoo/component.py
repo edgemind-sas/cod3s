@@ -36,6 +36,8 @@ class PycComponent(pyc.CComponent):
         self.label = name if label is None else label
         self.description = self.label if description is None else description
 
+        self.automata = {}
+
         self.metadata = copy.deepcopy(metadata)
 
         # Register the component in comp dictionnary
@@ -90,6 +92,32 @@ class PycComponent(pyc.CComponent):
                 PycState.from_bkd(elt).dict(exclude={"bkd"}) for elt in self.states()
             ],
         }
+
+    def add_automaton(self, **aut_specs):
+
+        aut = PycAutomaton(**aut_specs)
+        aut.update_bkd(self)
+
+        self.automata[aut.name] = aut
+
+        return aut
+
+    def add_automaton_bis(self, name, states=[], init_state=None):
+
+        aut = self.addAutomaton(name)
+        states_dict = {}
+        for idx, st_name in enumerate(states):
+            st = aut.addState(st_name, idx)
+            states_dict[st_name] = st
+
+        if len(states) > 0 and init_state is None:
+            aut.setInitState(states_dict[states[0]])
+        else:
+            aut.setInitState(states_dict[init_state])
+
+        self.automata[name] = {"obj": aut, "states": states_dict}
+
+        return aut
 
     # @pydantic.validator('flows', pre=True)
     # def check_flows(cls, value, values, **kwargs):
