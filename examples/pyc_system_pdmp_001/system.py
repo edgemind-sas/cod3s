@@ -214,6 +214,8 @@ class Tank(ObjFlow):
             #     self.v_flow_out.setValue(iflow_demand)
 
             self.v_flow_demand_export.setValue(0)
+            iflow_demand = self.compute_iflow_demand()
+            self.v_flow_out.setValue(iflow_demand)
 
     def update_flow(self):
 
@@ -230,13 +232,16 @@ class Tank(ObjFlow):
 
 # TODO !!!
 class Pump(ObjFlow):
-    def __init__(self, name, flow_prod=1, init_state="start", **kwargs):
+    def __init__(self, name, flow_nominal=1, init_state="start", **kwargs):
         super().__init__(name, **kwargs)
 
         # self.flow_type = flow_type
+        self.p_flow_nominal = self.addVariable(
+            "flow_nominal", Pyc.TVarType.t_double, flow_nominal
+        )
 
         self.v_flow_prod = self.addVariable(
-            "flow_prod", Pyc.TVarType.t_double, flow_prod
+            "flow_prod", Pyc.TVarType.t_double, flow_nominal
         )
         # self.v_flow_out = self.addVariable("flow_out", Pyc.TVarType.t_double, 0.0)
         # self.v_flow_in = self.addVariable("flow_in", Pyc.TVarType.t_double, 0.0)
@@ -288,25 +293,18 @@ class Pump(ObjFlow):
 
     # def update_flow(self):
 
-    #     total_iflow = self.r_flow_in.sumValue(0)
-
-    #     if (self.flow_in_max is not None) and (total_iflow > self.flow_in_max):
-    #         total_iflow = self.flow_in_max
-
-    #     if (self.flow_out_max is not None) and (total_iflow > self.flow_out_max):
-    #         total_iflow = self.flow_out_max
-
-    #     if total_iflow > self.v_flow_prod:
-    #         total_iflow = self.flow_out_max
-
-    #     self.v_flow_out.setValue(total_iflow)
+    #     if self.automata["operation"].get_active_state().name == "start":
+    #         super().update_flow()
+    #     else:
+    #         self.v_flow_prod.setValue(0)
 
     def update_flow_demand(self):
 
         iflow_demand = self.compute_iflow_demand()
 
         if self.automata["operation"].get_active_state().name == "start":
-            flow_prod = self.v_flow_prod.dValue()
+            self.v_flow_prod.setValue(self.p_flow_nominal.value())
+            flow_prod = self.v_flow_prod.value()
             if iflow_demand > 0 and iflow_demand < flow_prod:
                 self.v_flow_demand_export.setDValue(iflow_demand)
             else:
@@ -315,6 +313,7 @@ class Pump(ObjFlow):
             # self.v_flow_in.setDValue(self.p_flow_prod.dValue())
         else:
             self.v_flow_demand_export.setDValue(0)
+            self.v_flow_out.setDValue(0)
             # self.v_flow_out.setDValue(0)
             # self.v_flow_in.setDValue(0)
 
@@ -404,25 +403,19 @@ class Automaton(cod3s.PycComponent):
 
     def logic_active(self):
         if self.active_threshold is None:
-            if self.inactive_threshold is not None:
-                return not self.logic_inactive()
-            else:
-                return False
-
-        return self.active_threshold_operator(
-            cod3s.compute_reference_mean(self.r_signal_in), self.active_threshold
-        )
+            return False
+        else:
+            return self.active_threshold_operator(
+                cod3s.compute_reference_mean(self.r_signal_in), self.active_threshold
+            )
 
     def logic_inactive(self):
         if self.inactive_threshold is None:
-            if self.active_threshold is not None:
-                return not self.logic_active()
-            else:
-                return False
-
-        return self.inactive_threshold_operator(
-            cod3s.compute_reference_mean(self.r_signal_in), self.inactive_threshold
-        )
+            return False
+        else:
+            return self.inactive_threshold_operator(
+                cod3s.compute_reference_mean(self.r_signal_in), self.inactive_threshold
+            )
 
     def compute_signal_out(self):
         if self.logic_active():
@@ -449,7 +442,7 @@ class MySystem(cod3s.PycSystem):
             cls="Source",
         )
 
-        self.add_component(name="P1", cls="Pump", flow_prod=3)
+        self.add_component(name="P1", cls="Pump", flow_nominal=3)
 
         self.add_component(
             name="T1",
@@ -458,7 +451,7 @@ class MySystem(cod3s.PycSystem):
             content_ini=15,
         )
 
-        self.add_component(name="P2", cls="Pump", flow_prod=2)
+        self.add_component(name="P2", cls="Pump", flow_nominal=2)
 
         self.add_component(
             name="S2",
@@ -585,7 +578,7 @@ if __name__ == "__main__":
     system.simulate(
         {
             "nb_runs": 1,
-            "schedule": [{"start": 0, "end": 56, "nvalues": 100}],
+            "schedule": [{"start": 0, "end": 30, "nvalues": 100}],
         }
     )
 
