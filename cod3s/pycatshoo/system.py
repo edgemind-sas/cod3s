@@ -38,7 +38,9 @@ class MCSimulationParam(pydantic.BaseModel):
     schedule: typing.List[typing.Union[InstantLinearRange, float]] = pydantic.Field(
         [100], description="Measure instant"
     )
-    time_unit: str = pydantic.Field(None, description="Simulation time unit")
+    time_unit: typing.Optional[str] = pydantic.Field(
+        None, description="Simulation time unit"
+    )
     seed: typing.Any = pydantic.Field(None, description="Seed of the simulator")
 
     def get_instants_list(self):
