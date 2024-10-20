@@ -129,6 +129,7 @@ class PycSystem(pyc.CSystem):
 
         return indic_added_list
 
+    
     def add_indicator_var(self, **indic_specs):
         stats = indic_specs.pop("stats", ["mean"])
         comp_pat = indic_specs.pop("component", ".*")

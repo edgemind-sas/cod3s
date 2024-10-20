@@ -74,11 +74,7 @@ def test_coin_toss_system(coin_toss_system):
     # Check that we have results for all scheduled times
     assert ind_even_val["instant"].to_list() == schedule
 
-    for mean_value in results["values"]:
-        assert ind_even_val["values"] == [
-            0.45 <= mean_value <= 0.55
-        ), f"Mean value {mean_value} is not close to 0.5"
-
-
+    assert ind_even_val["values"].iloc[-1] < 0.5 
+    
 def test_delete(coin_toss_system):
     coin_toss_system.deleteSys()

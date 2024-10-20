@@ -1,5 +1,6 @@
 import Pycatshoo as pyc
 import operator
+import re
 
 
 def get_pyc_type(var_type):
@@ -62,3 +63,66 @@ def compute_reference_mean(var_ref, default_value=0):
     # Compute the mean
     mean_value = total_value / count if count > 0 else total_value
     return mean_value
+
+
+def parse_quantile(quantile_string, return_pct=False):
+    """
+    Parse a string in the form 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)' and return a list of float values [q1, q2, ..., qn].
+
+    Args:
+        quantile_string (str): A string in the format 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)' where q1, q2, ..., qn are float values.
+        return_pct (bool, optional): If True, return percentiles instead of quantiles. Defaults to False.
+
+    Returns:
+        list: A list of float values extracted from the input string. If return_pct is True, values are multiplied by 100.
+
+    Raises:
+        ValueError: If the input string format is invalid or if any value can't be converted to float.
+
+    Examples:
+        >>> parse_quantile("qle(0.1, 0.5, 0.9)")
+        [0.1, 0.5, 0.9]
+
+        >>> parse_quantile("qgt(0.25, 0.75)")
+        [0.25, 0.75]
+
+        >>> parse_quantile("qle(0.1)")
+        [0.1]
+
+        >>> parse_quantile("qgt()")
+        []
+
+        >>> parse_quantile("qle(0.1, 0.2, 0.3, 0.4, 0.5)")
+        [0.1, 0.2, 0.3, 0.4, 0.5]
+
+        >>> parse_quantile("qle(0.1, 0.5, 0.9)", return_pct=True)
+        [10.0, 50.0, 90.0]
+
+        >>> parse_quantile("qgt(invalid)")
+        Traceback (most recent call last):
+            ...
+        ValueError: could not convert string to float: 'invalid'
+
+        >>> parse_quantile("invalid_format")
+        Traceback (most recent call last):
+            ...
+        ValueError: Invalid quantile string format. Expected 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)'
+    """
+    match = re.search(r'q(?:le|gt)\((.*?)\)', quantile_string)
+    
+    if not match:
+        raise ValueError("Invalid quantile string format. Expected 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)'")
+    
+    content = match.group(1).strip()
+    if content:
+        quantiles = [float(q.strip()) for q in content.split(',')]
+        if return_pct:
+            quantiles = [q * 100 for q in quantiles]
+    else:
+        quantiles = []
+    
+    return quantiles
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()

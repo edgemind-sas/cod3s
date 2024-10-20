@@ -4,7 +4,9 @@ import typing
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import re
 from ..core import ObjCOD3S
+from .common import parse_quantile
 
 PandasDataFrame = typing.TypeVar("pd.core.dataframe")
 
@@ -122,6 +124,23 @@ class PycIndicator(IndicatorModel):
                 restitution |= pyc.TIndicatorType.mean_values
             elif stat == "stddev":
                 restitution |= pyc.TIndicatorType.std_dev
+            elif stat.startswith("qle"):
+                restitution |= pyc.TIndicatorType.quantile_le
+                pct_list = parse_quantile(stat, return_pct=True)
+                self.bkd.setPctQuantileLeValue(pct_list[0])
+            elif re.match(r"P\d{1,2}$", stat) and 0 <= int(stat[1:]) <= 49:
+                restitution |= pyc.TIndicatorType.quantile_le
+                self.bkd.setPctQuantileLeValue(int(stat[1:]))
+            elif stat.startswith("qgt"):
+                restitution |= pyc.TIndicatorType.quantile_gt
+                pct_list = parse_quantile(stat, return_pct=True)
+                self.bkd.setPctQuantileGtValue(pct_list[0])
+            elif (re.match(r"P\d{1,3}$", stat) and 50 <= int(stat[1:]) <= 100):
+                restitution |= pyc.TIndicatorType.quantile_gt
+                self.bkd.setPctQuantileGtValue(100-int(stat[1:]))
+
+            elif stat == "all_values":
+                restitution |= pyc.TIndicatorType.all_values
             else:
                 raise ValueError(
                     f"Stat {stat} not supported for Pycatshoo indicator restitution"
@@ -163,6 +182,12 @@ class PycIndicator(IndicatorModel):
             return self.bkd.means
         elif stat_name == "stddev":
             return self.bkd.stdDevs
+        elif stat_name.startswith("qle") or (re.match(r"P\d{1,2}$", stat_name) and 0 <= int(stat_name[1:]) <= 49):
+            return self.bkd.quantilesLe
+        elif stat_name.startswith("qgt") or (re.match(r"P\d{1,3}$", stat_name) and 50 <= int(stat_name[1:]) <= 100):
+            return self.bkd.quantilesGt
+        elif stat_name == "all_values":
+            return self.bkd.values
         else:
             raise ValueError(f"Statistic {stat_name} not supported")
 
@@ -317,6 +342,11 @@ class PycAttrIndicator(PycIndicator):
 
         data_list = []
         for stat in self.stats:
+            if stat == "all_values":
+                for i, inst in enumerate(self.instants):
+                    values = pd.Series(self.to_pyc_stats(stat)(i))
+                    print(i, inst, values.quantile(0.5))
+                    raise ValueError("All values stat computation not implemented yet")
             data_core = {
                 "name": self.name,
                 "label": self.label,
