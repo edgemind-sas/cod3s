@@ -29,6 +29,7 @@ class IndicatorModel(ObjCOD3S):
     """
 
     name: str = pydantic.Field(None, description="Indicator short name")
+    name_pattern: str = pydantic.Field(None, description="Indicator naming pattern")
     label: str = pydantic.Field(None, description="Indicator long name")
     description: str = pydantic.Field("", description="Indicator description")
     unit: str = pydantic.Field("", description="Indicator unit")
@@ -135,9 +136,9 @@ class PycIndicator(IndicatorModel):
                 restitution |= pyc.TIndicatorType.quantile_gt
                 pct_list = parse_quantile(stat, return_pct=True)
                 self.bkd.setPctQuantileGtValue(pct_list[0])
-            elif (re.match(r"P\d{1,3}$", stat) and 50 <= int(stat[1:]) <= 100):
+            elif re.match(r"P\d{1,3}$", stat) and 50 <= int(stat[1:]) <= 100:
                 restitution |= pyc.TIndicatorType.quantile_gt
-                self.bkd.setPctQuantileGtValue(100-int(stat[1:]))
+                self.bkd.setPctQuantileGtValue(100 - int(stat[1:]))
 
             elif stat == "all_values":
                 restitution |= pyc.TIndicatorType.all_values
@@ -182,9 +183,13 @@ class PycIndicator(IndicatorModel):
             return self.bkd.means
         elif stat_name == "stddev":
             return self.bkd.stdDevs
-        elif stat_name.startswith("qle") or (re.match(r"P\d{1,2}$", stat_name) and 0 <= int(stat_name[1:]) <= 49):
+        elif stat_name.startswith("qle") or (
+            re.match(r"P\d{1,2}$", stat_name) and 0 <= int(stat_name[1:]) <= 49
+        ):
             return self.bkd.quantilesLe
-        elif stat_name.startswith("qgt") or (re.match(r"P\d{1,3}$", stat_name) and 50 <= int(stat_name[1:]) <= 100):
+        elif stat_name.startswith("qgt") or (
+            re.match(r"P\d{1,3}$", stat_name) and 50 <= int(stat_name[1:]) <= 100
+        ):
             return self.bkd.quantilesGt
         elif stat_name == "all_values":
             return self.bkd.values
@@ -304,8 +309,13 @@ class PycAttrIndicator(PycIndicator):
         Returns:
             The validated object.
         """
+        if obj.get("name_pattern") is None:
+            obj["name_pattern"] = "{component}_{attr_name}"
+            if obj["measure"]:
+                obj["name_pattern"] += "_{measure}"
+
         if obj.get("name") is None:
-            obj["name"] = f"{obj['component']}.{obj['attr_name']}"
+            obj["name"] = obj["name_pattern"].format(**obj)
 
         if obj.get("label") is None:
             obj["label"] = obj["name"]

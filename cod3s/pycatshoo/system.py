@@ -84,12 +84,15 @@ class PycSystem(pyc.CSystem):
         return {k: v for k, v in self.comp.items() if re.search(f"^({pattern})$", k)}
 
     def add_indicator(self, **indic_specs):
+
+        # indic_name = indic_specs.pop("name", None)
+        # indic_name_pattern = indic_specs.pop("name_pattern", None)
+
         stats = indic_specs.pop("stats", ["mean"])
         comp_pat = indic_specs.pop("component", ".*")
         attr_name_pat = indic_specs.pop("attr_name", ".*")
         attr_type = indic_specs.pop("attr_type")
-        indic_name = indic_specs.pop("name", "")
-        measure_name = indic_specs.get("measure", "")
+        # measure_name = indic_specs.get("measure", "")
 
         pyc_attr_list_name = get_pyc_attr_list_name(attr_type)
 
@@ -103,16 +106,18 @@ class PycSystem(pyc.CSystem):
             ]
 
             for attr in attr_list:
-                if indic_name:
-                    indic_name_cur = f"{indic_name}_{attr}"
-                else:
-                    indic_name_cur = f"{comp.basename()}_{attr}"
-
-                if measure_name:
-                    indic_name_cur += f"_{measure_name}"
+                # if indic_name:
+                #     indic_name_cur = f"{indic_name}_{attr}"
+                # else:
+                #     if indic_name_pattern:
+                #         if measure_name:
+                #             indic_name_pattern = "{component}_{attr_name}_{measure}"
+                #         else:
+                #             indic_name_pattern = "{component}_{attr_name}"
 
                 indic = PycAttrIndicator(
-                    name=indic_name_cur,
+                    # name=indic_name_cur,
+                    # name_pattern=indic_name_pattern,
                     component=comp.basename(),
                     attr_type=attr_type,
                     attr_name=attr,
@@ -123,13 +128,12 @@ class PycSystem(pyc.CSystem):
                 # if "MES" in comp_pat:
                 #     ipdb.set_trace()
 
-                self.indicators[indic_name_cur] = indic
+                self.indicators[indic.name] = indic
 
                 indic_added_list.append(indic)
 
         return indic_added_list
 
-    
     def add_indicator_var(self, **indic_specs):
         stats = indic_specs.pop("stats", ["mean"])
         comp_pat = indic_specs.pop("component", ".*")
