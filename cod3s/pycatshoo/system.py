@@ -88,7 +88,6 @@ class PycSystem(pyc.CSystem):
         # indic_name = indic_specs.pop("name", None)
         # indic_name_pattern = indic_specs.pop("name_pattern", None)
 
-        stats = indic_specs.pop("stats", ["mean"])
         comp_pat = indic_specs.pop("component", ".*")
         attr_name_pat = indic_specs.pop("attr_name", ".*")
         attr_type = indic_specs.pop("attr_type")
@@ -121,7 +120,6 @@ class PycSystem(pyc.CSystem):
                     component=comp.basename(),
                     attr_type=attr_type,
                     attr_name=attr,
-                    stats=stats,
                     **indic_specs,
                 )
 

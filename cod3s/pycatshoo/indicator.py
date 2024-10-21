@@ -311,7 +311,7 @@ class PycAttrIndicator(PycIndicator):
         """
         if obj.get("name_pattern") is None:
             obj["name_pattern"] = "{component}_{attr_name}"
-            if obj["measure"]:
+            if obj.get("measure"):
                 obj["name_pattern"] += "_{measure}"
 
         if obj.get("name") is None:
