@@ -57,7 +57,9 @@ class TransitionModel(ObjCOD3S):
     occ_law: OccurrenceDistributionModel = pydantic.Field(
         None, description="Occurrence distribution"
     )
-    end_time: float = pydantic.Field(None, description="Transition end time")
+    end_time: typing.Optional[float] = pydantic.Field(
+        None, description="Transition end time"
+    )
     condition: typing.Any = pydantic.Field(None, description="Transition condition")
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
@@ -65,6 +67,7 @@ class TransitionModel(ObjCOD3S):
     def sanitize_occ_law(occ_law_specs):
         if occ_law_specs is None:
             return occ_law_specs
+
         if not (isinstance(occ_law_specs, OccurrenceDistributionModel)):
             clsname = occ_law_specs.get("cls")
             if clsname:
@@ -75,8 +78,9 @@ class TransitionModel(ObjCOD3S):
                     "Missing attribute 'cls' in OccurrenceDistributionModel"
                 )
 
-            value = OccurrenceDistributionModel.from_dict(occ_law_specs)
-        return value
+            return OccurrenceDistributionModel.from_dict(occ_law_specs)
+        else:
+            return occ_law_specs
 
     @pydantic.model_validator(mode="before")
     def check_model(cls, values, **kwargs):
