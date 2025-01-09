@@ -97,5 +97,48 @@ class ObjCOD3S(pydantic.BaseModel):
                 if field != "cls":
                     setattr(self, field, value)
 
-    def dict(self, **kwrds):
-        return dict({"cls": self.__class__.__name__}, **super().dict(**kwrds))
+    def model_dump(self, **kwrds):
+        """Dumps the model to a dictionary with class information.
+
+        This method extends pydantic's model_dump by:
+        1. Adding a 'cls' key with the class name
+        2. Recursively converting nested Pydantic models and collections
+
+        Note: serialize_as_any=True is used only on the first super().model_dump() call
+        to handle potential type conflicts at the root level. Nested calls don't need
+        this flag as they're already properly typed through the parent's serialization.
+
+        Args:
+            **kwrds: Additional keyword arguments passed to pydantic's model_dump
+
+        Returns:
+            dict: A dictionary representation of the model with class information
+        """
+        base_dict = super().model_dump(serialize_as_any=True, **kwrds)
+        result = {"cls": self.__class__.__name__}
+
+        for key, value in base_dict.items():
+            if hasattr(value, "model_dump") and callable(value.model_dump):
+                result[key] = value.model_dump(**kwrds)
+            elif isinstance(value, list):
+                result[key] = [
+                    (
+                        item.model_dump(**kwrds)
+                        if hasattr(item, "model_dump") and callable(item.model_dump)
+                        else item
+                    )
+                    for item in value
+                ]
+            elif isinstance(value, dict):
+                result[key] = {
+                    k: (
+                        v.model_dump(**kwrds)
+                        if hasattr(v, "model_dump") and callable(v.model_dump)
+                        else v
+                    )
+                    for k, v in value.items()
+                }
+            else:
+                result[key] = value
+
+        return result

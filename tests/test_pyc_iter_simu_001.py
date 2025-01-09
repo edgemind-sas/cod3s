@@ -65,11 +65,12 @@ def test_system(the_system):
 
     assert len(transitions) == 1
 
-    for trans in transitions:
-        assert isinstance(trans, PycTransition)
+    assert (
+        str(transitions[0].model_dump())
+        == "{'cls': 'PycTransition', 'name': 'ok_nok', 'source': 'ok', 'target': 'nok', 'occ_law': {'cls': 'ExpOccDistribution', 'rate': 0.2}, 'end_time': 0.0, 'condition': None, 'comp_name': 'C', 'comp_classname': 'PycComponent', 'is_interruptible': False}"
+    )
 
 
-1
 # # Check results
 # assert "C_st_nok_sj_stdev" in the_system.indicators.keys()
 

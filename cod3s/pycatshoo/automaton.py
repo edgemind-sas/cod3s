@@ -42,6 +42,17 @@ class OccurrenceDistributionModel(ObjCOD3S):
 
         return clsname
 
+    def model_dump(self, **kwrds):
+        exclude_list = [
+            "bkd",
+        ]
+        if kwrds.get("exclude"):
+            [kwrds["exclude"].add(attr) for attr in exclude_list]
+        else:
+            kwrds["exclude"] = set(exclude_list)
+
+        return super().model_dump(**kwrds)
+
 
 class StateProbModel(pydantic.BaseModel):
     state: str = pydantic.Field(..., description="State name")
@@ -54,7 +65,7 @@ class TransitionModel(ObjCOD3S):
     target: str | typing.List[StateProbModel] = pydantic.Field(
         ..., description="Target state name"
     )
-    occ_law: OccurrenceDistributionModel = pydantic.Field(
+    occ_law: pydantic.SerializeAsAny[OccurrenceDistributionModel] = pydantic.Field(
         None, description="Occurrence distribution"
     )
     end_time: typing.Optional[float] = pydantic.Field(
@@ -136,7 +147,7 @@ class AutomatonModel(ObjCOD3S):
     name: str = pydantic.Field(..., description="Automaton name")
     states: typing.List[StateModel] = pydantic.Field([], description="State list")
     init_state: str = pydantic.Field(None, description="Init state")
-    transitions: typing.List[TransitionModel] = pydantic.Field(
+    transitions: typing.List[pydantic.SerializeAsAny[TransitionModel]] = pydantic.Field(
         [], description="Transition list"
     )
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
@@ -350,7 +361,7 @@ class PycTransition(TransitionModel):
             occ_law = InstOccDistribution(probs=probs)
             self.bkd.setDistLaw(occ_law.to_bkd(self.bkd.parent()))
 
-    def dict(self, **kwrds):
+    def model_dump(self, **kwrds):
         exclude_list = [
             "bkd",
         ]
@@ -359,7 +370,7 @@ class PycTransition(TransitionModel):
         else:
             kwrds["exclude"] = set(exclude_list)
 
-        return super().dict(**kwrds)
+        return super().model_dump(**kwrds)
 
     def __eq__(self, other):
         return (self.comp_name == other.comp_name) and (self.name == other.name)
