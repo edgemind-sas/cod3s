@@ -226,10 +226,8 @@ class PycOccurrenceDistribution(OccurrenceDistributionModel):
         elif pyc_occ_law.name() == "exp":
             return ExpOccDistribution(rate=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
         elif pyc_occ_law.name() == "inst":
-            if pyc_occ_law.nbParam >= 2:
-                probs = [
-                    pyc_occ_law.parameter(i) for i in range(pyc_occ_law.nbParam - 1)
-                ]
+            if pyc_occ_law.nbParam() >= 1:
+                probs = [pyc_occ_law.parameter(i) for i in range(pyc_occ_law.nbParam())]
             else:
                 probs = [1]
             return InstOccDistribution(probs=probs, bkd=pyc_occ_law)
@@ -319,7 +317,14 @@ class PycTransition(TransitionModel):
         occ_law = PycOccurrenceDistribution.from_bkd(trans_bkd.distLaw())
 
         if isinstance(occ_law, InstOccDistribution):
-            __import__("ipdb").set_trace()
+            target = []
+            i = 0
+            while tgt := trans_bkd.target(i):
+                tgt_spec = {"state": tgt.basename()}
+                if len(occ_law.probs) > i:
+                    tgt_spec.update({"prob": occ_law.probs[i]})
+                target.append(tgt_spec)
+                i += 1
         else:
             state_target_bkd = trans_bkd.target(0)
             target = state_target_bkd.basename()
