@@ -54,15 +54,19 @@ def the_system():
 
 
 def test_system(the_system):
+
+    assert the_system.get_simulation_mode() == "stop"
+
     # Run simulation
     the_system.isimu_start()
+
+    assert the_system.get_simulation_mode() == "interactive"
 
     # Ensure transitions are valid before proceeding
     transitions = the_system.isimu_fireable_transitions()
     the_system.isimu_set_transition(0, date=None, state_index=0)
 
     trans_fired = the_system.isimu_step_forward()
-
     assert len(trans_fired) == 1
 
     assert str(trans_fired[0].model_dump()) == str(
@@ -71,7 +75,7 @@ def test_system(the_system):
             "name": "toss",
             "source": "toss",
             "target": [{"state": "even", "prob": 0.6}, {"state": "odd", "prob": 0.4}],
-            "occ_law": {"cls": "InstOccDistribution**", "probs": [0.6]},
+            "occ_law": {"cls": "InstOccDistribution", "probs": [0.6]},
             "end_time": 0.0,
             "condition": None,
             "comp_name": "Coin",

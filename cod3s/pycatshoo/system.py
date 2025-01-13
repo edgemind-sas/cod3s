@@ -16,7 +16,7 @@ from .indicator import (
 from .automaton import PycTransition
 from .sequence import PycSequence
 from .component import PycComponent
-from .common import get_pyc_attr_list_name
+from .common import get_pyc_attr_list_name, get_pyc_simu_mode
 
 
 class InstantLinearRange(pydantic.BaseModel):
@@ -258,6 +258,9 @@ class PycSystem(pyc.CSystem):
             indic.update_values()
 
         # self.run_after_hook()
+
+    def get_simulation_mode(self):
+        return get_pyc_simu_mode(self.simuMode())
 
     def indic_metadata_names(self):
         metadata_df = pd.DataFrame(

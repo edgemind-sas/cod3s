@@ -14,6 +14,18 @@ def get_pyc_type(var_type):
         raise ValueError(f"Type {var_type} not supported by PyCATSHOO")
 
 
+def get_pyc_simu_mode(simu_mode):
+
+    if simu_mode == pyc.TSimuMode.sm_stopped:
+        return "stop"
+    elif simu_mode == pyc.TSimuMode.sm_standard:
+        return "standard"
+    elif simu_mode == pyc.TSimuMode.sm_interactive:
+        return "interactive"
+    else:
+        raise ValueError(f"Simu type {simu_mode} not supported for now")
+
+
 def get_pyc_attr_list_name(attr_type):
     if attr_type == "VAR":
         return "variables"
@@ -108,21 +120,25 @@ def parse_quantile(quantile_string, return_pct=False):
             ...
         ValueError: Invalid quantile string format. Expected 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)'
     """
-    match = re.search(r'q(?:le|gt)\((.*?)\)', quantile_string)
-    
+    match = re.search(r"q(?:le|gt)\((.*?)\)", quantile_string)
+
     if not match:
-        raise ValueError("Invalid quantile string format. Expected 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)'")
-    
+        raise ValueError(
+            "Invalid quantile string format. Expected 'qle(q1, q2, ..., qn)' or 'qgt(q1, q2, ..., qn)'"
+        )
+
     content = match.group(1).strip()
     if content:
-        quantiles = [float(q.strip()) for q in content.split(',')]
+        quantiles = [float(q.strip()) for q in content.split(",")]
         if return_pct:
             quantiles = [q * 100 for q in quantiles]
     else:
         quantiles = []
-    
+
     return quantiles
+
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()
