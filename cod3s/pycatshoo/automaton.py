@@ -35,9 +35,10 @@ class PycState(StateModel):
 class OccurrenceDistributionModel(ObjCOD3S):
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
+    # TODO: IS IT STILL USEFULL ?
     @staticmethod
     def get_clsname(**specs):
-        clsname = specs.pop("dist")
+        clsname = specs.pop("cls")
         clsname = clsname.capitalize() + "OccDistribution"
 
         return clsname
