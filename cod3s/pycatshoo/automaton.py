@@ -3,6 +3,12 @@ import typing
 import Pycatshoo as pyc
 from ..core import ObjCOD3S
 
+# ANSI color codes
+BLUE = "\033[94m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RESET = "\033[0m"
+
 
 class StateModel(ObjCOD3S):
     name: str = pydantic.Field(..., description="State name")
@@ -114,6 +120,58 @@ class TransitionModel(ObjCOD3S):
                     st["prob"] /= probs_tot_tmp
 
         return values
+
+    def __repr__(self):
+        """Returns a colorful string representation of the transition."""
+
+        # Basic transition info
+        result = f"{BLUE}{self.__class__.__name__}{RESET} '{self.name}': "
+
+        # Source state
+        result += f"{GREEN}{self.source}{RESET} → "
+
+        # Target state(s)
+        if isinstance(self.target, str):
+            result += f"{GREEN}{self.target}{RESET}"
+            if self.occ_law:
+                result += f" {YELLOW}[{self.occ_law}]{RESET}"
+
+        else:
+            probs = [f"{st.state}({st.prob:.2f})" for st in self.target]
+            result += f"{GREEN}[{' | '.join(probs)}]{RESET}"
+
+        # Optional end time
+        if self.end_time is not None:
+            result += f" {YELLOW}@ {self.end_time}{RESET}"
+
+        return result
+
+    def __str__(self):
+        """Returns a multi-line string representation of the transition."""
+        lines = [
+            f"{BLUE}{self.__class__.__name__}{RESET} '{self.name}'",
+            f"├─ From: {GREEN}{self.source}{RESET}",
+        ]
+
+        # Target state(s)
+        if isinstance(self.target, str):
+            lines.append(f"├─ To:   {GREEN}{self.target}{RESET}")
+            if self.occ_law:
+                lines.append(f"├─ Law:  {YELLOW}{self.occ_law}{RESET}")
+        else:
+            lines.append("├─ To:")
+            for st in self.target:
+                lines.append(
+                    f"│  ├─ {GREEN}{st.state}{RESET} ({YELLOW}{st.prob:.2f}{RESET})"
+                )
+
+        # Optional end time
+        if self.end_time is not None:
+            lines.append(f"└─ End:  {YELLOW}{self.end_time}{RESET}")
+        else:
+            lines[-1] = lines[-1].replace("├", "└")
+
+        return "\n".join(lines)
 
 
 # class TransitionTimeModel(TransitionModel):
