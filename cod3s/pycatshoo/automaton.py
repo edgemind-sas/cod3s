@@ -7,6 +7,7 @@ from ..core import ObjCOD3S
 BLUE = "\033[94m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
+WHITE_BOLD = "\033[1;37m"
 RESET = "\033[0m"
 
 
@@ -438,6 +439,68 @@ class PycTransition(TransitionModel):
 
     def __eq__(self, other):
         return (self.comp_name == other.comp_name) and (self.name == other.name)
+
+    def __repr__(self):
+        """Returns a colorful string representation of the transition."""
+        # Basic transition info with component name
+        result = f"{BLUE}{self.__class__.__name__}{RESET} {WHITE_BOLD}{self.comp_name}.{self.name}{RESET}: "
+
+        # Add condition if it exists
+        if self.condition is not None:
+            result += f"{YELLOW}[{self.condition}]{RESET} "
+
+        # Source state
+        result += f"{GREEN}{self.source}{RESET} → "
+
+        # Target state(s)
+        if isinstance(self.target, str):
+            result += f"{GREEN}{self.target}{RESET}"
+            if self.occ_law:
+                result += f" {YELLOW}[{self.occ_law}]{RESET}"
+            if self.is_interruptible:
+                result += f" {YELLOW}[I]{RESET}"
+        else:
+            probs = [f"{st.state}({st.prob:.2f})" for st in self.target]
+            result += f"{GREEN}[{' | '.join(probs)}]{RESET}"
+
+        # Optional end time
+        if self.end_time is not None:
+            result += f" {YELLOW}@ {self.end_time}{RESET}"
+
+        return result
+
+    def __str__(self):
+        """Returns a multi-line string representation of the transition."""
+        lines = [
+            f"{BLUE}{self.__class__.__name__}{RESET} {WHITE_BOLD}{self.comp_name}.{self.name}{RESET}",
+        ]
+
+        # Add condition if it exists
+        if self.condition is not None:
+            lines.append(f"├─ Condition: {YELLOW}{self.condition}{RESET}")
+
+        lines.append(f"├─ From: {GREEN}{self.source}{RESET}")
+
+        # Target state(s)
+        if isinstance(self.target, str):
+            lines.append(f"├─ To:   {GREEN}{self.target}{RESET}")
+            if self.occ_law:
+                lines.append(f"├─ Law:  {YELLOW}{self.occ_law}{RESET}")
+            lines.append(f"├─ Interruptible: {YELLOW}{self.is_interruptible}{RESET}")
+        else:
+            lines.append("├─ To:")
+            for st in self.target:
+                lines.append(
+                    f"│  ├─ {GREEN}{st.state}{RESET} ({YELLOW}{st.prob:.2f}{RESET})"
+                )
+
+        # Optional end time
+        if self.end_time is not None:
+            lines.append(f"└─ End:  {YELLOW}{self.end_time}{RESET}")
+        else:
+            lines[-1] = lines[-1].replace("├", "└")
+
+        return "\n".join(lines)
 
     # def to_dict(self):
 
