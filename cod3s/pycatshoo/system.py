@@ -19,6 +19,49 @@ from .component import PycComponent
 from .common import get_pyc_attr_list_name, get_pyc_simu_mode
 
 
+def transition_to_indexed_dict(transitions):
+    """Converts a list of transition objects to a list of dictionaries with indexed IDs.
+
+    Each transition object in the input list is converted to a dictionary. An index is
+    added to each dictionary representing the transition's ID. If a transition is None,
+    it is skipped. For transitions with multiple states (when occ_law == "inst"), each
+    state gets its own entry with a state_index.
+
+    Args:
+        transitions (list): A list of transition objects that have a model_dump() method.
+
+    Returns:
+        list of dict: A list of dictionaries, each containing:
+            - trans_id (int): The index of the transition in the original list
+            - state_index (int, optional): For multi-state transitions, the index of the state
+            - All other attributes from the transition object's model_dump()
+
+    Example:
+        >>> transition_to_indexed_dict([
+        ...     Transition(...target=[State1, State2]...),
+        ...     None,
+        ...     Transition(...target=SingleState...)
+        ... ])
+        [
+            {'trans_id': 0, 'state_index': 0, ...},
+            {'trans_id': 0, 'state_index': 1, ...},
+            {'trans_id': 2, ...}
+        ]
+    """
+    trans_list = []
+    for i, trans in enumerate(transitions):
+        if not trans:
+            continue
+        if isinstance(trans.target, list):
+            # case occ_law == "inst"
+            for j, target_specs in enumerate(trans.target):
+                trans_list.append(dict(trans_id=i, state_index=j, **trans.model_dump()))
+        else:
+            trans_list.append(dict(trans_id=i, **trans.model_dump()))
+
+    return trans_list
+
+
 class InstantLinearRange(pydantic.BaseModel):
     """Linear Range"""
 
@@ -314,6 +357,21 @@ class PycSystem(pyc.CSystem):
         self.stopInteractive()
 
         self.isimu_sequence = PycSequence()
+
+    def isimu_start_cli(self):
+        """Start an interactive CLI simulation session"""
+        from .isimu_cli import COD3SISimuCLI
+
+        # Start interactive simulation
+        self.isimu_start()
+
+        # Start CLI
+        cli = COD3SISimuCLI(self)
+        try:
+            cli.cmdloop()
+        except KeyboardInterrupt:
+            print("\nReceived keyboard interrupt")
+            self.isimu_stop()
 
     def isimu_active_transitions(self, **kwargs):
         return [PycTransition.from_bkd(trans) for trans in self.activeTransitions()]

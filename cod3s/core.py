@@ -3,6 +3,12 @@ import copy
 import yaml
 from .utils import update_dict_deep
 
+def terminate_session():
+    try:
+        import Pycatshoo
+        Pycatshoo.CSystem.terminate()
+    except ImportError:
+        pass
 
 class ObjCOD3S(pydantic.BaseModel):
     @classmethod
@@ -44,25 +50,6 @@ class ObjCOD3S(pydantic.BaseModel):
 
             return cls.from_dict(obj_dict)
 
-    # @classmethod
-    # def get_clsname(basecls, **specs):
-    #     return specs.pop("cls")
-
-    # @classmethod
-    # def from_dict(basecls, **specs):
-
-    #     cls_sub_dict = {
-    #         cls.__name__: cls for cls in basecls.get_subclasses()}
-
-    #     clsname = basecls.get_clsname(**specs)
-    #     cls = cls_sub_dict.get(clsname)
-
-    #     if cls is None:
-    #         raise ValueError(
-    #             f"{clsname} is not a subclass of {basecls.__name__}")
-
-    #     #ipdb.set_trace()
-    #     return cls(**specs)
 
     @classmethod
     def from_dict(basecls, obj):

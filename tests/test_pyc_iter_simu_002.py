@@ -64,6 +64,8 @@ def test_system(the_system):
 
     # Ensure transitions are valid before proceeding
     transitions = the_system.isimu_fireable_transitions()
+
+    __import__("ipdb").set_trace()
     the_system.isimu_set_transition(0, date=None, state_index=0)
 
     trans_fired = the_system.isimu_step_forward()
