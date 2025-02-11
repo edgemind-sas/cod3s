@@ -381,13 +381,7 @@ class PycTransition(TransitionModel):
         comp_classname = trans_bkd.parent().className()
         is_interruptible = trans_bkd.interruptible()
         occ_law = PycOccurrenceDistribution.from_bkd(trans_bkd.distLaw())
-
-        if occ_law.is_occ_time_deterministic:
-            end_time = (
-                trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None
-            )
-        else:
-            end_time = float("inf")
+        end_time = trans_bkd.endTime()
 
         state_source_bkd = trans_bkd.startState()
         source = state_source_bkd.basename()
