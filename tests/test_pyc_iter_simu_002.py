@@ -1,4 +1,5 @@
 import pytest
+from cod3s import terminate_session
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 from cod3s.pycatshoo.component import PycComponent
 from cod3s.pycatshoo.automaton import (
@@ -65,7 +66,6 @@ def test_system(the_system):
     # Ensure transitions are valid before proceeding
     transitions = the_system.isimu_fireable_transitions()
 
-    __import__("ipdb").set_trace()
     the_system.isimu_set_transition(0, date=None, state_index=0)
 
     trans_fired = the_system.isimu_step_forward()
@@ -107,4 +107,4 @@ def test_system(the_system):
 
 
 def test_delete(the_system):
-    the_system.deleteSys()
+    terminate_session()

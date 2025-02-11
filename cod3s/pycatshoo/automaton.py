@@ -40,6 +40,9 @@ class PycState(StateModel):
 
 
 class OccurrenceDistributionModel(ObjCOD3S):
+    is_occ_time_deterministic: bool = (
+        True  # Indicates if occ time is govern by random distribution (must be overloaded
+    )
     bkd: typing.Any = pydantic.Field(None, description="Backend handler")
 
     # TODO: IS IT STILL USEFULL ?
@@ -53,6 +56,7 @@ class OccurrenceDistributionModel(ObjCOD3S):
     def model_dump(self, **kwrds):
         exclude_list = [
             "bkd",
+            "is_occ_time_deterministic",
         ]
         if kwrds.get("exclude"):
             [kwrds["exclude"].add(attr) for attr in exclude_list]
@@ -298,6 +302,8 @@ class PycOccurrenceDistribution(OccurrenceDistributionModel):
 
 
 class DelayOccDistribution(PycOccurrenceDistribution):
+    is_occ_time_deterministic: bool = True
+
     time: typing.Any = pydantic.Field(
         0, description="Delay duration (could be a variable)"
     )
@@ -310,6 +316,7 @@ class DelayOccDistribution(PycOccurrenceDistribution):
 
 
 class ExpOccDistribution(PycOccurrenceDistribution):
+    is_occ_time_deterministic: bool = False
     rate: typing.Any = pydantic.Field(
         0, description="Occurrence rate (could be a variable)"
     )
@@ -322,6 +329,8 @@ class ExpOccDistribution(PycOccurrenceDistribution):
 
 
 class InstOccDistribution(PycOccurrenceDistribution):
+    is_occ_time_deterministic: bool = True
+
     probs: typing.List[typing.Any] = pydantic.Field(
         [], description="Occurrence probabilité (could be a variable)"
     )
@@ -338,6 +347,8 @@ class InstOccDistribution(PycOccurrenceDistribution):
 
 # TO BE IMPLEMENTED
 class UniformOccDistribution(PycOccurrenceDistribution):
+    is_occ_time_deterministic: bool = False
+
     min: typing.Any = pydantic.Field(
         0, description="Occurrence min time (could be a variable)"
     )
@@ -369,12 +380,17 @@ class PycTransition(TransitionModel):
         comp_name = trans_bkd.parent().name()
         comp_classname = trans_bkd.parent().className()
         is_interruptible = trans_bkd.interruptible()
-        end_time = trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None
+        occ_law = PycOccurrenceDistribution.from_bkd(trans_bkd.distLaw())
+
+        if occ_law.is_occ_time_deterministic:
+            end_time = (
+                trans_bkd.endTime() if trans_bkd.endTime() < float("inf") else None
+            )
+        else:
+            end_time = float("inf")
 
         state_source_bkd = trans_bkd.startState()
         source = state_source_bkd.basename()
-
-        occ_law = PycOccurrenceDistribution.from_bkd(trans_bkd.distLaw())
 
         if isinstance(occ_law, InstOccDistribution):
             target = []

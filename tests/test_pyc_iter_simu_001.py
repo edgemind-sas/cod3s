@@ -1,4 +1,5 @@
 import pytest
+from cod3s import terminate_session
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 from cod3s.pycatshoo.component import PycComponent
 from cod3s.pycatshoo.automaton import (
@@ -29,6 +30,13 @@ def the_system():
                 "is_interruptible": False,
                 "occ_law": {"cls": "exp", "rate": 1 / 5},
             },
+            {
+                "name": "nok_ok",
+                "source": "nok",
+                "target": "ok",
+                "is_interruptible": False,
+                "occ_law": {"cls": "exp", "rate": 1 / 1},
+            },
         ],
     )
 
@@ -44,9 +52,7 @@ def test_system(the_system):
 
     # Ensure transitions are valid before proceeding
     transitions = the_system.isimu_fireable_transitions()
-
     assert len(transitions) == 1
-
     assert (
         str(transitions[0].model_dump())
         == "{'cls': 'PycTransition', 'name': 'ok_nok', 'source': 'ok', 'target': 'nok', 'occ_law': {'cls': 'ExpOccDistribution', 'rate': 0.2}, 'end_time': 0.0, 'condition': None, 'comp_name': 'C', 'comp_classname': 'PycComponent', 'is_interruptible': False}"
@@ -54,4 +60,4 @@ def test_system(the_system):
 
 
 def test_delete(the_system):
-    the_system.deleteSys()
+    terminate_session()

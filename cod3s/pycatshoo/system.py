@@ -376,34 +376,12 @@ class PycSystem(pyc.CSystem):
     def isimu_active_transitions(self, **kwargs):
         return [PycTransition.from_bkd(trans) for trans in self.activeTransitions()]
 
-        # end_time_bound = min([trans["bkd"].endTime()
-        #                       for trans in trans_list])
-
-        # for i, trans in enumerate(trans_list_bkd):
-        #     # trans_cur = dict(
-        #     #     trans_id=i,
-        #     #     # comp_name=trans.parent().name(),
-        #     #     # comp_classname=trans.parent().className(),
-        #     #     # end_time=trans.endTime() if trans.endTime() < float("inf") else None,
-        #     #     **PycTransition.from_bkd(trans).dict(exclude=exclude),
-        #     # )
-
-        #     trans_cur = PycTransition.from_bkd(trans)
-
-        #     if trans.endTime() < end_time_bound:
-        #         end_time_bound = trans.endTime()
-
-        #     trans_list.append(trans_cur)
-
-        # return trans_list, end_time_bound
-
     def isimu_fireable_transitions(self, **kwargs):
         trans_list = self.isimu_active_transitions()
         if not trans_list:
             return []
 
         end_time_bound = min([trans.bkd.endTime() for trans in trans_list])
-
         trans_list_fireable = []
         for trans in trans_list:
             # if trans["occ_law"]["cls"] == "ExpOccDistribution":
@@ -411,18 +389,35 @@ class PycSystem(pyc.CSystem):
 
             # if trans["comp_name"] == "S":
             #     ipdb.set_trace()
-            if trans.end_time is None:
-                trans.end_time = 0.0
-                if self.currentTime() != end_time_bound:
-                    trans_list_fireable.append(trans)
-                    continue
-            elif trans.end_time <= end_time_bound:
+            if trans.occ_law.is_occ_time_deterministic and (
+                trans.end_time <= end_time_bound
+            ):
                 trans_list_fireable.append(trans)
-                continue
-
-            trans_list_fireable.append(None)
+            elif not trans.occ_law.is_occ_time_deterministic:
+                trans.end_time = self.currentTime()
+                trans_list_fireable.append(trans)
+            else:
+                trans_list_fireable.append(None)
 
         return trans_list_fireable
+
+    def isimu_show_active_transitions(self, **kwargs):
+        transitions = self.isimu_active_transitions()
+
+        trans_list_str = "\n".join(
+            [f"{i}: {repr(tr)}" for i, tr in enumerate(transitions) if tr]
+        )
+
+        print(trans_list_str)
+
+    def isimu_show_fireable_transitions(self, **kwargs):
+        transitions = self.isimu_fireable_transitions()
+
+        trans_list_str = "\n".join(
+            [f"{i}: {repr(tr)}" for i, tr in enumerate(transitions) if tr]
+        )
+
+        print(trans_list_str)
 
     def isimu_step_backward(self):
         self.stepBackward()
@@ -448,7 +443,7 @@ class PycSystem(pyc.CSystem):
         trans_fired = [
             trans
             for trans in trans_fireable
-            if (trans and (trans.end_time is not None))
+            if (trans and (trans.bkd.endTime() == self.currentTime()))
         ]
 
         self.isimu_sequence.transitions.extend(trans_fired)
@@ -475,11 +470,12 @@ class PycSystem(pyc.CSystem):
             raise IndexError(f"Incorrect transition id {trans_id}")
 
         if not date:
-            date = (
-                selected_transition.end_time
-                if selected_transition.end_time
-                else self.currentTime()
-            )
+            date = self.currentTime()
+            # date = (
+            #     selected_transition.end_time
+            #     if selected_transition.end_time
+            #     else self.currentTime()
+            # )
 
         if not state_index:
             state_index = 0
