@@ -36,7 +36,7 @@ class PycComponent(pyc.CComponent):
         self.label = name if label is None else label
         self.description = self.label if description is None else description
 
-        self.automata = {}
+        self.automata_d = {}
 
         self.metadata = copy.deepcopy(metadata)
 
@@ -98,7 +98,7 @@ class PycComponent(pyc.CComponent):
         aut = PycAutomaton(**aut_specs)
         aut.update_bkd(self)
 
-        self.automata[aut.name] = aut
+        self.automata_d[aut.name] = aut
 
         return aut
 
@@ -115,7 +115,7 @@ class PycComponent(pyc.CComponent):
         else:
             aut.setInitState(states_dict[init_state])
 
-        self.automata[name] = {"obj": aut, "states": states_dict}
+        self.automata_d[name] = {"obj": aut, "states": states_dict}
 
         return aut
 
