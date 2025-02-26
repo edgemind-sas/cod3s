@@ -148,6 +148,7 @@ class MCSimulationParam(pydantic.BaseModel):
         ...     seed=42
         ... )
     """
+
     nb_runs: int = pydantic.Field(1, description="Number of simulation runs to perform")
     schedule: typing.List[typing.Union[InstantLinearRange, float]] = pydantic.Field(
         [100], description="List of measurement time points or ranges"
@@ -155,7 +156,9 @@ class MCSimulationParam(pydantic.BaseModel):
     time_unit: typing.Optional[str] = pydantic.Field(
         None, description="Time unit for simulation (e.g., 'h', 'd', 'y')"
     )
-    seed: typing.Any = pydantic.Field(None, description="Random seed for reproducibility")
+    seed: typing.Any = pydantic.Field(
+        None, description="Random seed for reproducibility"
+    )
 
     def get_instants_list(self):
         """Generate a sorted list of all measurement time points.
@@ -200,6 +203,7 @@ class PycMCSimulationParam(MCSimulationParam):
         ...     time_unit='h'
         ... )
     """
+
     pass
 
 
@@ -217,6 +221,7 @@ class PycSystem(pyc.CSystem):
         isimu_sequence (PycSequence): Sequence tracker for interactive simulation
         comp (dict): Dictionary of system components (populated by PycComponent.register)
     """
+
     def __init__(self, name):
         """Initialize a new PyCATSHOO system.
 
