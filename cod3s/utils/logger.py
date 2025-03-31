@@ -1,4 +1,5 @@
 import logging
+import sys
 
 COLORS = {
     "reset": "\033[0m",
