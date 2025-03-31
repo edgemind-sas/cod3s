@@ -484,7 +484,8 @@ class PycVarIndicator(PycIndicator):
                 "name": self.name,
                 "label": self.label,
                 "description": self.description,
-                "comp": self.get_comp_name(),
+                "comp": self.get_comp_name(),  # TODO: COMP MUST BE DEPRECATED
+                "component": self.get_comp_name(),
                 "attr": self.get_attr_name(),
                 "operator": self.operator,
                 "value_test": self.value_test,
