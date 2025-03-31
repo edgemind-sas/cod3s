@@ -1,36 +1,25 @@
 import logging
 import sys
-
-COLORS = {
-    "reset": "\033[0m",
-    "bold": "\033[1m",
-    "orange": "\033[38;5;214m",  # h1
-    "blue": "\033[38;5;27m",  # h2
-    "purple": "\033[38;5;89m",  # h3
-    "light_gray": "\033[38;5;189m",  # text
-    "dark_orange": "\033[38;5;172m",  # warning
-    "red": "\033[38;5;160m",  # alert
-    "green": "\033[38;5;46m",  # repair rate
-}
-
-# Style combinations
-STYLES = {
-    "h1": COLORS["orange"] + COLORS["bold"],
-    "h2": COLORS["blue"] + COLORS["bold"],
-    "h3": COLORS["purple"] + COLORS["bold"],
-    "text": COLORS["light_gray"],
-    "warning": COLORS["dark_orange"] + COLORS["bold"],
-    "alert": COLORS["red"] + COLORS["bold"],
-}
+from colored import fg, bg, attr
 
 
 class COD3SLogger:
-    """Logger for COD3S framework with colored output support using vanilla Python."""
+    """Logger for COD3S framework with colored output support using the colored module."""
+
+    # Color and style definitions using the colored module
+    STYLES = {
+        "h1": fg("orange_3") + attr("bold"),
+        "h2": fg("dodger_blue_2") + attr("bold"),
+        "h3": fg("purple_3") + attr("bold"),
+        "text": fg("grey_69"),
+        "warning": fg("dark_orange") + attr("bold"),
+        "alert": fg("red_1") + attr("bold"),
+    }
 
     def __init__(self, name="COD3S", level=logging.INFO):
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
-        # To avoid loggin propagation and repeated messages
+        # To avoid logging propagation and repeated messages
         self.logger.propagate = False
         # Clear any existing handlers
         if self.logger.handlers:
@@ -50,8 +39,8 @@ class COD3SLogger:
         self.logger.addHandler(console_handler)
 
     def _style_text(self, msg, style):
-        """Apply ANSI style to text and reset after."""
-        return f"{STYLES[style]}{msg}{COLORS['reset']}"
+        """Apply colored style to text and reset after."""
+        return f"{self.STYLES[style]}{msg}{attr('reset')}"
 
     def debug(self, msg):
         self.logger.debug(msg)
