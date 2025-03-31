@@ -14,6 +14,7 @@ class COD3SLogger:
         "text": fg("grey_69"),
         "warning": fg("dark_orange") + attr("bold"),
         "alert": fg("red_1") + attr("bold"),
+        "error": fg("red_1") + attr("bold"),
     }
 
     def __init__(self, name="COD3S", level=logging.INFO):
@@ -66,7 +67,8 @@ class COD3SLogger:
         self.logger.warning(styled_msg)
 
     def error(self, msg):
-        self.logger.error(msg)
+        styled_msg = self._style_text(msg, "error")
+        self.logger.error(styled_msg)
 
     def critical(self, msg):
         styled_msg = self._style_text(msg, "alert")
