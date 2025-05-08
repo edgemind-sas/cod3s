@@ -144,47 +144,53 @@ def dict_diff(dict_ref, dict_new):
     return diff
 
 
-def remove_key_recursive(obj, key_to_remove):
+def remove_key_from_dict(obj, key_to_remove, recursive=False):
     """
-    Recursively remove all occurrences of a specific key from a dictionary or nested structure.
+    Remove occurrences of a specific key from a dictionary or nested structure.
     Creates and returns a new structure without modifying the input.
 
     Args:
         obj: The object to process (dict, list, or other value)
         key_to_remove: The key to remove from all dictionaries
+        recursive: If True, recursively remove the key from nested structures.
+                  If False, only remove from the top level. Default is False.
 
     Returns:
-        A new object with all occurrences of key_to_remove removed
+        A new object with occurrences of key_to_remove removed
 
     Examples:
         >>> data = {"a": 1, "b": {"a": 2, "c": 3}, "d": [{"a": 4, "e": 5}]}
-        >>> result = remove_key_recursive(data, "a")
-        >>> result
+        >>> remove_key_from_dict(data, "a", recursive=True)
         {'b': {'c': 3}, 'd': [{'e': 5}]}
+        >>> remove_key_from_dict(data, "a", recursive=False)
+        {'b': {'a': 2, 'c': 3}, 'd': [{'a': 4, 'e': 5}]}
         >>> data  # Original data is unchanged
         {'a': 1, 'b': {'a': 2, 'c': 3}, 'd': [{'a': 4, 'e': 5}]}
 
-        >>> remove_key_recursive({"x": 1, "y": 2}, "z")  # Key not present
+        >>> remove_key_from_dict({"x": 1, "y": 2}, "z")  # Key not present
         {'x': 1, 'y': 2}
 
-        >>> remove_key_recursive([1, 2, {"a": 3}], "a")  # Mixed types
+        >>> remove_key_from_dict([1, 2, {"a": 3}], "a", recursive=True)  # Mixed types
         [1, 2, {}]
 
-        >>> remove_key_recursive(42, "a")  # Non-container input
+        >>> remove_key_from_dict(42, "a")  # Non-container input
         42
     """
     if isinstance(obj, dict):
         # Create a new dictionary excluding the key_to_remove
-        return {
-            k: remove_key_recursive(v, key_to_remove)
-            for k, v in obj.items()
-            if k != key_to_remove
-        }
-    elif isinstance(obj, list):
-        # Create a new list with processed items
-        return [remove_key_recursive(item, key_to_remove) for item in obj]
+        if recursive:
+            return {
+                k: remove_key_from_dict(v, key_to_remove, recursive)
+                for k, v in obj.items()
+                if k != key_to_remove
+            }
+        else:
+            return {k: v for k, v in obj.items() if k != key_to_remove}
+    elif isinstance(obj, list) and recursive:
+        # Create a new list with processed items (only if recursive is True)
+        return [remove_key_from_dict(item, key_to_remove, recursive) for item in obj]
     else:
-        # Return non-container values as is
+        # Return non-container values or lists (when not recursive) as is
         return obj
 
 
