@@ -144,6 +144,50 @@ def dict_diff(dict_ref, dict_new):
     return diff
 
 
+def remove_key_recursive(obj, key_to_remove):
+    """
+    Recursively remove all occurrences of a specific key from a dictionary or nested structure.
+    Creates and returns a new structure without modifying the input.
+
+    Args:
+        obj: The object to process (dict, list, or other value)
+        key_to_remove: The key to remove from all dictionaries
+
+    Returns:
+        A new object with all occurrences of key_to_remove removed
+
+    Examples:
+        >>> data = {"a": 1, "b": {"a": 2, "c": 3}, "d": [{"a": 4, "e": 5}]}
+        >>> result = remove_key_recursive(data, "a")
+        >>> result
+        {'b': {'c': 3}, 'd': [{'e': 5}]}
+        >>> data  # Original data is unchanged
+        {'a': 1, 'b': {'a': 2, 'c': 3}, 'd': [{'a': 4, 'e': 5}]}
+
+        >>> remove_key_recursive({"x": 1, "y": 2}, "z")  # Key not present
+        {'x': 1, 'y': 2}
+
+        >>> remove_key_recursive([1, 2, {"a": 3}], "a")  # Mixed types
+        [1, 2, {}]
+
+        >>> remove_key_recursive(42, "a")  # Non-container input
+        42
+    """
+    if isinstance(obj, dict):
+        # Create a new dictionary excluding the key_to_remove
+        return {
+            k: remove_key_recursive(v, key_to_remove)
+            for k, v in obj.items()
+            if k != key_to_remove
+        }
+    elif isinstance(obj, list):
+        # Create a new list with processed items
+        return [remove_key_recursive(item, key_to_remove) for item in obj]
+    else:
+        # Return non-container values as is
+        return obj
+
+
 if __name__ == "__main__":
     import doctest
 
