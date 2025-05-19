@@ -47,6 +47,7 @@ setup(
         "lxml==5.3.0",
         "colored==1.4.4",
         "PyYAML==6.0.2",
+        "semver==3.0.4",
     ],
     zip_safe=False,
 )
