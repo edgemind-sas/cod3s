@@ -8,9 +8,15 @@ import sys
 import os
 
 # Add the parent directory to the path so we can import cod3s
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from cod3s.kb import InterfaceTemplate, AttributeTemplate, ComponentTemplate, ComponentInstance, KB
+from cod3s.kb import (
+    InterfaceTemplate,
+    AttributeTemplate,
+    ComponentTemplate,
+    ComponentInstance,
+    KB,
+)
 from cod3s.system import Connection, System
 
 
@@ -21,34 +27,26 @@ def main():
     # Create attribute templates
     print("Creating attribute templates...")
     bool_attr = AttributeTemplate(
-        name="power_state",
-        type="bool",
-        value_default=True,
-        value_current=False
+        name="power_state", type="bool", value_default=True, value_current=False
     )
-    
+
     int_attr = AttributeTemplate(
-        name="temperature",
-        type="int",
-        value_default=25,
-        value_current=30
+        name="temperature", type="int", value_default=25, value_current=30
     )
-    
+
     enum_attr = AttributeTemplate(
-        name="mode",
-        type=["off", "standby", "active"],
-        value_default="standby"
+        name="mode", type=["off", "standby", "active"], value_default="standby"
     )
-    
+
     print(f"\n{repr(bool_attr)}")
     print(f"\n{bool_attr}")
-    
+
     print(f"\n{repr(int_attr)}")
     print(f"\n{int_attr}")
-    
+
     print(f"\n{repr(enum_attr)}")
     print(f"\n{enum_attr}")
-    
+
     # Create interface templates
     print("\n\nCreating interface templates...")
     input_interface = InterfaceTemplate(
@@ -56,22 +54,22 @@ def main():
         port_type="input",
         label="Power Input",
         description="Power supply input interface",
-        component_authorized=["PowerSupply", "Battery"]
+        component_authorized=["PowerSupply", "Battery"],
     )
-    
+
     output_interface = InterfaceTemplate(
         name="data_output",
         port_type="output",
         label="Data Output",
-        description="Data transmission output interface"
+        description="Data transmission output interface",
     )
-    
+
     print(f"\n{repr(input_interface)}")
     print(f"\n{input_interface}")
-    
+
     print(f"\n{repr(output_interface)}")
     print(f"\n{output_interface}")
-    
+
     # Create component template
     print("\n\nCreating component template...")
     component_template = ComponentTemplate(
@@ -83,27 +81,27 @@ def main():
         attributes={
             "power_state": bool_attr,
             "temperature": int_attr,
-            "mode": enum_attr
+            "mode": enum_attr,
         },
         interfaces=[input_interface, output_interface],
-        metadata={"manufacturer": "SensorCorp", "model": "TS-2000"}
+        metadata={"manufacturer": "SensorCorp", "model": "TS-2000"},
     )
-    
+
     print(f"\n{repr(component_template)}")
     print(f"\n{component_template}")
-    
+
     # Create component instance
     print("\n\nCreating component instance...")
     component_instance = component_template.create_instance(
         "living_room_sensor",
         label="Living Room Temperature Sensor",
         description="Temperature sensor located in the living room",
-        init_parameters={"calibration": 1.02}
+        init_parameters={"calibration": 1.02},
     )
-    
+
     print(f"\n{repr(component_instance)}")
     print(f"\n{component_instance}")
-    
+
     # Create knowledge base
     print("\n\nCreating knowledge base...")
     kb = KB(
@@ -111,14 +109,12 @@ def main():
         label="Home Automation Knowledge Base",
         description="Knowledge base for home automation components",
         version="1.0.0",
-        component_templates={
-            "sensor": component_template
-        }
+        component_templates={"sensor": component_template},
     )
-    
+
     print(f"\n{repr(kb)}")
     print(f"\n{kb}")
-    
+
     # Create connection
     print("\n\nCreating connection...")
     connection = Connection(
@@ -126,28 +122,25 @@ def main():
         interface_source="data_output",
         component_target="controller",
         interface_target="data_input",
-        init_parameters={"protocol": "mqtt"}
+        init_parameters={"protocol": "mqtt"},
     )
-    
+
     print(f"\n{repr(connection)}")
     print(f"\n{connection}")
-    
+
     # Create system
     print("\n\nCreating system...")
     system = System(
         name="home_automation_system",
-        kb=kb,
+        kb_name=kb.name,
+        kb_version=">0.1.0",
         label="Home Automation System",
         description="A system for home automation",
-        version="1.0.0",
-        components={
-            "living_room_sensor": component_instance
-        },
-        connections={
-            "sensor_to_controller": connection
-        }
+        version="0.4.1",
+        components={"living_room_sensor": component_instance},
+        connections={"sensor_to_controller": connection},
     )
-    
+
     print(f"\n{repr(system)}")
     print(f"\n{system}")
 

@@ -1,8 +1,8 @@
 from .core import ObjCOD3S
-from .kb import KB, ComponentInstance
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, List, Dict, Any, Union, Literal, get_args
-from colored import fg, bg, attr as colored_attr
+from .kb import ComponentInstance
+from pydantic import Field
+from typing import Optional, List, Dict, Any, Union
+from colored import fg, attr as colored_attr
 import semver
 import re
 
@@ -79,7 +79,7 @@ class System(ObjCOD3S):
             f"  {fg('white')}Label{colored_attr('reset')}: {self.label or self.name}\n"
             f"  {fg('white')}Description{colored_attr('reset')}: {self.description or 'N/A'}\n"
             f"  {fg('white')}Version{colored_attr('reset')}: {self.version or 'N/A'}\n"
-            f"  {fg('white')}KB{colored_attr('reset')}: {self.kb.name}"
+            f"  {fg('white')}KB{colored_attr('reset')}: {self.kb_name} [{self.kb_version}]"
         )
 
         if comp_count > 0:
@@ -96,18 +96,18 @@ class System(ObjCOD3S):
 
     def check_kb(self, kb):
         """
-        Vérifie la compatibilité d'une instance KB avec ce système.
+        Check the compatibility of a KB instance with this system.
 
         Args:
-            kb (KB): Instance de la base de connaissances à vérifier
+            kb (KB): Knowledge base instance to check
 
         Raises:
-            ValueError: Si la KB n'est pas compatible (nom ou version)
+            ValueError: If the KB is not compatible (name or version)
         """
         # Vérifier que le nom de la KB correspond
         if kb.name != self.kb_name:
             raise ValueError(
-                f"La KB '{kb.name}' ne correspond pas à la KB attendue '{self.kb_name}'"
+                f"The KB '{kb.name}' does not match the expected KB '{self.kb_name}'"
             )
 
         # Vérifier la version de la KB si une version est spécifiée
@@ -136,32 +136,27 @@ class System(ObjCOD3S):
                     is_compatible = kb_version < required_version
                 elif operator == "<=":
                     is_compatible = kb_version <= required_version
-                elif operator == "~=":  # Compatible release (PEP 440)
-                    is_compatible = (
-                        kb_version >= required_version
-                        and kb_version.release[0] == required_version.release[0]
-                    )
 
                 if not is_compatible:
                     raise ValueError(
-                        f"La version de la KB '{kb.version}' n'est pas compatible avec la version requise '{self.kb_version}'"
+                        f"The KB version '{kb.version}' is not compatible with the required version '{self.kb_version}'"
                     )
 
-    def create_instance(self, kb, template_name, instance_name, **kwargs):
+    def add_component(self, kb, template_name, instance_name, **kwargs):
         """
-        Crée une instance de composant à partir d'un template dans la KB et l'ajoute au système.
+        Creates a component instance from a template in the KB and adds it to the system.
 
         Args:
-            kb (KB): Instance de la base de connaissances
-            template_name (str): Nom du template de composant à instancier
-            instance_name (str): Nom à donner à l'instance créée
-            **kwargs: Paramètres supplémentaires à passer à la méthode create_instance du template
+            kb (KB): Knowledge base instance
+            template_name (str): Name of the component template to instantiate
+            instance_name (str): Name to give to the created instance
+            **kwargs: Additional parameters to pass to the template's create_instance method
 
         Returns:
-            ComponentInstance: L'instance de composant créée
+            ComponentInstance: The created component instance
 
         Raises:
-            ValueError: Si la KB n'est pas compatible ou si le template n'existe pas
+            ValueError: If the KB is not compatible or if the template doesn't exist
         """
         # Vérifier que la KB est compatible
         self.check_kb(kb)
@@ -169,7 +164,7 @@ class System(ObjCOD3S):
         # Rechercher le template dans la KB
         if template_name not in kb.component_templates:
             raise ValueError(
-                f"Le template '{template_name}' n'existe pas dans la KB '{kb.name}'"
+                f"The template '{template_name}' doesn't exist in the KB '{kb.name}'"
             )
 
         template = kb.component_templates[template_name]
@@ -181,3 +176,102 @@ class System(ObjCOD3S):
         self.components[instance_name] = instance
 
         return instance
+
+    def drop_component(self, component_name):
+        """
+        Removes a component from the system and returns it.
+
+        Args:
+            component_name (str): Name of the component to remove
+
+        Returns:
+            ComponentInstance: The instance of the removed component
+
+        Raises:
+            KeyError: If the component doesn't exist in the system
+        """
+        if component_name not in self.components:
+            raise KeyError(
+                f"The component '{component_name}' doesn't exist in the system"
+            )
+
+        # Get the component before removing it
+        component = self.components[component_name]
+
+        # Remove the component from the dictionary
+        del self.components[component_name]
+
+        return component
+
+    def connect(self, component_source, interface_source, component_target, interface_target, **kwargs):
+        """
+        Creates a connection between two components in the system.
+        
+        Args:
+            component_source (str): Name of the source component
+            interface_source (str): Name of the source interface
+            component_target (str): Name of the target component
+            interface_target (str): Name of the target interface
+            **kwargs: Additional parameters for the connection (init_parameters, metadata)
+        
+        Returns:
+            Connection: The created connection
+            
+        Raises:
+            KeyError: If one of the components doesn't exist in the system
+            ValueError: If an interface doesn't exist in the corresponding component
+                        or if the port types are not compatible
+        """
+        # Check that the components exist
+        if component_source not in self.components:
+            raise KeyError(f"The source component '{component_source}' doesn't exist in the system")
+        if component_target not in self.components:
+            raise KeyError(f"The target component '{component_target}' doesn't exist in the system")
+        
+        # Get the components
+        source_comp = self.components[component_source]
+        target_comp = self.components[component_target]
+        
+        # Check that the interfaces exist
+        source_interface = None
+        for intf in source_comp.interfaces:
+            if intf.name == interface_source:
+                source_interface = intf
+                break
+        
+        if source_interface is None:
+            raise ValueError(f"The interface '{interface_source}' doesn't exist in the component '{component_source}'")
+        
+        target_interface = None
+        for intf in target_comp.interfaces:
+            if intf.name == interface_target:
+                target_interface = intf
+                break
+        
+        if target_interface is None:
+            raise ValueError(f"The interface '{interface_target}' doesn't exist in the component '{component_target}'")
+        
+        # Check the compatibility of port types
+        if source_interface.port_type != "output":
+            raise ValueError(f"The source interface '{interface_source}' must be of type 'output', but is of type '{source_interface.port_type}'")
+        
+        if target_interface.port_type != "input":
+            raise ValueError(f"The target interface '{interface_target}' must be of type 'input', but is of type '{target_interface.port_type}'")
+        
+        # Create the connection
+        connection = Connection(
+            component_source=component_source,
+            interface_source=interface_source,
+            component_target=component_target,
+            interface_target=interface_target,
+            init_parameters=kwargs.get("init_parameters", {}),
+            metadata=kwargs.get("metadata", {})
+        )
+        
+        # Generate a unique name for the connection
+        connection_name = f"{component_source}_{interface_source}_to_{component_target}_{interface_target}"
+        
+        # Add the connection to the system
+        self.connections[connection_name] = connection
+        
+        return connection
