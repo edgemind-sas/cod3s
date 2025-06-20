@@ -3,12 +3,15 @@ import copy
 import yaml
 from .utils import update_dict_deep
 
+
 def terminate_session():
     try:
         import Pycatshoo
+
         Pycatshoo.CSystem.terminate()
     except ImportError:
         pass
+
 
 class ObjCOD3S(pydantic.BaseModel):
     @classmethod
@@ -27,6 +30,20 @@ class ObjCOD3S(pydantic.BaseModel):
             for cls in sub:
                 sub.extend(cls.get_subclasses(recursive))
         return sub
+
+    @classmethod
+    def get_subclasses_dict(cls, recursive=True):
+        """Enumerates all subclasses of a given class.
+
+        # Arguments
+        cls: class. The class to enumerate subclasses for.
+        recursive: bool (default: True). If True, recursively finds all sub-classes.
+
+        # Return value
+        A dict of subclasses of `cls`.
+        """
+        sub_list = cls.get_subclasses(recursive=recursive)
+        return {clz.__name__: clz for clz in sub_list}
 
     @classmethod
     def from_yaml(
@@ -49,7 +66,6 @@ class ObjCOD3S(pydantic.BaseModel):
             update_dict_deep(obj_dict, data)
 
             return cls.from_dict(obj_dict)
-
 
     @classmethod
     def from_dict(basecls, obj):
@@ -102,8 +118,12 @@ class ObjCOD3S(pydantic.BaseModel):
             dict: A dictionary representation of the model with class information
         """
         base_dict = super().model_dump(serialize_as_any=True, **kwrds)
-        result = {"cls": self.__class__.__name__}
+        # base_dict = self.__dict__
 
+        # __import__("ipdb").set_trace()
+        result = {"cls": self.__class__.__name__}
+        # __import__("ipdb").set_trace()
+        #        for key, value in base_dict.items():
         for key, value in base_dict.items():
             if hasattr(value, "model_dump") and callable(value.model_dump):
                 result[key] = value.model_dump(**kwrds)

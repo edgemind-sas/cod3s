@@ -597,6 +597,8 @@ class PycSystem(pyc.CSystem):
         y="values",
         color="name",
         markers=True,
+        comp_pattern=".*",
+        attr_pattern=".*",
         layout={},
         **px_conf,
     ):
@@ -624,9 +626,25 @@ class PycSystem(pyc.CSystem):
 
         if indic_df is None:
             return None
-
+        
+        # Filter based on component pattern
+        if "comp" in indic_df.columns:
+            idx_comp_sel = indic_df["comp"].str.match(comp_pattern, na=False)
+        else:
+            idx_comp_sel = pd.Series([True] * len(indic_df))
+        
+        # Filter based on attribute pattern
+        if "attr" in indic_df.columns:
+            idx_attr_sel = indic_df["attr"].str.match(attr_pattern, na=False)
+        else:
+            idx_attr_sel = pd.Series([True] * len(indic_df))
+        
+        # Filter for mean statistics
         idx_stat_sel = indic_df["stat"].isin(["mean"])
-        indic_sel_df = indic_df.loc[idx_stat_sel]
+        
+        # Combine all filters
+        idx_combined = idx_comp_sel & idx_attr_sel & idx_stat_sel
+        indic_sel_df = indic_df.loc[idx_combined]
 
         fig = px.line(indic_sel_df, x=x, y=y, color=color, markers=markers, **px_conf)
         fig.update_layout(**layout)

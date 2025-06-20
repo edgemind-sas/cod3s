@@ -1,5 +1,6 @@
 from .core import ObjCOD3S
 from .kb import ComponentInstance
+from .utils import get_class_by_name
 from pydantic import Field
 from typing import Optional, List, Dict, Any, Union
 from colored import fg, attr as colored_attr
@@ -47,6 +48,14 @@ class System(ObjCOD3S):
     kb_version: Optional[str] = Field(
         None, description="Knowledge base version compatibility"
     )
+    class_name_bkd: Optional[Dict[str, str]] = Field(
+        {"pycatshoo": "Pycatshoo.CSystem"},
+        description="Class name used to instanciate a system with the backend analysis tool",
+    )
+    init_parameters: Optional[Dict[str, Any]] = Field(
+        {}, description="System parameters passed to backend constructor"
+    )
+
     label: Optional[str] = Field(None, description="System label to be displayed")
 
     description: Optional[str] = Field(None, description="System long description")
@@ -78,6 +87,7 @@ class System(ObjCOD3S):
             f"{fg('blue')}System{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')}\n"
             f"  {fg('white')}Label{colored_attr('reset')}: {self.label or self.name}\n"
             f"  {fg('white')}Description{colored_attr('reset')}: {self.description or 'N/A'}\n"
+            f"  {fg('white')}Backend Class{colored_attr('reset')}: {self.class_name_bkd or 'N/A'}\n"
             f"  {fg('white')}Version{colored_attr('reset')}: {self.version or 'N/A'}\n"
             f"  {fg('white')}KB{colored_attr('reset')}: {self.kb_name} [{self.kb_version}]"
         )
@@ -85,7 +95,7 @@ class System(ObjCOD3S):
         if comp_count > 0:
             result += f"\n  {fg('green')}Components List ({comp_count}){colored_attr('reset')}:"
             for name, comp in self.components.items():
-                result += f"\n    - {fg('light_green')}{name}{colored_attr('reset')} (template: {comp.template.name})"
+                result += f"\n    - {fg('light_green')}{name}{colored_attr('reset')} (class: {comp.class_name})"
 
         if conn_count > 0:
             result += f"\n  {fg('orange_1')}Connections List ({conn_count}){colored_attr('reset')}:"
@@ -142,13 +152,13 @@ class System(ObjCOD3S):
                         f"The KB version '{kb.version}' is not compatible with the required version '{self.kb_version}'"
                     )
 
-    def add_component(self, kb, template_name, instance_name, **kwargs):
+    def add_component(self, kb, class_name, instance_name, **kwargs):
         """
         Creates a component instance from a template in the KB and adds it to the system.
 
         Args:
             kb (KB): Knowledge base instance
-            template_name (str): Name of the component template to instantiate
+            class_name (str): Name of the component template to instantiate
             instance_name (str): Name to give to the created instance
             **kwargs: Additional parameters to pass to the template's create_instance method
 
@@ -162,12 +172,12 @@ class System(ObjCOD3S):
         self.check_kb(kb)
 
         # Rechercher le template dans la KB
-        if template_name not in kb.component_templates:
+        if class_name not in kb.component_classes:
             raise ValueError(
-                f"The template '{template_name}' doesn't exist in the KB '{kb.name}'"
+                f"The component class '{class_name}' doesn't exist in the KB '{kb.name}'"
             )
 
-        template = kb.component_templates[template_name]
+        template = kb.component_classes[class_name]
 
         # Créer l'instance à partir du template
         instance = template.create_instance(instance_name, **kwargs)
@@ -203,20 +213,27 @@ class System(ObjCOD3S):
 
         return component
 
-    def connect(self, component_source, interface_source, component_target, interface_target, **kwargs):
+    def connect(
+        self,
+        component_source,
+        interface_source,
+        component_target,
+        interface_target,
+        **kwargs,
+    ):
         """
         Creates a connection between two components in the system.
-        
+
         Args:
             component_source (str): Name of the source component
             interface_source (str): Name of the source interface
             component_target (str): Name of the target component
             interface_target (str): Name of the target interface
             **kwargs: Additional parameters for the connection (init_parameters, metadata)
-        
+
         Returns:
             Connection: The created connection
-            
+
         Raises:
             KeyError: If one of the components doesn't exist in the system
             ValueError: If an interface doesn't exist in the corresponding component
@@ -224,40 +241,52 @@ class System(ObjCOD3S):
         """
         # Check that the components exist
         if component_source not in self.components:
-            raise KeyError(f"The source component '{component_source}' doesn't exist in the system")
+            raise KeyError(
+                f"The source component '{component_source}' doesn't exist in the system"
+            )
         if component_target not in self.components:
-            raise KeyError(f"The target component '{component_target}' doesn't exist in the system")
-        
+            raise KeyError(
+                f"The target component '{component_target}' doesn't exist in the system"
+            )
+
         # Get the components
         source_comp = self.components[component_source]
         target_comp = self.components[component_target]
-        
+
         # Check that the interfaces exist
         source_interface = None
         for intf in source_comp.interfaces:
             if intf.name == interface_source:
                 source_interface = intf
                 break
-        
+
         if source_interface is None:
-            raise ValueError(f"The interface '{interface_source}' doesn't exist in the component '{component_source}'")
-        
+            raise ValueError(
+                f"The interface '{interface_source}' doesn't exist in the component '{component_source}'"
+            )
+
         target_interface = None
         for intf in target_comp.interfaces:
             if intf.name == interface_target:
                 target_interface = intf
                 break
-        
+
         if target_interface is None:
-            raise ValueError(f"The interface '{interface_target}' doesn't exist in the component '{component_target}'")
-        
+            raise ValueError(
+                f"The interface '{interface_target}' doesn't exist in the component '{component_target}'"
+            )
+
         # Check the compatibility of port types
         if source_interface.port_type != "output":
-            raise ValueError(f"The source interface '{interface_source}' must be of type 'output', but is of type '{source_interface.port_type}'")
-        
+            raise ValueError(
+                f"The source interface '{interface_source}' must be of type 'output', but is of type '{source_interface.port_type}'"
+            )
+
         if target_interface.port_type != "input":
-            raise ValueError(f"The target interface '{interface_target}' must be of type 'input', but is of type '{target_interface.port_type}'")
-        
+            raise ValueError(
+                f"The target interface '{interface_target}' must be of type 'input', but is of type '{target_interface.port_type}'"
+            )
+
         # Create the connection
         connection = Connection(
             component_source=component_source,
@@ -265,13 +294,56 @@ class System(ObjCOD3S):
             component_target=component_target,
             interface_target=interface_target,
             init_parameters=kwargs.get("init_parameters", {}),
-            metadata=kwargs.get("metadata", {})
+            metadata=kwargs.get("metadata", {}),
         )
-        
+
         # Generate a unique name for the connection
         connection_name = f"{component_source}_{interface_source}_to_{component_target}_{interface_target}"
-        
+
         # Add the connection to the system
         self.connections[connection_name] = connection
-        
+
         return connection
+
+    def to_bkd(self, bkd_name):
+        """
+        Dynamically calls the appropriate backend method based on the provided name.
+
+        Args:
+            bkd_name (str): Backend name (for example 'pycatshoo')
+
+        Returns:
+            Any: The result of the specific backend method
+
+        Raises:
+            AttributeError: If the corresponding backend method doesn't exist
+        """
+        method_name = f"to_bkd_{bkd_name}"
+        if not hasattr(self, method_name):
+            raise AttributeError(
+                f"The method '{method_name}' doesn't exist. The backend '{bkd_name}' is not supported."
+            )
+        return getattr(self, method_name)()
+
+    def to_bkd_pycatshoo(self):
+
+        class_name = self.class_name_bkd.get("pycatshoo")
+        if not class_name:
+            raise ValueError("No pycatshoo backend class is specified in the template.")
+
+        cls = get_class_by_name(class_name)
+
+        try:
+            system = cls(self.name, **self.init_parameters)
+        except Exception as e:
+            raise ValueError(
+                f"Pycatshoo {cls.__name__} system instanciation failed: {e}"
+            )
+
+        # __import__("ipdb").set_trace()
+        # Creates Pycatshoo components
+        for comp_name, comp in self.components.items():
+            comp.to_bkd_pycatshoo()
+
+        # Instantiate the component with the initialization parameters
+        return system

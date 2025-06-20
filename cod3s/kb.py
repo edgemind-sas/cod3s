@@ -1,4 +1,5 @@
 from .core import ObjCOD3S
+from .utils import get_class_by_name
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any, Union, Literal
 import copy
@@ -14,7 +15,7 @@ be instantiated to build complex systems.
 """
 
 
-class InterfaceTemplate(BaseModel):
+class InterfaceTemplate(ObjCOD3S):
     """
     Model for defining a component interface template.
 
@@ -36,7 +37,7 @@ class InterfaceTemplate(BaseModel):
 
     def __repr__(self):
         """Return a concise string representation of the interface template."""
-        return f"{fg('cyan')}Interface{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')} ({self.port_type})"
+        return f"{fg('cyan')}{self.__class__.__name__}{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')} ({self.port_type})"
 
     def __str__(self):
         """Return a detailed string representation of the interface template."""
@@ -44,7 +45,7 @@ class InterfaceTemplate(BaseModel):
             ", ".join(self.component_authorized) if self.component_authorized else "Any"
         )
         return (
-            f"{fg('cyan')}Interface{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')}\n"
+            f"{fg('cyan')}{self.__class__.__name__}{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')}\n"
             f"  {fg('white')}Type{colored_attr('reset')}: {fg('light_green')}{self.port_type}{colored_attr('reset')}\n"
             f"  {fg('white')}Label{colored_attr('reset')}: {self.label or self.name}\n"
             f"  {fg('white')}Description{colored_attr('reset')}: {self.description or 'N/A'}\n"
@@ -52,7 +53,7 @@ class InterfaceTemplate(BaseModel):
         )
 
 
-class AttributeTemplate(BaseModel):
+class AttributeTemplate(ObjCOD3S):
     """
     Model for defining a component attribute template.
 
@@ -223,23 +224,23 @@ class AttributeTemplate(BaseModel):
         return self
 
 
-class ComponentTemplate(ObjCOD3S):
+class ComponentClass(ObjCOD3S):
     """
     Represents the specifications of a component.
 
-    A component template defines the structure of a component type,
+    A component class defines the structure of a component type,
     including its attributes, interfaces, metadata, and other properties.
     These templates are used to instantiate concrete components
     in a system.
     """
 
-    name: Optional[str] = Field(..., description="Component template name")
+    class_name: Optional[str] = Field(..., description="Component class name")
     class_name_bkd: Optional[Dict[str, str]] = Field(
         {"pycatshoo": "CComponent"},
         description="Class name used to instanciate the component with the backend analysis tool",
     )
-    label: Optional[str] = Field(..., description="Component display name")
-    description: Optional[str] = Field(None, description="Component description")
+    class_label: Optional[str] = Field(None, description="Component display name")
+    class_description: Optional[str] = Field(None, description="Component description")
     groups: Optional[List[str]] = Field(None, description="Component template groups")
     attributes: Optional[Dict[str, AttributeTemplate]] = Field(
         None, description="Component groups"
@@ -263,7 +264,7 @@ class ComponentTemplate(ObjCOD3S):
 
     def __repr__(self):
         """Return a concise string representation of the component template."""
-        return f"{fg('yellow')}ComponentTemplate{colored_attr('reset')}: {fg('light_yellow')}{self.name}{colored_attr('reset')}"
+        return f"{fg('yellow')}{self.__class__.__name__}{colored_attr('reset')}: {fg('light_yellow')}{self.class_name}{colored_attr('reset')}"
 
     def __str__(self):
         """Return a detailed string representation of the component template."""
@@ -272,9 +273,9 @@ class ComponentTemplate(ObjCOD3S):
         groups_str = ", ".join(self.groups) if self.groups else "None"
 
         result = (
-            f"{fg('yellow')}Component Template{colored_attr('reset')}: {fg('light_yellow')}{self.name}{colored_attr('reset')}\n"
-            f"  {fg('white')}Label{colored_attr('reset')}: {self.label}\n"
-            f"  {fg('white')}Description{colored_attr('reset')}: {self.description or 'N/A'}\n"
+            f"{fg('yellow')}{self.__class__.__name__}{colored_attr('reset')}: {fg('light_yellow')}{self.class_name}{colored_attr('reset')}\n"
+            f"  {fg('white')}Label{colored_attr('reset')}: {self.class_label}\n"
+            f"  {fg('white')}Description{colored_attr('reset')}: {self.class_description or 'N/A'}\n"
             f"  {fg('white')}Backend Class{colored_attr('reset')}: {self.class_name_bkd or 'N/A'}\n"
             f"  {fg('white')}Groups{colored_attr('reset')}: {groups_str}"
         )
@@ -311,7 +312,8 @@ class ComponentTemplate(ObjCOD3S):
         """
         # Convert the dictionary to InterfaceTemplate if necessary
         if isinstance(interface, dict):
-            interface = InterfaceTemplate(**interface)
+            interface.setdefault("cls", "InterfaceTemplate")
+            interface = ObjCOD3S.from_dict(interface)
         elif not isinstance(interface, InterfaceTemplate):
             raise TypeError(
                 "The interface must be an InterfaceTemplate or a dictionary"
@@ -332,10 +334,44 @@ class ComponentTemplate(ObjCOD3S):
                     raise ValueError(
                         f"An interface with the name '{interface.name}' and port_type '{interface.port_type}' already exists"
                     )
-
         # Add the new interface
         self.interfaces.append(interface)
         return interface
+
+    def deepcopy(self):
+        """
+        Creates a deep copy of the component template.
+
+        Returns:
+            ComponentClass: A new component template with the same values but independent objects
+        """
+        # Create deep copies of attributes
+        attributes_copy = {}
+        if self.attributes:
+            for attr_name, attr_template in self.attributes.items():
+                attributes_copy[attr_name] = copy.deepcopy(attr_template)
+
+        # Create deep copies of interfaces
+        interfaces_copy = []
+        if self.interfaces:
+            for interface in self.interfaces:
+                interfaces_copy.append(copy.deepcopy(interface))
+
+        # Create a deep copy of metadata
+        metadata_copy = copy.deepcopy(self.metadata) if self.metadata else {}
+
+        # Create a new instance with the copies
+        new_inst = self.__class__(
+            class_name=self.class_name,
+            class_name_bkd=copy.deepcopy(self.class_name_bkd),
+            class_label=self.class_label,
+            class_description=self.class_description,
+            groups=copy.deepcopy(self.groups) if self.groups else None,
+            attributes=attributes_copy,
+            interfaces=interfaces_copy,
+            metadata=metadata_copy,
+        )
+        return new_inst
 
     def create_instance(self, name, **kwargs):
         """
@@ -356,38 +392,29 @@ class ComponentTemplate(ObjCOD3S):
         Returns:
             ComponentInstance: A new component instance based on this template
         """
-        # Prepare attributes by copying from template
-        attributes = {}
-        if self.attributes:
-            for attr_name, attr_template in self.attributes.items():
-                attr_copy = copy.deepcopy(attr_template)
-                # Reset the current value to prevent it from being automatically
-                # set to the default value (for deep copy tests)
-                attr_copy.value_current = None
-                attributes[attr_name] = attr_copy
+        # Create a deep copy of the template
+        template_copy = self.deepcopy()
 
-        # Prepare interfaces by copying from template
-        interfaces = []
-        if self.interfaces:
-            for interface in self.interfaces:
-                interfaces.append(copy.deepcopy(interface))
+        template_copy.metadata.update(kwargs.pop("metadata", {}))
 
-        # Create instance with template values and overrides
-        instance = ComponentInstance(
-            name=name,
-            template=self,
-            label=kwargs.get("label", self.label),
-            description=kwargs.get("description", self.description),
-            attributes=attributes,
-            interfaces=interfaces,
-            init_parameters=kwargs.get("init_parameters", {}),
-            metadata=kwargs.get("metadata", copy.deepcopy(self.metadata)),
-        )
+        instance_specs = dict(kwargs, **template_copy.model_dump())
+
+        cls_instance = self.__class__.__name__.replace("Class", "Instance")
+
+        instance_specs["cls"] = cls_instance
+        instance_specs["name"] = name
+        # cod3s_sub_classes = ObjCOD3S.get_subclasses_dict()
+
+        # instance_class = cod3s_sub_classes.get(cls_instance, ComponentInstance)
+        # instance = instance_class(name=name, **kwargs_bis)
+        instance = ObjCOD3S.from_dict(instance_specs)
+
+        # __import__("ipdb").set_trace()
 
         return instance
 
 
-class ComponentInstance(ObjCOD3S):
+class ComponentInstance(ComponentClass):
     """
     Represents an instance of a component created from a template.
 
@@ -397,26 +424,15 @@ class ComponentInstance(ObjCOD3S):
     """
 
     name: str = Field(..., description="Component name")
-    template: ComponentTemplate = Field(..., description="Component template")
-    label: Optional[str] = Field(None, description="Component display name")
-    description: Optional[str] = Field(None, description="Component description")
+    label: str = Field(None, description="Component label")
+    description: str = Field(None, description="Component description")
     init_parameters: Optional[Dict[str, Any]] = Field(
         {}, description="Component parameters passed to component backend constructor"
     )
-    attributes: Optional[Dict[str, AttributeTemplate]] = Field(
-        {}, description="Component attributes"
-    )
-    interfaces: List[InterfaceTemplate] = Field(
-        [], description="List of component interfaces"
-    )
-
-    metadata: Optional[Dict[str, Any]] = Field({}, description="Component metadata")
-    # parent: Optional["SGEComponent"] = Field(None, description="Component parent")
-    # children: Optional[List["SGEComponent"]] = Field([], description="Component parent")
 
     def __repr__(self):
         """Return a concise string representation of the component instance."""
-        return f"{fg('green')}ComponentInstance{colored_attr('reset')}: {fg('light_green')}{self.name}{colored_attr('reset')} (template: {self.template.name})"
+        return f"{fg('green')}{self.__class__.__name__}{colored_attr('reset')}: {fg('light_green')}{self.name}{colored_attr('reset')} (class: {self.class_name})"
 
     def __str__(self):
         """Return a detailed string representation of the component instance."""
@@ -424,8 +440,8 @@ class ComponentInstance(ObjCOD3S):
         intf_count = len(self.interfaces) if self.interfaces else 0
 
         result = (
-            f"{fg('green')}Component Instance{colored_attr('reset')}: {fg('light_green')}{self.name}{colored_attr('reset')}\n"
-            f"  {fg('white')}Template{colored_attr('reset')}: {fg('yellow')}{self.template.name}{colored_attr('reset')}\n"
+            f"{fg('green')}{self.__class__.__name__}{colored_attr('reset')}: {fg('light_green')}{self.name}{colored_attr('reset')}\n"
+            f"  {fg('white')}Class{colored_attr('reset')}: {fg('yellow')}{self.class_name}{colored_attr('reset')}\n"
             f"  {fg('white')}Label{colored_attr('reset')}: {self.label or self.name}\n"
             f"  {fg('white')}Description{colored_attr('reset')}: {self.description or 'N/A'}"
         )
@@ -469,50 +485,66 @@ class ComponentInstance(ObjCOD3S):
     def to_bkd(self, bkd_name):
         """
         Dynamically calls the appropriate backend method based on the provided name.
-        
+
         Args:
             bkd_name (str): Backend name (for example 'pycatshoo')
-            
+
         Returns:
             Any: The result of the specific backend method
-            
+
         Raises:
             AttributeError: If the corresponding backend method doesn't exist
         """
         method_name = f"to_bkd_{bkd_name}"
         if not hasattr(self, method_name):
-            raise AttributeError(f"The method '{method_name}' doesn't exist. The backend '{bkd_name}' is not supported.")
+            raise AttributeError(
+                f"The method '{method_name}' doesn't exist. The backend '{bkd_name}' is not supported."
+            )
         return getattr(self, method_name)()
 
-    def to_bkd_pycatshoo(self):
+    # def check_bkd_pycatshoo(self):
+    #     try:
+    #         import Pycatshoo as pyc
+
+    #         return pyc
+    #     except ImportError:
+    #         raise ImportError(
+    #             "The Pycatshoo package is not installed. Please install it to use this functionality."
+    #         )
+
+    def to_bkd_pycatshoo(self, **init_parameters):
+        # pyc = self.check_bkd_pycatshoo()
+
+        class_name = self.class_name_bkd.get("pycatshoo")
+        if not class_name:
+            raise ValueError("No pycatshoo backend class is specified in the template.")
+
+        cls = get_class_by_name(class_name)
+
+        # # Get the class from its name
+        # if not hasattr(pyc, cls_name):
+        #     raise ValueError(
+        #         f"The class '{cls_name}' doesn't exist in the Pycatshoo package."
+        #     )
+
+        # cls = getattr(pyc, cls_name)
+
+        init_parameters.update(**self.init_parameters)
+
         try:
-            import Pycatshoo as pyc
-        except ImportError:
-            raise ImportError(
-                "The Pycatshoo package is not installed. Please install it to use this functionality."
-            )
-
-        cls_name = self.template.class_name_bkd.get("pycatshoo")
-        if not cls_name:
+            comp = cls(self.name, **init_parameters)
+        except Exception as e:
             raise ValueError(
-                "No Pycatshoo backend class is specified in the template."
+                f"Pycatshoo component instanciation failed: {e}. Please check if a PyCATSHOO system is instanciated ?"
             )
-
-        # Get the class from its name
-        if not hasattr(pyc, cls_name):
-            raise ValueError(
-                f"The class '{cls_name}' doesn't exist in the Pycatshoo package."
-            )
-
-        cls = getattr(pyc, cls_name)
 
         # Instantiate the component with the initialization parameters
-        return cls(self.name, **self.init_parameters)
+        return comp
 
 
 class KB(ObjCOD3S):
     """
-    A knowledge base (KB) contains a list of component templates.
+    A knowledge base (KB) contains a list of component classes.
 
     The knowledge base is the main container for storing and organizing
     component definitions that can be instantiated to build
@@ -525,18 +557,18 @@ class KB(ObjCOD3S):
 
     description: Optional[str] = Field(None, description="KB long description")
     version: Optional[str] = Field(None, description="KB version")
-    component_templates: Optional[Dict[str, ComponentTemplate]] = Field(
+    component_classes: Optional[Dict[str, ComponentClass]] = Field(
         {}, description="Dictionnary of component classes"
     )
 
     def __repr__(self):
         """Return a concise string representation of the knowledge base."""
-        comp_count = len(self.component_templates) if self.component_templates else 0
+        comp_count = len(self.component_classes) if self.component_classes else 0
         return f"{fg('blue')}KB{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')} ({comp_count} components)"
 
     def __str__(self):
         """Return a detailed string representation of the knowledge base."""
-        comp_count = len(self.component_templates) if self.component_templates else 0
+        comp_count = len(self.component_classes) if self.component_classes else 0
 
         result = (
             f"{fg('blue')}Knowledge Base{colored_attr('reset')}: {fg('light_blue')}{self.name}{colored_attr('reset')}\n"
@@ -547,48 +579,46 @@ class KB(ObjCOD3S):
 
         if comp_count > 0:
             result += f"\n  {fg('yellow')}Components List ({comp_count}){colored_attr('reset')}:"
-            for name, comp in self.component_templates.items():
+            for name, comp in self.component_classes.items():
                 result += f"\n    - {fg('light_yellow')}{name}{colored_attr('reset')}"
 
         return result
 
-    def add_component_template(self, component_template, upsert=False):
+    def add_component_class(self, component_class, upsert=False):
         """
         Adds a component template to the knowledge base.
 
         Args:
-            component_template (Union[ComponentTemplate, dict]): The template to add, either a ComponentTemplate object
+            component_class (Union[ComponentClass, dict]): The template to add, either a ComponentClass object
                                                                 or a dictionary of specifications
             upsert (bool): If True, updates the template if it already exists (same name)
                            If False, raises an error if a template with the same name already exists
 
         Returns:
-            ComponentTemplate: The added component template
+            ComponentClass: The added component template
 
         Raises:
             ValueError: If a template with the same name already exists and upsert=False
-            TypeError: If the provided template is neither a ComponentTemplate nor a dictionary
+            TypeError: If the provided template is neither a ComponentClass nor a dictionary
         """
-        # Convert the dictionary to ComponentTemplate if necessary
-        if isinstance(component_template, dict):
-            component_template = ComponentTemplate(**component_template)
-        elif not isinstance(component_template, ComponentTemplate):
-            raise TypeError(
-                "The template must be a ComponentTemplate or a dictionary"
-            )
+        # Convert the dictionary to ComponentClass if necessary
+        if isinstance(component_class, dict):
+            component_class = ComponentClass(**component_class)
+        elif not isinstance(component_class, ComponentClass):
+            raise TypeError("The template must be a ComponentClass or a dictionary")
 
         # Check if a template with the same name already exists
-        if component_template.name in self.component_templates:
+        if component_class.class_name in self.component_classes:
             if upsert:
                 # Update the existing template
-                self.component_templates[component_template.name] = component_template
+                self.component_classes[component_class.class_name] = component_class
             else:
                 # Raise an error if upsert=False
                 raise ValueError(
-                    f"A template with the name '{component_template.name}' already exists"
+                    f"A class with the name '{component_class.class_name}' already exists"
                 )
         else:
-            # Add the new template
-            self.component_templates[component_template.name] = component_template
+            # Add the new class
+            self.component_classes[component_class.class_name] = component_class
 
-        return component_template
+        return component_class

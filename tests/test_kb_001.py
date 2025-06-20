@@ -1,5 +1,5 @@
 import pytest
-from cod3s.kb import InterfaceTemplate, AttributeTemplate, ComponentTemplate, KB
+from cod3s.kb import InterfaceTemplate, AttributeTemplate, ComponentClass, KB
 from pydantic import ValidationError
 
 
@@ -163,19 +163,21 @@ class TestAttributeTemplate:
         assert attr.value_current == 42
 
 
-class TestComponentTemplate:
-    def test_create_component_template(self):
+class TestComponentClass:
+    def test_create_component_class(self):
         """Test the creation of a basic component template."""
-        component = ComponentTemplate(name="test_component", label="Test Component")
-        assert component.name == "test_component"
-        assert component.label == "Test Component"
-        assert component.description is None
+        component = ComponentClass(
+            class_name="test_component", class_label="Test Component"
+        )
+        assert component.class_name == "test_component"
+        assert component.class_label == "Test Component"
+        assert component.class_description is None
         assert component.groups is None
         assert component.attributes is None
         assert component.interfaces == []
         assert component.metadata == {}
 
-    def test_create_component_template_with_all_fields(self):
+    def test_create_component_class_with_all_fields(self):
         """Test the creation of a component template with all fields."""
         # Create attributes
         attr1 = AttributeTemplate(name="attr1", type="bool", value_default=True)
@@ -198,21 +200,21 @@ class TestComponentTemplate:
         )
 
         # Create component
-        component = ComponentTemplate(
-            name="test_component",
+        component = ComponentClass(
+            class_name="test_component",
             class_name_bkd={"pycatshoo": "TestComponentBackend"},
-            label="Test Component",
-            description="A test component",
+            class_label="Test Component",
+            class_description="A test component",
             groups=["Group1", "Group2"],
             attributes={"attr1": attr1, "attr2": attr2},
             interfaces=[interface1, interface2],
             metadata={"key": "value", "tags": ["tag1", "tag2"]},
         )
 
-        assert component.name == "test_component"
+        assert component.class_name == "test_component"
         assert component.class_name_bkd == {"pycatshoo": "TestComponentBackend"}
-        assert component.label == "Test Component"
-        assert component.description == "A test component"
+        assert component.class_label == "Test Component"
+        assert component.class_description == "A test component"
         assert component.groups == ["Group1", "Group2"]
 
         # Check attributes
@@ -241,12 +243,14 @@ class TestKB:
         assert kb.label is None
         assert kb.description is None
         assert kb.version is None
-        assert kb.component_templates == {}
+        assert kb.component_classes == {}
 
     def test_create_kb_with_all_fields(self):
         """Test the creation of a knowledge base with all fields."""
         # Create a component template
-        component = ComponentTemplate(name="test_component", label="Test Component")
+        component = ComponentClass(
+            class_name="test_component", class_label="Test Component"
+        )
 
         # Create KB
         kb = KB(
@@ -254,120 +258,133 @@ class TestKB:
             label="Test KB",
             description="A test knowledge base",
             version="1.0.0",
-            component_templates={"test_component": component},
+            component_classes={"test_component": component},
         )
 
         assert kb.name == "test_kb"
         assert kb.label == "Test KB"
         assert kb.description == "A test knowledge base"
         assert kb.version == "1.0.0"
-        assert len(kb.component_templates) == 1
-        assert kb.component_templates["test_component"].name == "test_component"
-        assert kb.component_templates["test_component"].label == "Test Component"
+        assert len(kb.component_classes) == 1
+        assert kb.component_classes["test_component"].class_label == "Test Component"
 
-    def test_add_component_template(self):
+    def test_add_component_class(self):
         """Test adding a component template to a knowledge base."""
         # Create KB
         kb = KB(name="test_kb")
 
         # Create component templates
-        component1 = ComponentTemplate(name="component1", label="Component 1")
-        component2 = ComponentTemplate(name="component2", label="Component 2")
+        component1 = ComponentClass(class_name="component1", class_label="Component 1")
+        component2 = ComponentClass(class_name="component2", class_label="Component 2")
 
         # Add components to KB using the new method
-        kb.add_component_template(component1)
-        kb.add_component_template(component2)
+        kb.add_component_class(component1)
+        kb.add_component_class(component2)
 
-        assert len(kb.component_templates) == 2
-        assert kb.component_templates["component1"].name == "component1"
-        assert kb.component_templates["component1"].label == "Component 1"
-        assert kb.component_templates["component2"].name == "component2"
-        assert kb.component_templates["component2"].label == "Component 2"
-        
-    def test_add_component_template_with_dict(self):
+        assert len(kb.component_classes) == 2
+        assert kb.component_classes["component1"].class_name == "component1"
+        assert kb.component_classes["component1"].class_label == "Component 1"
+        assert kb.component_classes["component2"].class_name == "component2"
+        assert kb.component_classes["component2"].class_label == "Component 2"
+
+    def test_add_component_class_with_dict(self):
         """Test adding a component template using a dictionary."""
         # Create KB
         kb = KB(name="test_kb")
-        
+
         # Add a component template using a dictionary
         template_dict = {
-            "name": "dict_template",
-            "label": "Dictionary Template",
-            "description": "A template created from a dictionary"
+            "class_name": "dict_template",
+            "class_label": "Dictionary Template",
+            "class_description": "A template created from a dictionary",
         }
-        
-        added_template = kb.add_component_template(template_dict)
-        
+
+        added_template = kb.add_component_class(template_dict)
+
         # Check that the template was added correctly
-        assert len(kb.component_templates) == 1
-        assert kb.component_templates["dict_template"].name == "dict_template"
-        assert kb.component_templates["dict_template"].label == "Dictionary Template"
-        assert kb.component_templates["dict_template"].description == "A template created from a dictionary"
-        assert added_template == kb.component_templates["dict_template"]
-        
-    def test_add_component_template_duplicate_error(self):
+        assert len(kb.component_classes) == 1
+        assert kb.component_classes["dict_template"].class_name == "dict_template"
+        assert (
+            kb.component_classes["dict_template"].class_label == "Dictionary Template"
+        )
+        assert (
+            kb.component_classes["dict_template"].class_description
+            == "A template created from a dictionary"
+        )
+        assert added_template == kb.component_classes["dict_template"]
+
+    def test_add_component_class_duplicate_error(self):
         """Test that adding a duplicate template raises an error when upsert=False."""
         # Create KB with a template
         kb = KB(name="test_kb")
-        template = ComponentTemplate(name="test_template", label="Test Template")
-        kb.add_component_template(template)
-        
+        template = ComponentClass(
+            class_name="test_template", class_label="Test Template"
+        )
+        kb.add_component_class(template)
+
         # Try to add a template with the same name
-        duplicate_template = ComponentTemplate(name="test_template", label="Duplicate Template")
-        
+        duplicate_template = ComponentClass(
+            class_name="test_template", class_label="Duplicate Template"
+        )
+
         # Check that an error is raised
         with pytest.raises(ValueError):
-            kb.add_component_template(duplicate_template, upsert=False)
-        
-    def test_add_component_template_upsert(self):
+            kb.add_component_class(duplicate_template, upsert=False)
+
+    def test_add_component_class_upsert(self):
         """Test updating an existing template when upsert=True."""
         # Create KB with a template
         kb = KB(name="test_kb")
-        template = ComponentTemplate(name="test_template", label="Test Template")
-        kb.add_component_template(template)
-        
-        # Create an updated version of the template
-        updated_template = ComponentTemplate(
-            name="test_template",
-            label="Updated Template",
-            description="Updated description"
+        template = ComponentClass(
+            class_name="test_template", class_label="Test Template"
         )
-        
+        kb.add_component_class(template)
+
+        # Create an updated version of the template
+        updated_template = ComponentClass(
+            class_name="test_template",
+            class_label="Updated Template",
+            class_description="Updated description",
+        )
+
         # Update the template
-        result = kb.add_component_template(updated_template, upsert=True)
-        
+        result = kb.add_component_class(updated_template, upsert=True)
+
         # Check that the template was updated
-        assert len(kb.component_templates) == 1
-        assert kb.component_templates["test_template"].name == "test_template"
-        assert kb.component_templates["test_template"].label == "Updated Template"
-        assert kb.component_templates["test_template"].description == "Updated description"
+        assert len(kb.component_classes) == 1
+        assert kb.component_classes["test_template"].class_name == "test_template"
+        assert kb.component_classes["test_template"].class_label == "Updated Template"
+        assert (
+            kb.component_classes["test_template"].class_description
+            == "Updated description"
+        )
         assert result == updated_template
-        
-    def test_add_component_template_invalid_type(self):
+
+    def test_add_component_class_invalid_type(self):
         """Test that adding a template with an invalid type raises an error."""
         # Create KB
         kb = KB(name="test_kb")
-        
+
         # Try to add a template with an invalid type
         with pytest.raises(TypeError):
-            kb.add_component_template("not_a_template")
+            kb.add_component_class("not_a_template")
 
 
 class TestComponentInstance:
     def test_create_component_instance_from_template(self):
         """Test creating a component instance from a template."""
         # Create a component template
-        template = ComponentTemplate(
-            name="test_template", label="Test Template", description="A test template"
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
+            class_description="A test template",
         )
 
         # Create an instance from the template
         instance = template.create_instance("test_instance")
 
-        assert instance.name == "test_instance"
-        assert instance.template == template
-        assert instance.label == "Test Template"
-        assert instance.description == "A test template"
+        assert instance.class_label == "Test Template"
+        assert instance.class_description == "A test template"
         assert instance.attributes == {}
         assert instance.interfaces == []
         assert instance.init_parameters == {}
@@ -384,10 +401,10 @@ class TestComponentInstance:
         )
 
         # Create a component template
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
-            description="A test template",
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Template label",
+            class_description="A test template",
             attributes={"attr1": attr1},
             interfaces=[interface1],
             metadata={"key": "value"},
@@ -396,15 +413,16 @@ class TestComponentInstance:
         # Create an instance with overrides
         instance = template.create_instance(
             "test_instance",
-            label="Custom Label",
+            label="Instance label",
             description="Custom description",
             init_parameters={"param1": "value1"},
             metadata={"new_key": "new_value"},
         )
 
         assert instance.name == "test_instance"
-        assert instance.template == template
-        assert instance.label == "Custom Label"
+        assert instance.class_label == "Template label"
+        assert instance.label == "Instance label"
+        assert instance.class_description == "A test template"
         assert instance.description == "Custom description"
         assert instance.init_parameters == {"param1": "value1"}
         assert "attr1" in instance.attributes
@@ -412,7 +430,7 @@ class TestComponentInstance:
         assert instance.attributes["attr1"].type == "bool"
         assert len(instance.interfaces) == 1
         assert instance.interfaces[0].name == "interface1"
-        assert instance.metadata == {"new_key": "new_value"}
+        assert instance.metadata == {"key": "value", "new_key": "new_value"}
 
     def test_component_instance_deep_copy(self):
         """Test that component instance gets deep copies of template objects."""
@@ -421,7 +439,7 @@ class TestComponentInstance:
             name="attr1",
             type="bool",
             value_default=True,
-            value_current=None,  # Explicitement None pour le test
+            value_current=True,  # Explicitement True pour le test
         )
 
         # Create interfaces
@@ -430,9 +448,9 @@ class TestComponentInstance:
         )
 
         # Create a component template
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
             attributes={"attr1": attr1},
             interfaces=[interface1],
         )
@@ -447,9 +465,9 @@ class TestComponentInstance:
         # Check that the template's objects weren't modified
         assert template.attributes["attr1"].value_current is True
         assert template.interfaces[0].description is None
-        
+
     def test_interfaces_d_property(self):
-        """Test the interfaces_d property of ComponentTemplate."""
+        """Test the interfaces_d property of ComponentClass."""
         # Create interfaces
         interface1 = InterfaceTemplate(
             name="interface1", port_type="input", label="Interface 1"
@@ -457,52 +475,52 @@ class TestComponentInstance:
         interface2 = InterfaceTemplate(
             name="interface2", port_type="output", label="Interface 2"
         )
-        
+
         # Create a component template with interfaces
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
             interfaces=[interface1, interface2],
         )
-        
+
         # Test the interfaces_d property
         interfaces_dict = template.interfaces_d
-        
+
         assert len(interfaces_dict) == 2
         assert "interface1" in interfaces_dict
         assert "interface2" in interfaces_dict
         assert interfaces_dict["interface1"] == interface1
         assert interfaces_dict["interface2"] == interface2
-        
+
     def test_add_interface_with_object(self):
         """Test adding an interface using an InterfaceTemplate object."""
         # Create a component template
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
         )
-        
+
         # Create an interface
         interface = InterfaceTemplate(
             name="test_interface", port_type="input", label="Test Interface"
         )
-        
+
         # Add the interface to the template
         added_interface = template.add_interface(interface)
-        
+
         # Check that the interface was added
         assert len(template.interfaces) == 1
         assert template.interfaces[0] == interface
         assert added_interface == interface
-        
+
     def test_add_interface_with_dict(self):
         """Test adding an interface using a dictionary of specifications."""
         # Create a component template
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
         )
-        
+
         # Add an interface using a dictionary
         interface_dict = {
             "name": "test_interface",
@@ -510,9 +528,9 @@ class TestComponentInstance:
             "label": "Test Interface",
             "description": "A test interface",
         }
-        
+
         added_interface = template.add_interface(interface_dict)
-        
+
         # Check that the interface was added
         assert len(template.interfaces) == 1
         assert template.interfaces[0].name == "test_interface"
@@ -520,42 +538,42 @@ class TestComponentInstance:
         assert template.interfaces[0].label == "Test Interface"
         assert template.interfaces[0].description == "A test interface"
         assert added_interface == template.interfaces[0]
-        
+
     def test_add_interface_duplicate_error(self):
         """Test that adding a duplicate interface raises an error when upsert=False."""
         # Create a component template with an interface
         interface = InterfaceTemplate(
             name="test_interface", port_type="input", label="Test Interface"
         )
-        
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
             interfaces=[interface],
         )
-        
+
         # Try to add an interface with the same name and port_type
         duplicate_interface = InterfaceTemplate(
             name="test_interface", port_type="input", label="Duplicate Interface"
         )
-        
+
         # Check that an error is raised
         with pytest.raises(ValueError):
             template.add_interface(duplicate_interface, upsert=False)
-        
+
     def test_add_interface_upsert(self):
         """Test updating an existing interface when upsert=True."""
         # Create a component template with an interface
         interface = InterfaceTemplate(
             name="test_interface", port_type="input", label="Test Interface"
         )
-        
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
             interfaces=[interface],
         )
-        
+
         # Create an updated version of the interface
         updated_interface = InterfaceTemplate(
             name="test_interface",
@@ -563,10 +581,10 @@ class TestComponentInstance:
             label="Updated Interface",
             description="Updated description",
         )
-        
+
         # Update the interface
         result = template.add_interface(updated_interface, upsert=True)
-        
+
         # Check that the interface was updated
         assert len(template.interfaces) == 1
         assert template.interfaces[0].name == "test_interface"
@@ -574,43 +592,43 @@ class TestComponentInstance:
         assert template.interfaces[0].label == "Updated Interface"
         assert template.interfaces[0].description == "Updated description"
         assert result == updated_interface
-        
+
     def test_add_interface_different_port_type(self):
         """Test adding an interface with the same name but different port_type."""
         # Create a component template with an interface
         interface = InterfaceTemplate(
             name="test_interface", port_type="input", label="Input Interface"
         )
-        
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
             interfaces=[interface],
         )
-        
+
         # Add an interface with the same name but different port_type
         output_interface = InterfaceTemplate(
             name="test_interface", port_type="output", label="Output Interface"
         )
-        
+
         # This should succeed because the port_type is different
         template.add_interface(output_interface)
-        
+
         # Check that both interfaces were added
         assert len(template.interfaces) == 2
         assert template.interfaces[0].name == "test_interface"
         assert template.interfaces[0].port_type == "input"
         assert template.interfaces[1].name == "test_interface"
         assert template.interfaces[1].port_type == "output"
-        
+
     def test_add_interface_invalid_type(self):
         """Test that adding an interface with an invalid type raises an error."""
         # Create a component template
-        template = ComponentTemplate(
-            name="test_template",
-            label="Test Template",
+        template = ComponentClass(
+            class_name="test_template",
+            class_label="Test Template",
         )
-        
+
         # Try to add an interface with an invalid type
         with pytest.raises(TypeError):
             template.add_interface("not_an_interface")

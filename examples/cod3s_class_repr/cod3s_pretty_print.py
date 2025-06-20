@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from cod3s.kb import (
     InterfaceTemplate,
     AttributeTemplate,
-    ComponentTemplate,
+    ComponentClass,
     ComponentInstance,
     KB,
 )
@@ -72,11 +72,10 @@ def main():
 
     # Create component template
     print("\n\nCreating component template...")
-    component_template = ComponentTemplate(
-        name="sensor",
-        label="Temperature Sensor",
-        description="A sensor that measures temperature",
-        class_name_bkd="TemperatureSensor",
+    component_class = ComponentClass(
+        class_name="sensor",
+        class_label="Temperature Sensor",
+        class_description="A sensor that measures temperature",
         groups=["Sensors", "IoT"],
         attributes={
             "power_state": bool_attr,
@@ -87,16 +86,17 @@ def main():
         metadata={"manufacturer": "SensorCorp", "model": "TS-2000"},
     )
 
-    print(f"\n{repr(component_template)}")
-    print(f"\n{component_template}")
+    print(f"\n{repr(component_class)}")
+    print(f"\n{component_class}")
 
     # Create component instance
     print("\n\nCreating component instance...")
-    component_instance = component_template.create_instance(
+    component_instance = component_class.create_instance(
         "living_room_sensor",
         label="Living Room Temperature Sensor",
         description="Temperature sensor located in the living room",
         init_parameters={"calibration": 1.02},
+        metadata={"room": "R1"},
     )
 
     print(f"\n{repr(component_instance)}")
@@ -109,7 +109,7 @@ def main():
         label="Home Automation Knowledge Base",
         description="Knowledge base for home automation components",
         version="1.0.0",
-        component_templates={"sensor": component_template},
+        component_classes={"sensor": component_class},
     )
 
     print(f"\n{repr(kb)}")

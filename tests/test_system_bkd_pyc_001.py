@@ -3,7 +3,7 @@ import pytest
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 import Pycatshoo as pyc
 from cod3s.kb import (
-    ComponentTemplate,
+    ComponentClass,
     KB,
     InterfaceTemplate,
 )
@@ -15,41 +15,41 @@ from pydantic import ValidationError
 @pytest.fixture(scope="module")
 def kb_cod3s():
     """
-    Fixture qui crée une KB avec 3 templates de composants:
-    - Source: avec une interface de flux de type output
-    - Block: avec une interface de flux d'entrée et une interface de flux de sortie
-    - Consumer: avec une interface de flux de type input
+    Fixture that creates a KB with 3 component templates:
+    - Source: with a flow interface of type output
+    - Block: with a flow input interface and a flow output interface
+    - Consumer: with a flow interface of type input
     """
-    # Créer les templates de composants
-    source_template = ComponentTemplate(
-        name="Source",
-        label="Source Component",
-        description="Component that generates flow",
+    # Create component templates
+    source_template = ComponentClass(
+        class_name="Source",
+        class_label="Source Component",
+        class_description="Component that generates flow",
         interfaces=[
             InterfaceTemplate(name="flow_out", port_type="output", label="Flow Output"),
         ],
     )
 
-    block_template = ComponentTemplate(
-        name="Block",
-        label="Block Component",
-        description="Component that processes flow",
+    block_template = ComponentClass(
+        class_name="Block",
+        class_label="Block Component",
+        class_description="Component that processes flow",
         interfaces=[
             InterfaceTemplate(name="flow_in", port_type="input", label="Flow Input"),
             InterfaceTemplate(name="flow_out", port_type="output", label="Flow Output"),
         ],
     )
 
-    consumer_template = ComponentTemplate(
-        name="Consumer",
-        label="Consumer Component",
-        description="Component that consumes flow",
+    consumer_template = ComponentClass(
+        class_name="Consumer",
+        class_label="Consumer Component",
+        class_description="Component that consumes flow",
         interfaces=[
             InterfaceTemplate(name="flow_in", port_type="input", label="Flow Input"),
         ],
     )
 
-    # Créer la KB
+    # Create the KB
     kb = KB(
         name="test_flow_kb",
         label="Test Flow KB",
@@ -57,10 +57,10 @@ def kb_cod3s():
         version="1.0.0",
     )
 
-    # Ajouter les templates de composants
-    kb.add_component_template(source_template)
-    kb.add_component_template(block_template)
-    kb.add_component_template(consumer_template)
+    # Add component templates
+    kb.add_component_class(source_template)
+    kb.add_component_class(block_template)
+    kb.add_component_class(consumer_template)
 
     return kb
 
@@ -115,31 +115,31 @@ def kb_cod3s():
 
 
 def test_flow_system_creation(kb_cod3s):
-    """Test la création d'un système avec les composants de flux et leurs connexions."""
-    # Créer un système
+    """Test the creation of a system with flow components and their connections."""
+    # Create a system
     system = System(name="flow_system", kb_name="test_flow_kb")
 
-    # Ajouter les composants
+    # Add components
     source = system.add_component(kb_cod3s, "Source", "source1")
     block = system.add_component(kb_cod3s, "Block", "block1")
     consumer = system.add_component(kb_cod3s, "Consumer", "consumer1")
 
-    # Connecter les composants
+    # Connect components
     source_to_block = system.connect("source1", "flow_out", "block1", "flow_in")
     block_to_consumer = system.connect("block1", "flow_out", "consumer1", "flow_in")
 
-    # Vérifier que les composants ont été ajoutés
+    # Verify that components have been added
     assert len(system.components) == 3
     assert "source1" in system.components
     assert "block1" in system.components
     assert "consumer1" in system.components
 
-    # Vérifier que les connexions ont été créées
+    # Verify that connections have been created
     assert len(system.connections) == 2
     assert "source1_flow_out_to_block1_flow_in" in system.connections
     assert "block1_flow_out_to_consumer1_flow_in" in system.connections
 
-    # Vérifier les détails des connexions
+    # Verify connection details
     assert source_to_block.component_source == "source1"
     assert source_to_block.interface_source == "flow_out"
     assert source_to_block.component_target == "block1"
@@ -149,6 +149,31 @@ def test_flow_system_creation(kb_cod3s):
     assert block_to_consumer.interface_source == "flow_out"
     assert block_to_consumer.component_target == "consumer1"
     assert block_to_consumer.interface_target == "flow_in"
+
+
+@pytest.mark.skipif(
+    pytest.importorskip("Pycatshoo", reason="Pycatshoo not installed") is None,
+    reason="Pycatshoo module not installed",
+)
+def test_kb_to_bkd_pycatshoo(kb_cod3s):
+    """Test the to_bkd_pycatshoo method of ComponentInstance."""
+    # Create a system with components
+    system = System(name="flow_system", kb_name="test_flow_kb")
+    source = system.add_component(kb_cod3s, "Source", "source1")
+
+    system = system.to_bkd_pycatshoo()
+
+    assert str(system.__class__) == "<class 'Pycatshoo.CSystem'>"
+    assert (
+        str(system.component("source1").__class__) == "<class 'Pycatshoo.CComponent'>"
+    )
+
+    import Pycatshoo
+
+    Pycatshoo.CSystem.terminate()
+
+    # Verify that the component was created with the correct name
+    # assert pyc_component.name() == "source1"
 
 
 # def test_delete(pyc_system):

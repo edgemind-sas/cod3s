@@ -5,9 +5,10 @@ import pandas as pd
 import plotly.express as px
 import typing
 from .automaton import PycTransition
+from ..core import ObjCOD3S
 
 
-class PycSequence(pydantic.BaseModel):
+class PycSequence(ObjCOD3S):
     # Parametres
     probability: float = pydantic.Field(None, description="Sequence probability")
 
