@@ -534,6 +534,8 @@ class PycSystem(pyc.CSystem):
 
         self.prepare_simu(simu_params)
         super().simulate()
+        if self.MPIRank() > 0:
+            exit(0)
         self.postproc_simu()
 
     def postproc_simu(self):
