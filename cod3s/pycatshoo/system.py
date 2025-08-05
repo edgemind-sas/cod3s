@@ -626,22 +626,22 @@ class PycSystem(pyc.CSystem):
 
         if indic_df is None:
             return None
-        
+
         # Filter based on component pattern
         if "comp" in indic_df.columns:
             idx_comp_sel = indic_df["comp"].str.match(comp_pattern, na=False)
         else:
             idx_comp_sel = pd.Series([True] * len(indic_df))
-        
+
         # Filter based on attribute pattern
         if "attr" in indic_df.columns:
             idx_attr_sel = indic_df["attr"].str.match(attr_pattern, na=False)
         else:
             idx_attr_sel = pd.Series([True] * len(indic_df))
-        
+
         # Filter for mean statistics
         idx_stat_sel = indic_df["stat"].isin(["mean"])
-        
+
         # Combine all filters
         idx_combined = idx_comp_sel & idx_attr_sel & idx_stat_sel
         indic_sel_df = indic_df.loc[idx_combined]
@@ -735,6 +735,10 @@ class PycSystem(pyc.CSystem):
                 trans_list_fireable.append(trans)
             else:
                 trans_list_fireable.append(None)
+
+        # Update end time to match bkd endTime
+        for trans in trans_list_fireable:
+            trans.end_time = trans.bkd.endTime()
 
         return trans_list_fireable
 
@@ -834,14 +838,14 @@ class PycSystem(pyc.CSystem):
         """
         trans_fireable = self.isimu_fireable_transitions()
 
+        self.stepForward()
+
         trans_fired = [
-            trans
-            for trans in trans_fireable
-            if (trans and (trans.bkd.endTime() == self.currentTime()))
+            trans for trans in trans_fireable if trans.end_time <= self.currentTime()
         ]
 
         self.isimu_sequence.transitions.extend(trans_fired)
-        self.stepForward()
+
         return trans_fired
 
     def isimu_set_transition(
@@ -875,13 +879,31 @@ class PycSystem(pyc.CSystem):
             return self.isimu_step_forward()
 
         trans_list = self.isimu_active_transitions()
-        selected_transition = trans_list[trans_id]
+
+        selected_transition = None
+        if isinstance(trans_id, int):
+            selected_transition = trans_list[trans_id]
+        elif isinstance(trans_id, str):
+            for trans in trans_list:
+                if trans.bkd.name() == trans_id:
+                    selected_transition = trans
+                    break
+        else:
+            raise ValueError(
+                f"Transition id must be the index of the transition as an integer or its name as a str. Not a value of type {type(trans_id)}"
+            )
 
         if not selected_transition:
             raise IndexError(f"Incorrect transition id {trans_id}")
 
         if not date:
-            date = self.currentTime()
+            if (
+                selected_transition.bkd.endTime() >= 0
+                and selected_transition.bkd.endTime() < float("inf")
+            ):
+                date = selected_transition.bkd.endTime()
+            else:
+                date = self.currentTime()
 
         if not state_index:
             state_index = 0

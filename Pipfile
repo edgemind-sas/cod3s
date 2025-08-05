@@ -4,8 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-cod3s = {file = ".", editable = true}
 semser = "*"
+cod3s = {file = ".", editable = true}
 
 [dev-packages]
 autopep8 = "*"
