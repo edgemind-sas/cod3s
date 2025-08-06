@@ -1,14 +1,17 @@
 """COD3S Setup."""
 
 from setuptools import setup, find_packages
+import importlib.util
 
-# read version as __version__
-exec(open("cod3s/version.py").read())
-
+# Charger le module version
+spec = importlib.util.spec_from_file_location("version", "cod3s/version.py")
+version_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(version_module)
+VERSION = version_module.__version__
 
 setup(
     name="cod3s",
-    version=__version__,
+    version=VERSION,
     url="https://github.com/edgemind-sas/cod3s",
     author="Roland Donat",
     author_email="roland.donat@gmail.com, roland.donat@edgemind.net",
