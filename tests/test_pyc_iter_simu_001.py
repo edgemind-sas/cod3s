@@ -57,7 +57,7 @@ def test_system(the_system):
     # __import__("ipdb").set_trace()
     assert (
         str(transitions[0].model_dump())
-        == "{'cls': 'PycTransition', 'name': 'ok_nok', 'source': 'ok', 'target': 'nok', 'occ_law': {'cls': 'ExpOccDistribution', 'rate': 0.2}, 'end_time': 0.0, 'condition': None, 'comp_name': 'C', 'comp_classname': 'PycComponent', 'is_interruptible': False}"
+        == "{'cls': 'PycTransition', 'name': 'ok_nok', 'source': 'ok', 'target': 'nok', 'occ_law': {'cls': 'ExpOccDistribution', 'rate': 0.2}, 'end_time': inf, 'condition': None, 'comp_name': 'C', 'comp_classname': 'PycComponent', 'is_interruptible': False}"
     )
 
 
