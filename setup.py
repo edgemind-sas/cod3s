@@ -41,7 +41,7 @@ setup(
     description="COmplexe Dynamic Stochastic System Simulation librairy",
     license="MIT",
     platforms="ALL",
-    python_requires=">=3.6,<=3.11",
+    python_requires=">=3.6,<3.12",
     install_requires=[
         "pandas==2.2.2",
         "pydantic==2.7.1",
