@@ -38,13 +38,16 @@ class PycComponent(pyc.CComponent):
 
         self.label = name if label is None else label
         self.description = self.label if description is None else description
-
         self.automata_d = {}
 
         self.metadata = copy.deepcopy(metadata)
 
         # Register the component in comp dictionnary
         self.system().comp[name] = self
+
+    @property
+    def class_name_bkd(self):
+        return self.__class__.__name__
 
     @classmethod
     def get_subclasses(cls, recursive=True):
