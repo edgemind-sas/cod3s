@@ -134,39 +134,39 @@ class PycComponent(pyc.CComponent):
         return f"{self.repr__class_name()} {self.repr__instance_name()}: {self.repr__variables()} {self.repr__cnct()}"
 
     def str__class_name_fmt(self):
-        """Return colored formatting for the class name stresentation."""
+        """Return colored formatting for the class name representation."""
         return self.repr__class_name_fmt()
 
     def str__class_name(self):
-        """Return the colored class name stresentation of the component."""
+        """Return the colored class name representation of the component."""
         return self.repr__class_name()
 
     def str__instance_name_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return self.repr__instance_name_fmt()
 
     def str__instance_name(self):
-        """Return the colored instance name stresentation of the component."""
+        """Return the colored instance name representation of the component."""
         return self.repr__instance_name()
 
     def str__variables_header(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return "Variables"
 
     def str__variables_header_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.attr('bold')}{colored.fg('steel_blue_3')}"
 
     def str__variables_name_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('steel_blue')}"
 
     def str__variables_value_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('white')}"
 
     def str__variables(self):
-        """Return the colored instance name stresentation of the component."""
+        """Return the colored instance name representation of the component."""
         lines = []
         # Add connection information if there are any connections
         lines.append(
@@ -183,35 +183,35 @@ class PycComponent(pyc.CComponent):
         return "\n".join(lines)
 
     def str__cnct_header_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.attr('bold')}{colored.fg('cyan')}"
 
     def str__cnct_header(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return "Connections:"
 
     def str__cnct_name_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('white')}"
 
     def str__cnct_no_cnct_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return ""
 
     def str__cnct_no_cnct(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return "no connection"
 
     def str__cnct_target_name_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('wheat_1')}"
 
     def str__cnct_target_attr_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('white')}"
 
     def str__cnct(self):
-        """Return the colored instance name stresentation of the component."""
+        """Return the colored instance name representation of the component."""
         cnct_info = self.get_cnct_info()
 
         lines = []
@@ -247,19 +247,19 @@ class PycComponent(pyc.CComponent):
         return "\n".join(lines)
 
     def str__automata_header_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.attr('bold')}{colored.fg('cyan')}"
 
     def str__automata_header(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return "Automata"
 
     def str__automaton_name_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('white')}"
 
     def str__automaton_state_fmt(self):
-        """Return colored formatting for the instance name stresentation."""
+        """Return colored formatting for the instance name representation."""
         return f"{colored.fg('rosy_brown')}"
 
     def str__automaton(self, aut):
@@ -272,7 +272,7 @@ class PycComponent(pyc.CComponent):
         return aut_str
 
     def str__automata(self):
-        """Return the colored instance name stresentation of the component."""
+        """Return the colored instance name representation of the component."""
         lines = []
         # Add connection information if there are any connections
         lines.append(
@@ -285,7 +285,7 @@ class PycComponent(pyc.CComponent):
         return "\n".join(lines)
 
     def __str__(self):
-        """Return a string stresentation showing class name and instance name."""
+        """Return a string representation showing class name and instance name."""
         return (
             f"{self.str__class_name()} {self.str__instance_name()}\n"
             f"{textwrap.indent(self.str__variables(), '  ')}\n\n"
@@ -294,25 +294,23 @@ class PycComponent(pyc.CComponent):
         )
 
     def describe(self):
-        # comp = basecls(name=bkd.name(), bkd=bkd)
-        # comp.variables = \
-        #     [PycVariable.from_bkd(elt) for elt in self.getVariables()]
-        # comp.states = \
-        #     [PycState.from_bkd(elt) for elt in bkd.getStates()]
-        # comp.automata = \
-        #     [PycAutomaton.from_bkd(elt) for elt in bkd.getAutomata()]
-
+        """Returns a dictionary from a component."""
+        dict_autom = {}
+        for automKey in self.automata_d:
+            dic_temp = self.automata_d.get(automKey)
+            pycautom = PycAutomaton.from_dict(dic_temp)
+            dict_autom_temp = pycautom.describe()
+            dict_autom[automKey] = dict_autom_temp
+    
         return {
             "name": self.name(),
-            "cls": self.className(),
-            "variables": [
-                PycVariable.from_bkd(elt).dict(exclude={"bkd"})
-                for elt in self.variables()
-            ],
-            "states": [
-                PycState.from_bkd(elt).dict(exclude={"bkd"}) for elt in self.states()
-            ],
+            "label" : self.label,
+            "cls" : self.className(),
+            "description" : self.description,
+            "variables": [var.basename() for var in self.variables()],
+            "automatons": dict_autom
         }
+    
 
     def add_automaton(self, **aut_specs):
 

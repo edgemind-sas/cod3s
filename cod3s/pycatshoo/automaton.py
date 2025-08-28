@@ -2,6 +2,8 @@ import pydantic
 import typing
 import Pycatshoo as pyc
 from ..core import ObjCOD3S
+from ..utils import remove_key_from_dict
+
 
 # ANSI color codes
 BLUE = "\033[94m"
@@ -583,10 +585,12 @@ class PycAutomaton(AutomatonModel):
         #                    for trans in trans_list_bkd]
 
         return aut
+    
 
-    # name: str = pydantic.Field(..., description="Automaton name")
-    # states: typing.List[StateModel] = \
-    #     pydantic.Field([], description="State list")
-    # transitions: typing.List[TransitionModel] = \
-    #     pydantic.Field([], description="Transition list")
-    # bkd: typing.Any = pydantic.Field(None, description="Backend handler")
+    def describe(self):
+        """Returns a dictionary from a automaton."""
+
+        dict = self.model_dump()
+        # Remove occurrences of a "kbd"" key from a dictionary.
+        cleaned_data_dict = remove_key_from_dict(dict, 'bkd', recursive=True)
+        return cleaned_data_dict   
