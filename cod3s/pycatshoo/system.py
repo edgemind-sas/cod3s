@@ -740,7 +740,8 @@ class PycSystem(pyc.CSystem):
 
         # Update end time to match bkd endTime
         for trans in trans_list_fireable:
-            trans.end_time = trans.bkd.endTime()
+            if trans:
+                trans.end_time = trans.bkd.endTime()
 
         return trans_list_fireable
 
@@ -838,12 +839,15 @@ class PycSystem(pyc.CSystem):
             - Fired transitions are added to the sequence tracker
             - The simulation time is advanced after firing transitions
         """
+
         trans_fireable = self.isimu_fireable_transitions()
 
         self.stepForward()
 
         trans_fired = [
-            trans for trans in trans_fireable if trans.end_time <= self.currentTime()
+            trans
+            for trans in trans_fireable
+            if trans and trans.end_time <= self.currentTime()
         ]
 
         self.isimu_sequence.transitions.extend(trans_fired)

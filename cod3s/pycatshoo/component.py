@@ -754,6 +754,49 @@ class PycComponent(pyc.CComponent):
         return cnct_info
 
 
+class ObjEvent(PycComponent):
+
+    def __init__(self, name, cond, inner_logic=all, outer_logic=any, tempo=0, **kwargs):
+        super().__init__(name, **kwargs)
+
+        # self.is_occurred = self.addVariable(
+        #     "is_occurred", pyc.TVarType.t_bool, False
+        # )
+
+        if isinstance(cond, list):
+
+            def cond_fun():
+                return outer_logic(
+                    [
+                        inner_logic(
+                            [
+                                c_inner["var"].value() == c_inner["value"]
+                                for c_inner in c_outer
+                            ]
+                        )
+                        for c_outer in cond
+                    ]
+                )
+
+        else:
+            cond_fun = cond
+
+        self.add_aut2st(
+            name=name,
+            st1="not_occurred",
+            st2="occurred",
+            init_st2=False,
+            trans_name_12_fmt="{name}__{st2}",
+            cond_occ_12=cond_fun,
+            occ_law_12={"cls": "delay", "time": tempo},
+            occ_interruptible_12=True,
+            trans_name_21_fmt="{name}__{st1}",
+            cond_occ_21=lambda: not cond,
+            occ_law_21={"cls": "delay", "time": 0},
+            occ_interruptible_21=True,
+        )
+
+
 # class PycComponent(ObjCOD3S):
 
 #     name: str = pydantic.Field(..., description="Component name")
