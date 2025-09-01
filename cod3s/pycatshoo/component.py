@@ -763,6 +763,7 @@ class ObjEvent(PycComponent):
         inner_logic=all,
         outer_logic=any,
         tempo=0,
+        event_aut_name="ev",
         occ_state_name="occ",
         not_occ_state_name="not_occ",
         **kwargs,
@@ -792,7 +793,7 @@ class ObjEvent(PycComponent):
             cond_fun = cond
 
         self.add_aut2st(
-            name=name,
+            name=event_aut_name,
             st1=not_occ_state_name,
             st2=occ_state_name,
             init_st2=False,
