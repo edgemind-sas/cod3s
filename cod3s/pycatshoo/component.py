@@ -756,7 +756,17 @@ class PycComponent(pyc.CComponent):
 
 class ObjEvent(PycComponent):
 
-    def __init__(self, name, cond, inner_logic=all, outer_logic=any, tempo=0, **kwargs):
+    def __init__(
+        self,
+        name,
+        cond,
+        inner_logic=all,
+        outer_logic=any,
+        tempo=0,
+        occ_state_name="occ",
+        not_occ_state_name="not_occ",
+        **kwargs,
+    ):
         super().__init__(name, **kwargs)
 
         # self.is_occurred = self.addVariable(
@@ -783,8 +793,8 @@ class ObjEvent(PycComponent):
 
         self.add_aut2st(
             name=name,
-            st1="not_occurred",
-            st2="occurred",
+            st1=not_occ_state_name,
+            st2=occ_state_name,
             init_st2=False,
             trans_name_12_fmt="{name}__{st2}",
             cond_occ_12=cond_fun,
