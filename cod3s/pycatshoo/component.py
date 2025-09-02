@@ -762,7 +762,8 @@ class ObjEvent(PycComponent):
         cond,
         inner_logic=all,
         outer_logic=any,
-        tempo=0,
+        tempo_occ=0,
+        tempo_not_occ=0,
         event_aut_name="ev",
         occ_state_name="occ",
         not_occ_state_name="not_occ",
@@ -799,11 +800,11 @@ class ObjEvent(PycComponent):
             init_st2=False,
             trans_name_12_fmt="{st2}",
             cond_occ_12=cond_fun,
-            occ_law_12={"cls": "delay", "time": tempo},
+            occ_law_12={"cls": "delay", "time": tempo_occ},
             occ_interruptible_12=True,
             trans_name_21_fmt="{st1}",
             cond_occ_21=lambda: not cond,
-            occ_law_21={"cls": "delay", "time": 0},
+            occ_law_21={"cls": "delay", "time": tempo_not_occ},
             occ_interruptible_21=True,
         )
 
