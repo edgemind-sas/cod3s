@@ -803,7 +803,7 @@ class ObjEvent(PycComponent):
             occ_law_12={"cls": "delay", "time": tempo_occ},
             occ_interruptible_12=True,
             trans_name_21_fmt="{st1}",
-            cond_occ_21=lambda: not cond,
+            cond_occ_21=lambda: not cond_fun(),
             occ_law_21={"cls": "delay", "time": tempo_not_occ},
             occ_interruptible_21=True,
         )
