@@ -439,10 +439,10 @@ class PycComponent(pyc.CComponent):
         ... )
         """
 
-        st1_name = f"{name}_{st1}"
-        # st1_name = f"{st1}"
-        st2_name = f"{name}_{st2}"
-        # st2_name = f"{st2}"
+        # st1_name = st_name_fmt.format(name=name, st=st1)
+        # st2_name = st_name_fmt.format(name=name, st=st2)
+        st1_name = st1
+        st2_name = st2
 
         trans_name_12 = trans_name_12_fmt.format(name=name, st1=st1, st2=st2)
         trans_name_21 = trans_name_21_fmt.format(name=name, st1=st1, st2=st2)
