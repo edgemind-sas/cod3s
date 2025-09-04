@@ -10,6 +10,7 @@ import copy
 import re
 import colored
 import textwrap
+import itertools
 
 
 class PycVariable(ObjCOD3S):
@@ -807,6 +808,625 @@ class ObjEvent(PycComponent):
             occ_law_21={"cls": "delay", "time": tempo_not_occ},
             occ_interruptible_21=True,
         )
+
+
+class ObjFM(PycComponent):
+    """
+    A component that models failure modes affecting multiple target components.
+
+    This class creates automata-based failure modes that can affect one or more target
+    components simultaneously. It supports different orders of failure (affecting 1, 2,
+    or more components at once) and allows customization of failure and repair conditions,
+    parameters, and effects.
+
+    The failure mode creates all possible combinations of target components up to the
+    specified order and generates corresponding automata with failure and repair transitions.
+    Each automaton is named using customizable prefixes to distinguish between different
+    target combinations.
+
+    Attributes
+    ----------
+    fm_name : str
+        The base name of the failure mode
+    targets : list[str]
+        List of target component names that can be affected by this failure mode
+    target_name : str
+        Factorized name representing all targets (auto-generated if not provided)
+    failure_state : str
+        Name of the failure state in the automaton (default: "occ")
+    repair_state : str
+        Name of the repair state in the automaton (default: "rep")
+    failure_effects : dict
+        Dictionary mapping flow names to their values when failure occurs
+    repair_effects : dict
+        Dictionary mapping flow names to their values when repair occurs
+    failure_param_name : list[str]
+        Names of the failure parameters (e.g., ["lambda"] for exponential)
+    repair_param_name : list[str]
+        Names of the repair parameters (e.g., ["mu"] for exponential)
+    trans_name_prefix : str
+        Template string for generating transition/automaton name suffixes
+    trans_name_prefix_fun : callable, optional
+        Custom function for generating transition/automaton name suffixes
+
+    Parameters
+    ----------
+    fm_name : str
+        The name of the failure mode
+    targets : str or list[str]
+        Target component(s) that can be affected by this failure mode
+    target_name : str, optional
+        Custom name for the target combination. If None, auto-generated from targets
+    failure_state : str, optional
+        Name of the failure state (default: "occ")
+    failure_cond : bool or callable, optional
+        Condition that must be met for failure to occur (default: True)
+    failure_effects : dict, optional
+        Effects applied when failure occurs (default: {})
+    failure_param_name : str or list[str], optional
+        Names of failure parameters (default: [])
+    failure_param : list, optional
+        Values of failure parameters (default: [])
+    repair_state : str, optional
+        Name of the repair state (default: "rep")
+    repair_cond : bool or callable, optional
+        Condition that must be met for repair to occur (default: True)
+    repair_effects : dict, optional
+        Effects applied when repair occurs (default: {})
+    repair_param_name : str or list[str], optional
+        Names of repair parameters (default: [])
+    repair_param : list, optional
+        Values of repair parameters (default: [])
+    param_name_order_prefix : str, optional
+        Template for parameter name suffixes (default: "__{order}_o_{order_max}")
+    trans_name_prefix : str, optional
+        Template for transition/automaton name suffixes (default: "__cc_{target_comb}")
+        Available placeholders: {target_comb}, {target_binary}, {target_comb_u}, {order}, {order_max}
+    trans_name_prefix_fun : callable, optional
+        Custom function to generate transition/automaton name suffixes. Takes keyword arguments:
+        target_set_idx, target_comb, target_binary, target_comb_u, order, order_max
+    drop_inactive_automata : bool, optional
+        Whether to skip creating automata with inactive occurrence laws (default: True)
+    step : optional
+        Step parameter for automaton transitions
+
+    Methods
+    -------
+    get_failure_cond(target_comps, failure_param)
+        Creates a failure condition function for the given target components
+    get_repair_cond(target_comps, repair_param)
+        Creates a repair condition function for the given target components
+    set_default_failure_param_name()
+        Sets default failure parameter names (to be overridden in subclasses)
+    set_default_repair_param_name()
+        Sets default repair parameter names (to be overridden in subclasses)
+    _factorize_target_names(targets, rep_char="X", ignored_char=["_"], concat_char=["__"])
+        Static method to create factorized names from target lists
+
+    Examples
+    --------
+    Basic failure mode with default naming:
+
+    >>> fm = ObjFM(
+    ...     fm_name="common_cause",
+    ...     targets=["pump1", "pump2"],
+    ...     failure_effects={"flow": False},
+    ...     repair_effects={"flow": True}
+    ... )
+    # Creates automata: "common_cause__cc_12", "common_cause__cc_1", "common_cause__cc_2"
+
+    Using custom trans_name_prefix with binary representation:
+
+    >>> fm = ObjFM(
+    ...     fm_name="failure",
+    ...     targets=["comp1", "comp2", "comp3"],
+    ...     trans_name_prefix="__bin_{target_binary}",
+    ...     failure_effects={"output": False}
+    ... )
+    # Creates automata like: "failure__bin_110", "failure__bin_101", etc.
+
+    Using custom trans_name_prefix_fun for complex naming:
+
+    >>> def custom_naming(target_set_idx, target_comb, target_binary, **kwargs):
+    ...     return f"__custom_{len(target_set_idx)}of{kwargs['order_max']}_{target_binary}"
+    ...
+    >>> fm = ObjFM(
+    ...     fm_name="advanced",
+    ...     targets=["A", "B", "C"],
+    ...     trans_name_prefix_fun=custom_naming,
+    ...     failure_effects={"signal": False}
+    ... )
+    # Creates automata like: "advanced__custom_2of3_110", "advanced__custom_1of3_100", etc.
+
+    Using underscore-separated target combinations:
+
+    >>> fm = ObjFM(
+    ...     fm_name="mode",
+    ...     targets=["unit1", "unit2", "unit3"],
+    ...     trans_name_prefix="__targets_{target_comb_u}",
+    ...     failure_effects={"active": False}
+    ... )
+    # Creates automata like: "mode__targets_1_2", "mode__targets_2_3", etc.
+    """
+
+    def __init__(
+        self,
+        fm_name,
+        targets=[],
+        target_name=None,
+        failure_state="occ",
+        failure_cond=True,
+        failure_effects={},
+        failure_param_name=[],
+        failure_param=[],
+        repair_state="rep",
+        repair_cond=True,
+        repair_effects={},
+        repair_param_name=[],
+        repair_param=[],
+        param_name_order_prefix="__{order}_o_{order_max}",
+        trans_name_prefix="__cc_{target_comb}",
+        trans_name_prefix_fun=None,
+        drop_inactive_automata=True,
+        cond_inner_logic=all,
+        cond_outer_logic=any,
+        step=None,
+        **kwargs,
+    ):
+        # __import__("ipdb").set_trace()
+
+        self.fm_name = fm_name
+        self.targets = [targets] if isinstance(targets, str) else targets
+        if target_name is None and len(self.targets) == 1:
+            target_name = self.targets[0]
+        self.target_name = target_name or self._factorize_target_names(targets)
+
+        comp_name = f"{self.target_name}__{self.fm_name}"
+
+        super().__init__(comp_name, **kwargs)
+        # if self.system().name() == "003":
+        #     __import__("ipdb").set_trace()
+
+        order_max = len(self.targets)
+
+        self.failure_cond = copy.deepcopy(failure_cond)
+        self.repair_cond = copy.deepcopy(repair_cond)
+
+        self.failure_state = failure_state
+        self.repair_state = repair_state
+
+        self.step = step
+
+        self.cond_inner_logic = cond_inner_logic
+        self.cond_outer_logic = cond_inner_logic
+
+        self.var_params = {}
+        self.failure_effects = copy.deepcopy(failure_effects)
+        self.repair_effects = copy.deepcopy(repair_effects)
+        self.failure_param_name = (
+            [failure_param_name]
+            if isinstance(failure_param_name, str)
+            else copy.deepcopy(failure_param_name)
+        )
+        self.set_default_failure_param_name()
+
+        self.repair_param_name = (
+            [repair_param_name]
+            if isinstance(repair_param_name, str)
+            else copy.deepcopy(repair_param_name)
+        )
+        self.set_default_repair_param_name()
+
+        self.param_name_order_prefix = param_name_order_prefix
+        self.trans_name_prefix = trans_name_prefix
+        self.trans_name_prefix_fun = trans_name_prefix_fun
+
+        self.failure_param = (
+            [failure_param]
+            if not isinstance(failure_param, list)
+            else copy.deepcopy(failure_param)
+        )
+        failure_param_diff = len(self.targets) - len(self.failure_param)
+        if failure_param_diff > 0:
+            self.set_default_failure_param()
+        elif failure_param_diff < 0:
+            raise ValueError(
+                f"Failure mode of order {order_max} but you provide {len(self.failure_param)} failure parameters: {self.failure_param}"
+            )
+
+        self.repair_param = (
+            [repair_param]
+            if not isinstance(repair_param, list)
+            else copy.deepcopy(repair_param)
+        )
+        repair_param_diff = len(self.targets) - len(self.repair_param)
+        if repair_param_diff > 0:
+            self.set_default_repair_param()
+        elif repair_param_diff < 0:
+            raise ValueError(
+                f"Failure mode of order {order_max} but you provide {len(self.repair_param)} repair parameters: {self.repair_param}"
+            )
+
+        for order in range(1, order_max + 1):
+
+            failure_param_cur = self.failure_param[order - 1]
+            if not isinstance(failure_param_cur, tuple):
+                failure_param_cur = (failure_param_cur,)
+
+            failure_var_params_cur = {}
+            for failure_param_name_cur, param_value in zip(
+                self.failure_param_name, failure_param_cur
+            ):
+                failure_param_name_cur_tmp = failure_param_name_cur
+                if order_max > 1:
+                    failure_param_name_cur_tmp += self.param_name_order_prefix.format(
+                        order=order, order_max=order_max
+                    )
+
+                failure_var_param = self.addVariable(
+                    failure_param_name_cur_tmp, pyc.TVarType.t_double, param_value
+                )
+                failure_var_params_cur.update(
+                    {failure_param_name_cur: failure_var_param}
+                )
+
+            repair_param_cur = self.repair_param[order - 1]
+            if not isinstance(repair_param_cur, tuple):
+                repair_param_cur = (repair_param_cur,)
+
+            repair_var_params_cur = {}
+            for repair_param_name_cur, param_value in zip(
+                self.repair_param_name, repair_param_cur
+            ):
+                repair_param_name_cur_tmp = repair_param_name_cur
+                if order_max > 1:
+                    repair_param_name_cur_tmp += self.param_name_order_prefix.format(
+                        order=order, order_max=order_max
+                    )
+
+                repair_var_param = self.addVariable(
+                    repair_param_name_cur_tmp, pyc.TVarType.t_double, param_value
+                )
+                repair_var_params_cur.update({repair_param_name_cur: repair_var_param})
+
+            if (
+                drop_inactive_automata
+                and not self.is_occ_law_failure_active(failure_var_params_cur)
+                and not self.is_occ_law_repair_active(repair_var_params_cur)
+            ):
+                continue
+
+            for target_set_idx in itertools.combinations(range(order_max), order):
+
+                failure_effects_cur = [
+                    {
+                        "var": getattr(
+                            self.system().component(self.targets[target_idx]), var
+                        ),
+                        "value": value,
+                    }
+                    for target_idx in target_set_idx
+                    for var, value in self.failure_effects.items()
+                ]
+                repair_effects_cur = [
+                    {
+                        "var": getattr(
+                            self.system().component(self.targets[target_idx]), var
+                        ),
+                        "value": value,
+                    }
+                    for target_idx in target_set_idx
+                    for var, value in self.repair_effects.items()
+                ]
+
+                failure_state_name_cur = self.failure_state
+                repair_state_name_cur = self.repair_state
+                aut_name_cur = fm_name
+                if order_max > 1:
+                    target_comb = "".join([str(i + 1) for i in target_set_idx])
+                    target_comb_u = "_".join([str(i + 1) for i in target_set_idx])
+                    target_binary = "".join(
+                        ["1" if i in target_set_idx else "0" for i in range(order_max)]
+                    )
+                    if callable(self.trans_name_prefix_fun):
+                        trans_name_prefix_cur = self.trans_name_prefix_fun(
+                            target_set_idx=target_set_idx,
+                            target_comb=target_comb,
+                            target_binary=target_binary,
+                            target_comb_u=target_comb_u,
+                            order=order,
+                            order_max=order_max,
+                        )
+                    else:
+                        trans_name_prefix_cur = self.trans_name_prefix.format(
+                            target_comb=target_comb,
+                            target_binary=target_binary,
+                            target_comb_u=target_comb_u,
+                            order=order,
+                            order_max=order_max,
+                        )
+                    aut_name_cur += trans_name_prefix_cur
+                    failure_state_name_cur += trans_name_prefix_cur
+                    repair_state_name_cur += trans_name_prefix_cur
+
+                target_comps_cur = [
+                    self.system().component(self.targets[idx]) for idx in target_set_idx
+                ]
+
+                failure_cond_cur = self.get_failure_cond(
+                    target_comps=target_comps_cur, param=failure_var_params_cur
+                )
+                repair_cond_cur = self.get_repair_cond(
+                    target_comps=target_comps_cur, param=repair_var_params_cur
+                )
+
+                # if fm_name_cur == "frun__cc_134":
+                # __import__("ipdb").set_trace()
+                self.add_aut2st(
+                    name=aut_name_cur,
+                    st1=repair_state_name_cur,
+                    st2=failure_state_name_cur,
+                    init_st2=False,
+                    trans_name_12_fmt="{st2}",
+                    cond_occ_12=failure_cond_cur,
+                    occ_law_12=self.set_occ_law_failure(failure_var_params_cur),
+                    occ_interruptible_12=True,
+                    effects_st2=failure_effects_cur,
+                    effects_st2_format="records",
+                    trans_name_21_fmt="{st1}",
+                    cond_occ_21=repair_cond_cur,
+                    occ_law_21=self.set_occ_law_repair(repair_var_params_cur),
+                    occ_interruptible_21=True,
+                    effects_st1=repair_effects_cur,
+                    effects_st1_format="records",
+                    step=self.step,
+                )
+
+    def get_failure_cond(self, target_comps, **kwrds):
+        if isinstance(self.failure_cond, dict):
+
+            def failure_cond_fun():
+                return self.outer_logic(
+                    [
+                        self.inner_logic(
+                            [
+                                c_inner["var"].value() == c_inner["value"]
+                                for c_inner in c_outer
+                            ]
+                        )
+                        for c_outer in self.failure_cond.items()
+                        for comp in target_comps
+                    ]
+                )
+
+            # def failure_cond_fun():
+            #     return all(
+            #         [
+            #             comp.flows_in[flow].var_fed.value() == flow_value
+            #             for flow, flow_value in self.failure_cond.items()
+            #             for comp in target_comps
+            #         ]
+            #     )
+
+        elif callable(self.failure_cond):
+            failure_cond_fun = self.failure_cond
+        else:
+
+            def failure_cond_fun():
+                return self.failure_cond
+
+        return failure_cond_fun
+
+    def get_repair_cond(self, target_comps, **kwrds):
+        if self.repair_cond is not True:
+
+            def repair_cond_fun():
+                return self.outer_logic(
+                    [
+                        self.inner_logic(
+                            [
+                                c_inner["var"].value() == c_inner["value"]
+                                for c_inner in c_outer
+                            ]
+                        )
+                        for c_outer in self.repair_cond.items()
+                        for comp in target_comps
+                    ]
+                )
+
+            # def repair_cond_fun():
+            #     return all(
+            #         [
+            #             comp.flows_in[flow].var_fed.value() == flow_value
+            #             for flow, flow_value in self.repair_cond.items()
+            #             for comp in target_comps
+            #         ]
+            #     )
+
+            return repair_cond_fun
+        else:
+            return True
+
+        # __import__("ipdb").set_trace()
+
+    # TO BE OVERLOADED IF NEEDED
+    def set_default_failure_param_name(self):
+        pass
+
+    # TO BE OVERLOADED IF NEEDED
+    def set_default_repair_param_name(self):
+        pass
+
+    def is_occ_law_failure_active(self, params):
+        return True
+
+    def is_occ_law_repair_active(self, params):
+        return True
+
+    @staticmethod
+    def _factorize_target_names(
+        targets: list[str], rep_char="X", ignored_char=["_"], concat_char=["__"]
+    ) -> str:
+        """
+        Creates a factorized name from a list of target component names.
+
+        This utility method generates a compact representation of multiple target
+        names by identifying common patterns and replacing differing characters
+        with a placeholder. This is particularly useful for failure modes that
+        affect multiple similar components.
+
+        The algorithm works as follows:
+        1. If targets have different lengths, concatenate with separator
+        2. For same-length targets, compare character by character
+        3. Keep common characters, replace differences with rep_char
+        4. Ignore specified characters (like underscores) during comparison
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of target component names to factorize
+        rep_char : str, optional
+            Character to use for differing positions (default: "X")
+        ignored_char : list[str], optional
+            Characters to ignore during comparison (default: ["_"])
+        concat_char : list[str], optional
+            Characters to use for concatenation when lengths differ (default: ["__"])
+
+        Returns
+        -------
+        str
+            Factorized name representing all targets
+
+        Examples
+        --------
+        >>> _factorize_target_names(["pump1", "pump2", "pump3"])
+        "pumpX"
+
+        >>> _factorize_target_names(["motor_A1", "motor_B1"])
+        "motor_X1"
+
+        >>> _factorize_target_names(["component1", "very_long_name"])
+        "component1__very_long_name"
+        """
+        if not targets:
+            return ""
+        if len(targets) == 1:
+            return targets[0]
+
+        first_len = len(targets[0])
+        # If targets have different lengths, concatenate them
+        if not all(len(t) == first_len for t in targets):
+            return concat_char[0].join(targets)
+
+        # Character-by-character comparison for same-length targets
+        result_chars = []
+        for i in range(first_len):
+            ref_char = targets[0][i]
+
+            # Skip ignored characters (keep them as-is)
+            if ref_char in ignored_char:
+                result_chars.append(ref_char)
+                continue
+
+            # Check if character is common across all targets
+            is_common = all(t[i] == ref_char for t in targets)
+
+            if is_common:
+                result_chars.append(ref_char)
+            else:
+                result_chars.append(rep_char)
+
+        return "".join(result_chars)
+
+
+class ObjFMExp(ObjFM):
+
+    def set_default_failure_param_name(self):
+        if not self.failure_param_name:
+            self.failure_param_name = ["lambda"]
+
+    def set_default_repair_param_name(self):
+        if not self.repair_param_name:
+            self.repair_param_name = ["mu"]
+
+    def set_default_failure_param(self):
+        failure_param_diff = len(self.targets) - len(self.failure_param)
+        if failure_param_diff > 0:
+            self.failure_param += [(0,)] * failure_param_diff
+
+    def set_default_repair_param(self):
+        repair_param_diff = len(self.targets) - len(self.repair_param)
+        if repair_param_diff > 0:
+            self.repair_param += [(0,)] * repair_param_diff
+
+    def is_occ_law_failure_active(self, params):
+        return params[self.failure_param_name[0]].value() > 0
+
+    def is_occ_law_repair_active(self, params):
+        return params[self.repair_param_name[0]].value() > 0
+
+    def set_occ_law_failure(self, params):
+        return {"cls": "exp", "rate": params[self.failure_param_name[0]]}
+
+    def set_occ_law_repair(self, params):
+        return {"cls": "exp", "rate": params[self.repair_param_name[0]]}
+
+    def get_failure_cond(self, target_comps, param, **kwrds):
+
+        parent_failure_cond_fun = super().get_failure_cond(target_comps)
+
+        def failure_cond_fun():
+            return (
+                param[self.failure_param_name[0]].bValue() and parent_failure_cond_fun()
+            )
+
+        return failure_cond_fun
+
+    def get_repair_cond(self, target_comps, param):
+        if self.repair_cond is not True:
+
+            def repair_cond_fun():
+                return param[self.repair_param_name[0]].bValue() and all(
+                    [
+                        comp.flows_in[flow].var_fed.value() == flow_value
+                        for flow, flow_value in self.repair_cond.items()
+                        for comp in target_comps
+                    ]
+                )
+
+        else:
+
+            def repair_cond_fun():
+                return param[self.repair_param_name[0]].bValue()
+
+        return repair_cond_fun
+
+
+class ObjFMDelay(ObjFM):
+
+    def set_default_failure_param_name(self):
+        if not self.failure_param_name:
+            self.failure_param_name = ["ttf"]
+
+    def set_default_repair_param_name(self):
+        if not self.repair_param_name:
+            self.repair_param_name = ["ttr"]
+
+    def set_default_failure_param(self):
+        failure_param_diff = len(self.targets) - len(self.failure_param)
+        if failure_param_diff > 0:
+            self.failure_param += [(0,)] * failure_param_diff
+
+    def set_default_repair_param(self):
+        repair_param_diff = len(self.targets) - len(self.repair_param)
+        if repair_param_diff > 0:
+            self.repair_param += [(0,)] * repair_param_diff
+
+    def set_occ_law_failure(self, params):
+        return {"cls": "delay", "time": params[self.failure_param_name[0]]}
+
+    def set_occ_law_repair(self, params):
+        return {"cls": "delay", "time": params[self.repair_param_name[0]]}
 
 
 # class PycComponent(ObjCOD3S):

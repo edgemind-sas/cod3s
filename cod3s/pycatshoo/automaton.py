@@ -295,7 +295,13 @@ class PycOccurrenceDistribution(OccurrenceDistributionModel):
             else:
                 probs = [1]
             return InstOccDistribution(probs=probs, bkd=pyc_occ_law)
+
+        elif pyc_occ_law.name() == "":
+            # WARNING: THIS IS NOT TESTED
+            return DelayOccDistribution(time=pyc_occ_law.parameter(0), bkd=pyc_occ_law)
+
         else:
+
             raise ValueError(
                 f"Pycatshoo distribution {pyc_occ_law.name()} is not supported by COD3S"
             )
