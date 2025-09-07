@@ -2,9 +2,10 @@
 
 import pydantic
 import typing
-import pandas as pd
 from ..core import ObjCOD3S
+from ..utils import get_operator_function
 from .automaton import PycAutomaton, PycState
+from .common import prepare_attr_tree
 import Pycatshoo as pyc
 import copy
 import re
@@ -772,22 +773,25 @@ class ObjEvent(PycComponent):
     ):
         super().__init__(name, **kwargs)
 
-        # self.is_occurred = self.addVariable(
-        #     "is_occurred", pyc.TVarType.t_bool, False
-        # )
-
         if isinstance(cond, list):
+
+            cond_bis = prepare_attr_tree(cond, system=self.system())
 
             def cond_fun():
                 return outer_logic(
                     [
                         inner_logic(
                             [
-                                c_inner["var"].value() == c_inner["value"]
+                                get_operator_function(c_inner.get("ope", "=="))(
+                                    getattr(
+                                        c_inner["attr"], c_inner["attr_val_name"]
+                                    )(),
+                                    c_inner["value"],
+                                )
                                 for c_inner in c_outer
                             ]
                         )
-                        for c_outer in cond
+                        for c_outer in cond_bis
                     ]
                 )
 

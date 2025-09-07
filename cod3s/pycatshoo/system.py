@@ -156,6 +156,9 @@ class MCSimulationParam(pydantic.BaseModel):
     time_unit: typing.Optional[str] = pydantic.Field(
         None, description="Time unit for simulation (e.g., 'h', 'd', 'y')"
     )
+    rng: str = pydantic.Field("yarn5", description="Random Number Generators name")
+    rng_bloc_size: int = pydantic.Field(1000, description="Bloc size for parallel RNG")
+
     seed: typing.Any = pydantic.Field(
         None, description="Random seed for reproducibility"
     )
@@ -204,7 +207,7 @@ class PycMCSimulationParam(MCSimulationParam):
         ... )
     """
 
-    pass
+    trace_level: int = pydantic.Field(0, description="Pycatshoo simulator trace level")
 
 
 class PycSystem(pyc.CSystem):
@@ -222,7 +225,7 @@ class PycSystem(pyc.CSystem):
         comp (dict): Dictionary of system components (populated by PycComponent.register)
     """
 
-    def __init__(self, name):
+    def __init__(self, name, **kwrds):
         """Initialize a new PyCATSHOO system.
 
         Args:
@@ -233,6 +236,27 @@ class PycSystem(pyc.CSystem):
         self.indicators = {}
         self.isimu_sequence = PycSequence()
         self.comp = {}  # Populated by PycComponent register method at init
+
+    def add_components(self, comp_specs_list=[], logger=None):
+        for comp_specs in comp_specs_list:
+            comp_cur = self.add_component(**comp_specs)
+            if logger:
+                logger.info2(f"Add: {repr(comp_cur)}")
+
+    def add_connections(self, conn_specs_list=[], logger=None):
+        for conn_specs in conn_specs_list:
+            component_source = conn_specs.get("component_source")
+            interface_source = conn_specs.get("interface_source")
+            component_target = conn_specs.get("component_target")
+            interface_target = conn_specs.get("interface_target")
+
+            self.connect(
+                component_source, interface_source, component_target, interface_target
+            )
+            if logger:
+                logger.info2(
+                    f"Connect: {component_source} [{interface_source}] -> [{interface_target}] {component_target}"
+                )
 
     def add_component(self, **comp_specs):
         """Add a new component to the system.
@@ -270,6 +294,17 @@ class PycSystem(pyc.CSystem):
             dict: Dictionary of {name: component} for components whose names match the pattern.
         """
         return {k: v for k, v in self.comp.items() if re.search(f"^({pattern})$", k)}
+
+    def add_indicators(self, indic_list, logger=None):
+
+        for indic_specs in indic_list:
+            if indic_specs.pop("enabled", True):
+                indics = self.add_indicator(**indic_specs)
+                # if logger:
+                #     logger.debug("=> DONE")
+            else:
+                if logger:
+                    logger.debug("=> IGNORED")
 
     def add_indicator(self, **indic_specs):
         """Add attribute-based indicators to the system.
@@ -510,6 +545,15 @@ class PycSystem(pyc.CSystem):
         if simu_params.nb_runs is not None:
             self.setNbSeqToSim(simu_params.nb_runs)
 
+        if simu_params.rng is not None:
+            self.setRNG(simu_params.rng)
+
+        if simu_params.rng_bloc_size is not None:
+            self.setRNGBlocSize(simu_params.rng_bloc_size)
+
+        if simu_params.trace_level is not None:
+            self.setTrace(simu_params.trace_level)
+
     def simulate(self, simu_params: PycMCSimulationParam):
         """Run a complete simulation with the given parameters.
 
@@ -602,6 +646,7 @@ class PycSystem(pyc.CSystem):
         comp_pattern=".*",
         attr_pattern=".*",
         layout={},
+        traces={},
         **px_conf,
     ):
         """Create a line plot of indicator values using plotly express.
@@ -650,6 +695,7 @@ class PycSystem(pyc.CSystem):
 
         fig = px.line(indic_sel_df, x=x, y=y, color=color, markers=markers, **px_conf)
         fig.update_layout(**layout)
+        fig.update_traces(**traces)
 
         return fig
 

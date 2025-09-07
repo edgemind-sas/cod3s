@@ -1,5 +1,6 @@
 import sys
 import importlib
+import operator
 
 
 def get_class_by_name(class_name):
@@ -38,8 +39,37 @@ def get_class_by_name(class_name):
                 for module_name, module in sys.modules.items():
                     if hasattr(module, class_name):
                         return getattr(module, class_name)
-                raise AttributeError(
                     f"The class '{class_name}' was not found in the global namespace or in imported modules."
-                )
+                raise AttributeError()
         except Exception as e:
             raise ValueError(f"Error while searching for class '{class_name}': {e}")
+
+
+def get_operator_function(operator_str):
+    """
+    Get the operator function corresponding to an operator string.
+
+    Args:
+        operator_str (str): Operator string like "==", "!=", "<=", "<", ">=", ">"
+
+    Returns:
+        function: The corresponding operator function
+
+    Raises:
+        ValueError: If the operator string is not supported
+    """
+    operator_map = {
+        "==": operator.eq,
+        "!=": operator.ne,
+        "<": operator.lt,
+        "<=": operator.le,
+        ">": operator.gt,
+        ">=": operator.ge,
+    }
+
+    if operator_str not in operator_map:
+        raise ValueError(
+            f"Unsupported operator: {operator_str}. Supported operators: {list(operator_map.keys())}"
+        )
+
+    return operator_map[operator_str]

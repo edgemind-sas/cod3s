@@ -138,6 +138,110 @@ def parse_quantile(quantile_string, return_pct=False):
     return quantiles
 
 
+def cod3s_deepcopy(obj):
+    """Custom deep copy that handles Pycatshoo objects that can't be pickled."""
+    if isinstance(obj, list):
+        return [cod3s_deepcopy(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: cod3s_deepcopy(value) for key, value in obj.items()}
+    elif hasattr(obj, "__dict__") and hasattr(obj, "__class__"):
+        # For Pycatshoo objects, just return the original reference
+        # since we'll replace them with actual objects anyway
+        return obj
+    else:
+        # For primitive types, return as-is
+        return obj
+
+
+def prepare_attr_tree(attr_tree, system=None):
+    """
+    Prepare an attribute tree by replacing string attribute names with actual objects.
+
+    Takes a hierarchical structure of nested lists where terminal elements are dictionaries
+    containing at least an "attr" key. Returns a deep copy of this structure where string
+    attribute names are replaced with the corresponding variable or state objects.
+
+    Args:
+        attr_tree: Hierarchical structure of lists and dictionaries
+
+    Returns:
+        Deep copy of attr_tree with string attributes replaced by objects
+
+    Raises:
+        ValueError: If an attribute name is not found in variables or states
+    """
+
+    # Make a deep copy of attr_tree
+    attr_tree_copy = cod3s_deepcopy(attr_tree)
+
+    def process_element(element):
+        """Recursively process elements in the tree structure."""
+        if isinstance(element, list):
+            # Process each element in the list
+            for item in element:
+                process_element(item)
+        elif isinstance(element, dict):
+            # Process dictionary elements
+            if "attr" in element:
+                if isinstance(element["attr"], str):
+                    attr_name = element["attr"]
+
+                    if "obj" in element:
+                        obj = element["obj"]
+                        if isinstance(obj, str):
+                            if system and isinstance(system, pyc.CSystem):
+                                obj = system.comp[obj]
+                            else:
+                                raise ValueError(
+                                    "system argument is required in this case and must be of type pyc.CSystem"
+                                )
+
+                        if not isinstance(obj, pyc.CComponent):
+                            raise ValueError(
+                                "Key 'obj' must contain an object of type pyc.CComponent"
+                            )
+                    else:
+                        raise ValueError(
+                            "'attr' key provided as a string, you must reference the related object as the value of key 'obj'"
+                        )
+                    # Get variable and state names for lookup
+                    variable_names = [v.basename() for v in obj.variables()]
+                    state_names = [s.basename() for s in obj.states()]
+
+                    # Check if it's a variable
+                    if attr_name in variable_names:
+                        element["attr"] = obj.variable(attr_name)
+                    # Check if it's a state
+                    elif attr_name in state_names:
+                        element["attr"] = obj.state(attr_name)
+                    elif hasattr(obj, attr_name):
+                        element["attr"] = getattr(obj, attr_name)
+                    else:
+                        raise ValueError(
+                            f"{attr_name} must be a variable or a state or an attribute of {repr(obj)}"
+                        )
+                if isinstance(element["attr"], pyc.IVariable):
+                    element["attr_val_name"] = "value"
+                elif isinstance(element["attr"], pyc.IState):
+                    element["attr_val_name"] = "isActive"
+                else:
+                    raise ValueError(
+                        f"Attribute type {type(element['attr'])} not supported"
+                    )
+            else:
+                raise ValueError(f"Element {element} must have a key 'attr'")
+
+            # Recursively process other dictionary values
+            for value in element.values():
+                if isinstance(value, (list, dict)):
+                    process_element(value)
+
+    # Scan depth first attr_tree_copy and process as requested
+    process_element(attr_tree_copy)
+
+    return attr_tree_copy
+
+
 if __name__ == "__main__":
     import doctest
 
