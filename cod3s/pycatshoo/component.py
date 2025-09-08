@@ -773,6 +773,8 @@ class ObjEvent(PycComponent):
     ):
         super().__init__(name, **kwargs)
 
+        cond = self.sanitize_cond_format(cond)
+
         if isinstance(cond, list):
 
             cond_bis = prepare_attr_tree(cond, system=self.system())
@@ -812,6 +814,27 @@ class ObjEvent(PycComponent):
             occ_law_21={"cls": "delay", "time": tempo_not_occ},
             occ_interruptible_21=True,
         )
+
+    def sanitize_cond_format(self, cond):
+
+        if isinstance(cond, dict):
+            cond = [[cond]]
+        else:
+            if isinstance(cond, list):
+                if all([isinstance(c, list) for c in cond]):
+                    if any([not isinstance(ci, dict) for ci in co for co in cond]):
+                        raise ValueError(
+                            "ObjEvent condition specification must be a list of list of dict"
+                        )
+                elif all([isinstance(c, dict) for c in cond]):
+                    # Just add the second level of list
+                    cond = [cond]
+                else:
+                    raise ValueError(
+                        "ObjEvent condition specification must be a list of list of dict"
+                    )
+
+        return cond
 
 
 class ObjFM(PycComponent):
@@ -1102,26 +1125,56 @@ class ObjFM(PycComponent):
 
             for target_set_idx in itertools.combinations(range(order_max), order):
 
-                failure_effects_cur = [
-                    {
-                        "var": getattr(
-                            self.system().component(self.targets[target_idx]), var
-                        ),
-                        "value": value,
-                    }
-                    for target_idx in target_set_idx
-                    for var, value in self.failure_effects.items()
-                ]
-                repair_effects_cur = [
-                    {
-                        "var": getattr(
-                            self.system().component(self.targets[target_idx]), var
-                        ),
-                        "value": value,
-                    }
-                    for target_idx in target_set_idx
-                    for var, value in self.repair_effects.items()
-                ]
+                failure_effects_cur = []
+                for var, value in self.failure_effects.items():
+                    for target_idx in target_set_idx:
+                        comp_cur = self.system().component(self.targets[target_idx])
+
+                        if hasattr(comp_cur, var):
+                            comp_var = getattr(comp_cur, var)
+                        elif var in [v.basename() for v in comp_cur.variables()]:
+                            comp_var = comp_cur.variable(var)
+                        else:
+                            raise ValueError(
+                                f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                            )
+                        failure_effects_cur.append({"var": comp_var, "value": value})
+
+                repair_effects_cur = []
+                for var, value in self.repair_effects.items():
+                    for target_idx in target_set_idx:
+                        comp_cur = self.system().component(self.targets[target_idx])
+
+                        if hasattr(comp_cur, var):
+                            comp_var = getattr(comp_cur, var)
+                        elif var in [v.basename() for v in comp_cur.variables()]:
+                            comp_var = comp_cur.variable(var)
+                        else:
+                            raise ValueError(
+                                f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                            )
+                        repair_effects_cur.append({"var": comp_var, "value": value})
+
+                # failure_effects_cur = [
+                #     {
+                #         "var": getattr(
+                #             self.system().component(self.targets[target_idx]), var
+                #         ),
+                #         "value": value,
+                #     }
+                #     for var, value in self.failure_effects.items()
+                #     for target_idx in target_set_idx
+                # ]
+                # repair_effects_cur = [
+                #     {
+                #         "var": getattr(
+                #             self.system().component(self.targets[target_idx]), var
+                #         ),
+                #         "value": value,
+                #     }
+                #     for target_idx in target_set_idx
+                #     for var, value in self.repair_effects.items()
+                # ]
 
                 failure_state_name_cur = self.failure_state
                 repair_state_name_cur = self.repair_state

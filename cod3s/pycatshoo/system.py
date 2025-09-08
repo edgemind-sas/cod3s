@@ -37,7 +37,7 @@ from .indicator import (
 )
 from .automaton import PycTransition
 from .sequence import PycSequence
-from .component import PycComponent
+from .component import PycComponent, ObjEvent
 from .common import get_pyc_attr_list_name, get_pyc_simu_mode
 
 
@@ -295,13 +295,50 @@ class PycSystem(pyc.CSystem):
         """
         return {k: v for k, v in self.comp.items() if re.search(f"^({pattern})$", k)}
 
+    def add_events(self, event_list, logger=None):
+
+        for event_specs in event_list:
+            if event_specs.pop("enabled", True):
+                event_specs.setdefault("cls", "ObjEvent")
+                event_cur = self.add_component(**event_specs)
+                if logger:
+                    logger.info3(f"=> Event {repr(event_cur)} added")
+            else:
+                if logger:
+                    logger.debug("=> IGNORED")
+
+    def add_targets(self, target_list, logger=None):
+
+        for target_specs in target_list:
+            if target_specs.pop("enabled", True):
+
+                target_name = target_specs.get("name")
+
+                if target_name in self.comp.keys():
+                    target_comp = self.comp[target_name]
+                    if isinstance(target_comp, ObjEvent):
+                        self.addTarget(target_name, f"{target_name}.occ", "ST")
+                        if logger:
+                            logger.info3(
+                                f"=> Target added from event {repr(target_comp)}"
+                            )
+                else:
+                    self.addTarget(*target_specs.values())
+                    # system.addTarget("top_event", "Indicator_H2.signal_out", "VAR", "==", 2)
+                    if logger:
+                        logger.info3(f"=> Target {target_name} added")
+            else:
+                if logger:
+                    logger.debug(f"=> Target {target_name} ignored")
+
     def add_indicators(self, indic_list, logger=None):
 
         for indic_specs in indic_list:
             if indic_specs.pop("enabled", True):
                 indics = self.add_indicator(**indic_specs)
-                # if logger:
-                #     logger.debug("=> DONE")
+                for indic in indics:
+                    if logger:
+                        logger.info3(f"=> Indicator {indic.name} added")
             else:
                 if logger:
                     logger.debug("=> IGNORED")
