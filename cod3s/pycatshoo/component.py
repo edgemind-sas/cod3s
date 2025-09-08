@@ -822,7 +822,9 @@ class ObjEvent(PycComponent):
         else:
             if isinstance(cond, list):
                 if all([isinstance(c, list) for c in cond]):
-                    if any([not isinstance(ci, dict) for ci in co for co in cond]):
+                    if any(
+                        [any([not isinstance(ci, dict) for ci in co]) for co in cond]
+                    ):
                         raise ValueError(
                             "ObjEvent condition specification must be a list of list of dict"
                         )
