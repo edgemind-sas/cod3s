@@ -46,7 +46,7 @@ setup(
         "pandas==2.2.2",
         "pydantic==2.7.1",
         "xlsxwriter==3.0.9",
-        "plotly[kaleido]==6.3.0",
+        "plotly==6.3.0",
         "lxml==5.3.0",
         "colored==1.4.4",
         "PyYAML==6.0.2",
