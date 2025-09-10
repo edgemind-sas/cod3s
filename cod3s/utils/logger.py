@@ -110,17 +110,15 @@ class COD3SLogger:
         logging.addLevelName(self.INFO1_LEVEL, "INFO1")
         logging.addLevelName(self.INFO2_LEVEL, "INFO2")
         logging.addLevelName(self.INFO3_LEVEL, "INFO3")
-        
-        # Si level_name est fourni, convertir en niveau numérique
+
+        # Si level_name est fourni, utiliser setLevelByName
         if level_name is not None:
-            level = self._get_level_from_name(level_name)
-            self.level_name = level_name.upper()
+            self.setLevelByName(level_name)
         else:
             # Déterminer le nom du niveau à partir du niveau numérique
             self.level_name = self._get_name_from_level(level)
-        
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(level)
+            self.logger = logging.getLogger(name)
+            self.logger.setLevel(level)
         # To avoid logging propagation and repeated messages
         self.logger.propagate = False
         # Clear any existing handlers
@@ -176,10 +174,10 @@ class COD3SLogger:
     def _get_name_from_level(self, level):
         """
         Convert a numeric level to its corresponding level name.
-        
+
         Args:
             level (int): Numeric level value
-            
+
         Returns:
             str: Level name string
         """
@@ -193,8 +191,49 @@ class COD3SLogger:
             logging.ERROR: "ERROR",
             logging.CRITICAL: "CRITICAL",
         }
-        
+
         return level_mapping.get(level, "UNKNOWN")
+
+    def setLevelByName(self, level_name):
+        """
+        Set the logger level using a level name string.
+
+        Args:
+            level_name (str): Level name like "DEBUG", "INFO", "INFO1", "INFO2", "INFO3", "WARNING", "ERROR", "CRITICAL"
+
+        Raises:
+            ValueError: If the level name is not recognized
+        """
+        level = self._get_level_from_name(level_name)
+        self.level_name = level_name.upper()
+        
+        # Initialize logger if not already done
+        if not hasattr(self, 'logger'):
+            self.logger = logging.getLogger(self.__class__.__name__)
+            # To avoid logging propagation and repeated messages
+            self.logger.propagate = False
+            # Clear any existing handlers
+            if self.logger.handlers:
+                self.logger.handlers.clear()
+
+            # Create console handler
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(level)
+
+            # Create formatter
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
+            console_handler.setFormatter(formatter)
+
+            # Add handler to logger
+            self.logger.addHandler(console_handler)
+        
+        self.logger.setLevel(level)
+
+        # Update all handlers with the new level
+        for handler in self.logger.handlers:
+            handler.setLevel(level)
 
     def update_formatter(self, format_string=None):
         """
