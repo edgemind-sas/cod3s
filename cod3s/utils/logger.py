@@ -71,19 +71,19 @@ class COD3SLogger:
 
         >>> # For debugging: show everything
         >>> debug_logger = COD3SLogger("Debug", level=logging.DEBUG)
-        
+
         Using level_name parameter:
-        
+
         >>> # Using string level names instead of numeric constants
         >>> logger = COD3SLogger("MyApp", level_name="INFO1")
         >>> logger.info3("This won't be displayed")
         >>> logger.info1("This will be displayed")
-        
+
         >>> # Case insensitive level names
         >>> logger = COD3SLogger("MyApp", level_name="info2")
         >>> logger.info3("This won't be displayed")
         >>> logger.info2("This will be displayed")
-        
+
         >>> # Standard level names also work
         >>> logger = COD3SLogger("MyApp", level_name="DEBUG")
         >>> logger.debug("This will be displayed")
@@ -114,6 +114,10 @@ class COD3SLogger:
         # Si level_name est fourni, convertir en niveau numérique
         if level_name is not None:
             level = self._get_level_from_name(level_name)
+            self.level_name = level_name.upper()
+        else:
+            # Déterminer le nom du niveau à partir du niveau numérique
+            self.level_name = self._get_name_from_level(level)
         
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
@@ -139,13 +143,13 @@ class COD3SLogger:
     def _get_level_from_name(self, level_name):
         """
         Convert a level name string to its corresponding numeric level.
-        
+
         Args:
             level_name (str): Level name like "DEBUG", "INFO", "INFO1", "INFO2", "INFO3", "WARNING", "ERROR", "CRITICAL"
-            
+
         Returns:
             int: Numeric level value
-            
+
         Raises:
             ValueError: If the level name is not recognized
         """
@@ -159,13 +163,38 @@ class COD3SLogger:
             "ERROR": logging.ERROR,
             "CRITICAL": logging.CRITICAL,
         }
-        
+
         level_name_upper = level_name.upper()
         if level_name_upper not in level_mapping:
             available_levels = ", ".join(level_mapping.keys())
-            raise ValueError(f"Unknown level name '{level_name}'. Available levels: {available_levels}")
-        
+            raise ValueError(
+                f"Unknown level name '{level_name}'. Available levels: {available_levels}"
+            )
+
         return level_mapping[level_name_upper]
+
+    def _get_name_from_level(self, level):
+        """
+        Convert a numeric level to its corresponding level name.
+        
+        Args:
+            level (int): Numeric level value
+            
+        Returns:
+            str: Level name string
+        """
+        level_mapping = {
+            logging.DEBUG: "DEBUG",
+            logging.INFO: "INFO",
+            self.INFO3_LEVEL: "INFO3",
+            self.INFO2_LEVEL: "INFO2",
+            self.INFO1_LEVEL: "INFO1",
+            logging.WARNING: "WARNING",
+            logging.ERROR: "ERROR",
+            logging.CRITICAL: "CRITICAL",
+        }
+        
+        return level_mapping.get(level, "UNKNOWN")
 
     def update_formatter(self, format_string=None):
         """
