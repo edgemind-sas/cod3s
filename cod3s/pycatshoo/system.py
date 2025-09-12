@@ -192,22 +192,73 @@ class MCSimulationParam(pydantic.BaseModel):
         return sorted(instants)
 
 
+class PycTraceElement(pydantic.BaseModel):
+    """A trace element specification for PyCATSHOO simulation tracing.
+
+    This class defines what elements should be traced during simulation
+    and at what level of detail.
+    """
+
+    attr_name: typing.Literal["transition", "state", "variable", "automaton"] = (
+        pydantic.Field(..., description="Type of attribute to trace")
+    )
+    pattern: str = pydantic.Field(
+        ".*", description="Regular expression pattern to match element names"
+    )
+    level: int = pydantic.Field(
+        1, description="Trace level for this pattern of attributes"
+    )
+
+    def pyc_method_name(self):
+        if self.attr_name == "variable":
+            return "traceVariable"
+        elif self.attr_name == "state":
+            return "traceState"
+        elif self.attr_name == "transition":
+            return "traceTrans"
+        elif self.attr_name == "state":
+            return "traceState"
+        elif self.attr_name == "automaton":
+            return "traceAutomaton"
+        else:
+            raise ValueError(
+                f"attr_name must be one of ['transition', 'state', 'variable', 'automaton'], "
+                f"got: {self.attr_name}"
+            )
+
+
 class PycMCSimulationParam(MCSimulationParam):
     """PyCATSHOO-specific Monte Carlo simulation parameters.
 
     This class extends MCSimulationParam to provide PyCATSHOO-specific functionality
-    for Monte Carlo simulations. Currently identical to the base class, but serves
-    as an extension point for PyCATSHOO-specific features.
+    for Monte Carlo simulations, including trace configuration and debugging features.
+
+    Attributes:
+        trace_level (int): Level of tracing detail for simulation debugging (0=none, higher=more verbose)
+        trace_attr (List[PycTraceElement]): List of trace specifications for monitoring
+            specific elements during simulation (variables, states, automata, transitions)
 
     Example:
         >>> params = PycMCSimulationParam(
         ...     nb_runs=100,
         ...     schedule=[0, 10, 20],
-        ...     time_unit='h'
+        ...     time_unit='h',
+        ...     trace_level=2,
+        ...     trace_attr=[
+        ...         PycTraceElement(attr_name="variable", pattern="pump.*", level=1)
+        ...     ]
         ... )
     """
 
-    trace_level: int = pydantic.Field(0, description="Pycatshoo simulator trace level")
+    trace_level: typing.Optional[int] = pydantic.Field(
+        0,
+        description="PyCATSHOO simulator trace level for debugging (0=none, higher=more verbose)",
+    )
+
+    trace_elements: typing.Optional[typing.List[PycTraceElement]] = pydantic.Field(
+        [],
+        description="List of trace element specifications for monitoring simulation elements (variables, states, automata, transitions)",
+    )
 
 
 class PycSystem(pyc.CSystem):
@@ -545,51 +596,75 @@ class PycSystem(pyc.CSystem):
         """Prepare the system for simulation with given parameters.
 
         This method configures the simulation environment by:
-        - Setting up measurement time points
-        - Configuring system indicators
-        - Setting simulation parameters (max time, seed, number of runs)
+        - Setting up measurement time points from the schedule
+        - Configuring system indicators with measurement instants
+        - Setting simulation parameters (max time, seed, number of runs, RNG settings)
+        - Configuring trace settings for debugging and monitoring
 
         Args:
             simu_params (PycMCSimulationParam): Simulation parameters including:
-                - Number of runs
-                - Measurement schedule
-                - Random seed
-                - Time units
+                - nb_runs: Number of Monte Carlo simulation runs
+                - schedule: List of measurement time points or ranges
+                - seed: Random seed for reproducibility
+                - time_unit: Time unit for the simulation
+                - rng: Random number generator type
+                - rng_bloc_size: Block size for parallel RNG
+                - trace_level: Level of tracing detail for debugging
+                - trace_attr: List of trace specifications for monitoring elements
 
         Example:
             >>> params = PycMCSimulationParam(
             ...     nb_runs=1000,
-            ...     schedule=[0, 100],
-            ...     seed=42
+            ...     schedule=[0, 50, 100],
+            ...     seed=42,
+            ...     trace_level=1,
+            ...     trace_attr=[
+            ...         PycTraceElement(attr_name="variable", pattern="pump.*", level=2)
+            ...     ]
             ... )
             >>> system.prepare_simu(params)
         """
+        # Extract all measurement time points from the schedule
         instants_list = simu_params.get_instants_list()
 
-        # Configure indicators with measurement points
+        # Configure all indicators with measurement time points
         for indic_name, indic in self.indicators.items():
             indic.instants = instants_list
             indic.set_indicator(self)
 
-        # Set simulation parameters
+        # Set maximum simulation time to the last measurement point
         self.setTMax(instants_list[-1])
+
+        # Register all measurement time points with the simulation engine
         for instant in instants_list:
             self.addInstant(instant)
 
+        # Configure random number generation if specified
         if simu_params.seed is not None:
             self.setRNGSeed(simu_params.seed)
 
+        # Set number of Monte Carlo runs
         if simu_params.nb_runs is not None:
             self.setNbSeqToSim(simu_params.nb_runs)
 
+        # Configure random number generator type
         if simu_params.rng is not None:
             self.setRNG(simu_params.rng)
 
+        # Configure RNG block size for parallel processing
         if simu_params.rng_bloc_size is not None:
             self.setRNGBlocSize(simu_params.rng_bloc_size)
 
+        # Set global trace level for debugging
         if simu_params.trace_level is not None:
             self.setTrace(simu_params.trace_level)
+
+        # Configure specific trace patterns for detailed monitoring
+        if simu_params.trace_elements:
+            for trace in simu_params.trace_elements:
+                getattr(self, trace.pyc_method_name())(
+                    f"#^{trace.pattern}$", trace.level
+                )
 
     def simulate(self, simu_params: PycMCSimulationParam):
         """Run a complete simulation with the given parameters.
@@ -651,8 +726,12 @@ class PycSystem(pyc.CSystem):
     #     return [indic.metadata.keys() for indic in self.indicators.values()],
     # axis=0, ignore_index=True)
 
-    def indic_to_frame(self):
-        """Convert all indicators' values to a pandas DataFrame.
+    def indic_to_frame(self, comp_pattern=".*", attr_pattern=".*"):
+        """Convert all indicators' values to a pandas DataFrame with optional filtering.
+
+        Args:
+            comp_pattern (str): Regular expression pattern to filter components. Defaults to ".*".
+            attr_pattern (str): Regular expression pattern to filter attributes. Defaults to ".*".
 
         Returns:
             pandas.DataFrame: Combined DataFrame of all indicators' values, or
@@ -667,12 +746,32 @@ class PycSystem(pyc.CSystem):
         """
         if len(self.indicators) == 0:
             return None
+
+        indic_df = pd.concat(
+            [indic.values for indic in self.indicators.values()],
+            axis=0,
+            ignore_index=True,
+        )
+
+        # Filter based on component pattern
+        if "comp" in indic_df.columns:
+            idx_comp_sel = indic_df["comp"].str.match(comp_pattern, na=False)
         else:
-            return pd.concat(
-                [indic.values for indic in self.indicators.values()],
-                axis=0,
-                ignore_index=True,
-            )
+            idx_comp_sel = pd.Series([True] * len(indic_df))
+
+        # Filter based on attribute pattern
+        if "attr" in indic_df.columns:
+            idx_attr_sel = indic_df["attr"].str.match(attr_pattern, na=False)
+        else:
+            idx_attr_sel = pd.Series([True] * len(indic_df))
+
+        # Filter for mean statistics
+        idx_stat_sel = indic_df["stat"].isin(["mean"])
+
+        # Combine all filters
+        idx_combined = idx_comp_sel & idx_attr_sel & idx_stat_sel
+
+        return indic_df.loc[idx_combined]
 
     def indic_px_line(
         self,
@@ -706,29 +805,12 @@ class PycSystem(pyc.CSystem):
             ...     labels={"values": "Flow Rate (m³/s)"}
             ... )
         """
-        indic_df = self.indic_to_frame()
+        indic_sel_df = self.indic_to_frame(
+            comp_pattern=comp_pattern, attr_pattern=attr_pattern
+        )
 
-        if indic_df is None:
+        if indic_sel_df is None:
             return None
-
-        # Filter based on component pattern
-        if "comp" in indic_df.columns:
-            idx_comp_sel = indic_df["comp"].str.match(comp_pattern, na=False)
-        else:
-            idx_comp_sel = pd.Series([True] * len(indic_df))
-
-        # Filter based on attribute pattern
-        if "attr" in indic_df.columns:
-            idx_attr_sel = indic_df["attr"].str.match(attr_pattern, na=False)
-        else:
-            idx_attr_sel = pd.Series([True] * len(indic_df))
-
-        # Filter for mean statistics
-        idx_stat_sel = indic_df["stat"].isin(["mean"])
-
-        # Combine all filters
-        idx_combined = idx_comp_sel & idx_attr_sel & idx_stat_sel
-        indic_sel_df = indic_df.loc[idx_combined]
 
         fig = px.line(indic_sel_df, x=x, y=y, color=color, markers=markers, **px_conf)
         fig.update_layout(**layout)
