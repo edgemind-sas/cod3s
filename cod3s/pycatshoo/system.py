@@ -765,11 +765,8 @@ class PycSystem(pyc.CSystem):
         else:
             idx_attr_sel = pd.Series([True] * len(indic_df))
 
-        # Filter for mean statistics
-        idx_stat_sel = indic_df["stat"].isin(["mean"])
-
         # Combine all filters
-        idx_combined = idx_comp_sel & idx_attr_sel & idx_stat_sel
+        idx_combined = idx_comp_sel & idx_attr_sel
 
         return indic_df.loc[idx_combined]
 
@@ -811,6 +808,10 @@ class PycSystem(pyc.CSystem):
 
         if indic_sel_df is None:
             return None
+
+        # Filter for mean statistics
+        idx_stat_sel = indic_sel_df["stat"].isin(["mean"])
+        indic_sel_df = indic_sel_df.loc[idx_stat_sel]
 
         fig = px.line(indic_sel_df, x=x, y=y, color=color, markers=markers, **px_conf)
         fig.update_layout(**layout)
