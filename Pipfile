@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 semser = "*"
 cod3s = {file = ".", editable = true}
+mpi4py = "*"
 
 [dev-packages]
 autopep8 = "*"

@@ -28,6 +28,7 @@ import plotly.express as px
 import typing
 import itertools
 import warnings
+import sys
 import re
 from .indicator import (
     PycAttrIndicator,
@@ -35,6 +36,7 @@ from .indicator import (
     PycSTIndicator,
     PycFunIndicator,
 )
+#from mpi4py import MPI
 from .automaton import PycTransition
 from .sequence import PycSequence
 from .component import PycComponent, ObjEvent
@@ -666,7 +668,7 @@ class PycSystem(pyc.CSystem):
                     f"#^{trace.pattern}$", trace.level
                 )
 
-    def simulate(self, simu_params: PycMCSimulationParam):
+    def simulate(self, simu_params: PycMCSimulationParam, postpone_post_proc=False):
         """Run a complete simulation with the given parameters.
 
         This method handles the full simulation workflow:
@@ -690,9 +692,12 @@ class PycSystem(pyc.CSystem):
 
         self.prepare_simu(simu_params)
         super().simulate()
+
         if self.MPIRank() > 0:
-            exit(0)
-        self.postproc_simu()
+            sys.exit(0)
+
+        if not postpone_post_proc:
+            self.postproc_simu()
 
     def postproc_simu(self):
         """Process simulation results after completion.
