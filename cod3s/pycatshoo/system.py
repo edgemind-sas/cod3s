@@ -36,7 +36,8 @@ from .indicator import (
     PycSTIndicator,
     PycFunIndicator,
 )
-#from mpi4py import MPI
+
+# from mpi4py import MPI
 from .automaton import PycTransition
 from .sequence import PycSequence
 from .component import PycComponent, ObjEvent
