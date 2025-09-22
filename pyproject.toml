@@ -36,6 +36,7 @@ dependencies = [
     "colored==1.4.4",
     "PyYAML==6.0.2",
     "semver==3.0.4",
+    "kaleido==1.1.0"
 ]
 
 [project.urls]
