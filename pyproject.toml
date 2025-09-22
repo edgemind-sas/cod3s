@@ -36,12 +36,16 @@ dependencies = [
     "colored==1.4.4",
     "PyYAML==6.0.2",
     "semver==3.0.4",
+    "kaleido==1.1.0"
 ]
 
 [project.urls]
 Homepage = "https://github.com/edgemind-sas/cod3s"
 Repository = "https://github.com/edgemind-sas/cod3s"
 Issues = "https://github.com/edgemind-sas/cod3s/issues"
+
+[project.scripts]
+run-cod3s-study = "cod3s.scripts.run_cod3s_study:main"
 
 [tool.uv]
 dev-dependencies = [
