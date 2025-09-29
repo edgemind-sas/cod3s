@@ -896,8 +896,7 @@ class PycSystem(pyc.CSystem):
         trans_list = self.isimu_active_transitions()
         if not trans_list:
             return []
-
-        end_time_bound = min([trans.bkd.endTime() for trans in trans_list])
+        end_time_bound = min([trans._bkd.endTime() for trans in trans_list])
         trans_list_fireable = []
         for trans in trans_list:
             if trans.occ_law.is_occ_time_deterministic and (
@@ -913,7 +912,7 @@ class PycSystem(pyc.CSystem):
         # Update end time to match bkd endTime
         for trans in trans_list_fireable:
             if trans:
-                trans.end_time = trans.bkd.endTime()
+                trans.end_time = trans._bkd.endTime()
 
         return trans_list_fireable
 
@@ -992,7 +991,7 @@ class PycSystem(pyc.CSystem):
         if reset_planning:
             for tr in trans_removed:
                 if not tr.occ_law.is_occ_time_deterministic:
-                    self.setTransPlanning(tr.bkd, float("inf"), 0)
+                    self.setTransPlanning(tr._bkd, float("inf"), 0)
                     self.updatePlanningInt()
 
         return trans_removed
@@ -1063,7 +1062,7 @@ class PycSystem(pyc.CSystem):
             selected_transition = trans_list[trans_id]
         elif isinstance(trans_id, str):
             for trans in trans_list:
-                if trans.bkd.name() == trans_id:
+                if trans._bkd.name() == trans_id:
                     selected_transition = trans
                     break
         else:
@@ -1076,15 +1075,15 @@ class PycSystem(pyc.CSystem):
 
         if not date:
             if (
-                selected_transition.bkd.endTime() >= 0
-                and selected_transition.bkd.endTime() < float("inf")
+                selected_transition._bkd.endTime() >= 0
+                and selected_transition._bkd.endTime() < float("inf")
             ):
-                date = selected_transition.bkd.endTime()
+                date = selected_transition._bkd.endTime()
             else:
                 date = self.currentTime()
 
         if not state_index:
             state_index = 0
 
-        self.setTransPlanning(selected_transition.bkd, date, state_index)
+        self.setTransPlanning(selected_transition._bkd, date, state_index)
         self.updatePlanningInt()

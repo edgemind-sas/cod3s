@@ -101,51 +101,81 @@ class ObjCOD3S(pydantic.BaseModel):
                     setattr(self, field, value)
 
     def model_dump(self, **kwrds):
-        """Dumps the model to a dictionary with class information.
-
-        This method extends pydantic's model_dump by:
-        1. Adding a 'cls' key with the class name
-        2. Recursively converting nested Pydantic models and collections
-
-        Note: serialize_as_any=True is used only on the first super().model_dump() call
-        to handle potential type conflicts at the root level. Nested calls don't need
-        this flag as they're already properly typed through the parent's serialization.
-
-        Args:
-            **kwrds: Additional keyword arguments passed to pydantic's model_dump
-
-        Returns:
-            dict: A dictionary representation of the model with class information
         """
-        base_dict = super().model_dump(serialize_as_any=True, **kwrds)
-        # base_dict = self.__dict__
+        Sérialise le modèle en préservant les types pour ajouter 'cls' aux objets COD3S.
+        """
 
-        # __import__("ipdb").set_trace()
-        result = {"cls": self.__class__.__name__}
-        # __import__("ipdb").set_trace()
-        #        for key, value in base_dict.items():
-        for key, value in base_dict.items():
-            if hasattr(value, "model_dump") and callable(value.model_dump):
-                result[key] = value.model_dump(**kwrds)
+        def serialize_field(value):
+            if isinstance(value, pydantic.BaseModel):
+                return value.model_dump(**kwrds)
             elif isinstance(value, list):
-                result[key] = [
-                    (
-                        item.model_dump(**kwrds)
-                        if hasattr(item, "model_dump") and callable(item.model_dump)
-                        else item
-                    )
-                    for item in value
-                ]
+                return [serialize_field(item) for item in value]
             elif isinstance(value, dict):
-                result[key] = {
-                    k: (
-                        v.model_dump(**kwrds)
-                        if hasattr(v, "model_dump") and callable(v.model_dump)
-                        else v
-                    )
-                    for k, v in value.items()
-                }
+                return {k: serialize_field(v) for k, v in value.items()}
             else:
-                result[key] = value
+                return value
+
+        result = {"cls": self.__class__.__name__}
+
+        # Itérer sur les champs définis du modèle
+        for field_name in self.model_fields:
+            field_value = getattr(self, field_name, None)
+            if isinstance(field_value, (pydantic.BaseModel, list, dict)):
+                # Sérialiser manuellement pour préserver les types
+                result[field_name] = serialize_field(field_value)
+            else:
+                # Utiliser la sérialisation Pydantic pour les types primitifs
+                temp_dict = super().model_dump(include={field_name}, **kwrds)
+                result[field_name] = temp_dict.get(field_name, field_value)
 
         return result
+
+    # def model_dump(self, **kwrds):
+    #     """Dumps the model to a dictionary with class information.
+
+    #     This method extends pydantic's model_dump by:
+    #     1. Adding a 'cls' key with the class name
+    #     2. Recursively converting nested Pydantic models and collections
+
+    #     Note: serialize_as_any=True is used only on the first super().model_dump() call
+    #     to handle potential type conflicts at the root level. Nested calls don't need
+    #     this flag as they're already properly typed through the parent's serialization.
+
+    #     Args:
+    #         **kwrds: Additional keyword arguments passed to pydantic's model_dump
+
+    #     Returns:
+    #         dict: A dictionary representation of the model with class information
+    #     """
+    #     base_dict = super().model_dump(serialize_as_any=True, **kwrds)
+    #     # base_dict = self.__dict__
+
+    #     result = {"cls": self.__class__.__name__}
+
+    #     # __import__("ipdb").set_trace()
+    #     #        for key, value in base_dict.items():
+    #     for key, value in base_dict.items():
+    #         if hasattr(value, "model_dump") and callable(value.model_dump):
+    #             result[key] = value.model_dump(**kwrds)
+    #         elif isinstance(value, list):
+    #             result[key] = [
+    #                 (
+    #                     item.model_dump(**kwrds)
+    #                     if hasattr(item, "model_dump") and callable(item.model_dump)
+    #                     else item
+    #                 )
+    #                 for item in value
+    #             ]
+    #         elif isinstance(value, dict):
+    #             result[key] = {
+    #                 k: (
+    #                     v.model_dump(**kwrds)
+    #                     if hasattr(v, "model_dump") and callable(v.model_dump)
+    #                     else v
+    #                 )
+    #                 for k, v in value.items()
+    #             }
+    #         else:
+    #             result[key] = value
+
+    #     return result

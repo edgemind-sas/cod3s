@@ -54,7 +54,6 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions()
     assert len(transitions) == 1
     # str(transitions[0].model_dump())
-    # __import__("ipdb").set_trace()
     assert (
         str(transitions[0].model_dump())
         == "{'cls': 'PycTransition', 'name': 'ok_nok', 'source': 'ok', 'target': 'nok', 'occ_law': {'cls': 'ExpOccDistribution', 'rate': 0.2}, 'end_time': inf, 'condition': None, 'comp_name': 'C', 'comp_classname': 'PycComponent', 'is_interruptible': False}"

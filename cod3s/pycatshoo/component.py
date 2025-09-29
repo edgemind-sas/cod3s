@@ -20,7 +20,7 @@ class PycVariable(ObjCOD3S):
     comp_name: str = pydantic.Field(None, description="Component name")
     value_init: typing.Any = pydantic.Field(None, description="Variable init value")
     value_current: typing.Any = pydantic.Field(None, description="Current value")
-    bkd: typing.Any = pydantic.Field(None, description="Variable backend handler")
+    _bkd: pydantic.PrivateAttr(None)
 
     @classmethod
     def from_bkd(basecls, bkd):
@@ -30,7 +30,7 @@ class PycVariable(ObjCOD3S):
             comp_name=bkd.parent().name(),
             value_init=bkd.initValue(),
             value_current=bkd.value(),
-            bkd=bkd,
+            _bkd=bkd,
         )
 
 
@@ -478,10 +478,10 @@ class PycComponent(pyc.CComponent):
         # -----------
         # Conditions
         if isinstance(cond_occ_12, bool) or callable(cond_occ_12):
-            aut.get_transition_by_name(trans_name_12).bkd.setCondition(cond_occ_12)
+            aut.get_transition_by_name(trans_name_12)._bkd.setCondition(cond_occ_12)
 
         elif isinstance(cond_occ_12, str):
-            aut.get_transition_by_name(trans_name_12).bkd.setCondition(
+            aut.get_transition_by_name(trans_name_12)._bkd.setCondition(
                 self.variable(cond_occ_12)
             )
         else:
@@ -490,7 +490,7 @@ class PycComponent(pyc.CComponent):
             )
 
         # Effects
-        st2_bkd = aut.get_state_by_name(st2_name).bkd
+        st2_bkd = aut.get_state_by_name(st2_name)._bkd
         #    var_value_list_12 = self.pat_to_var_value(*effects_12)
         if len(effects_st2) > 0:
 
@@ -518,9 +518,9 @@ class PycComponent(pyc.CComponent):
                 raise ValueError(
                     f"effects_st_2_format {effects_st2_format} not supported"
                 )
-            # setattr(comp.bkd, method_name, sensitive_method)
+            # setattr(comp._bkd, method_name, sensitive_method)
             sensitive_method_name_st_2 = f"effect__{self.name()}_{name}_{trans_name_12}"
-            aut.bkd.addSensitiveMethod(
+            aut._bkd.addSensitiveMethod(
                 sensitive_method_name_st_2, sensitive_method_st_2
             )
             if effects_st2_format == "dict":
@@ -554,10 +554,10 @@ class PycComponent(pyc.CComponent):
         # -----------
         # Conditions
         if isinstance(cond_occ_21, bool) or callable(cond_occ_21):
-            aut.get_transition_by_name(trans_name_21).bkd.setCondition(cond_occ_21)
+            aut.get_transition_by_name(trans_name_21)._bkd.setCondition(cond_occ_21)
 
         elif isinstance(cond_occ_21, str):
-            aut.get_transition_by_name(trans_name_21).bkd.setCondition(
+            aut.get_transition_by_name(trans_name_21)._bkd.setCondition(
                 self.variable(cond_occ_21)
             )
         else:
@@ -567,7 +567,7 @@ class PycComponent(pyc.CComponent):
         # Effects
         # __import__("ipdb").set_trace()
 
-        st1_bkd = aut.get_state_by_name(st1_name).bkd
+        st1_bkd = aut.get_state_by_name(st1_name)._bkd
         # var_value_list_21 = self.pat_to_var_value(*effects_21)
         if len(effects_st1) > 0:
             if effects_st1_format == "dict":
@@ -606,9 +606,9 @@ class PycComponent(pyc.CComponent):
             #             for var, value in effects_st_1.items()
             #         ]
 
-            # setattr(comp.bkd, method_name, sensitive_method)
+            # setattr(comp._bkd, method_name, sensitive_method)
             sensitive_method_name_st_1 = f"effect__{self.name()}_{name}_{trans_name_21}"
-            aut.bkd.addSensitiveMethod(
+            aut._bkd.addSensitiveMethod(
                 sensitive_method_name_st_1, sensitive_method_st_1
             )
 
@@ -656,10 +656,10 @@ class PycComponent(pyc.CComponent):
                 pdmp_managers = [pdmp_managers]
             for pdmp_manager in pdmp_managers:
                 pdmp_manager.addWatchedTransition(
-                    aut.get_transition_by_name(trans_name_12).bkd
+                    aut.get_transition_by_name(trans_name_12)._bkd
                 )
                 pdmp_manager.addWatchedTransition(
-                    aut.get_transition_by_name(trans_name_21).bkd
+                    aut.get_transition_by_name(trans_name_21)._bkd
                 )
 
         self.automata_d[aut.name] = aut
