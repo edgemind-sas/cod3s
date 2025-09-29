@@ -44,6 +44,9 @@ Homepage = "https://github.com/edgemind-sas/cod3s"
 Repository = "https://github.com/edgemind-sas/cod3s"
 Issues = "https://github.com/edgemind-sas/cod3s/issues"
 
+[project.scripts]
+run-cod3s-study = "cod3s.scripts.run_cod3s_study:main"
+
 [tool.uv]
 dev-dependencies = [
     "autopep8",

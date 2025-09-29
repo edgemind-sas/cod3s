@@ -40,7 +40,7 @@ class IndicatorModel(ObjCOD3S):
     instants: list = pydantic.Field([], description="Instant of computation")
     values: PandasDataFrame = pydantic.Field(None, description="Indicator estimates")
     metadata: dict = pydantic.Field({}, description="Dictionary of metadata")
-    bkd: typing.Any = pydantic.Field(None, description="Indicator backend handler")
+    _bkd: typing.Any = pydantic.PrivateAttr(None)
 
     @pydantic.model_validator(mode="after")
     def cls_validator(cls, obj):
@@ -128,17 +128,17 @@ class PycIndicator(IndicatorModel):
             elif stat.startswith("qle"):
                 restitution |= pyc.TIndicatorType.quantile_le
                 pct_list = parse_quantile(stat, return_pct=True)
-                self.bkd.setPctQuantileLeValue(pct_list[0])
+                self._bkd.setPctQuantileLeValue(pct_list[0])
             elif re.match(r"P\d{1,2}$", stat) and 0 <= int(stat[1:]) <= 49:
                 restitution |= pyc.TIndicatorType.quantile_le
-                self.bkd.setPctQuantileLeValue(int(stat[1:]))
+                self._bkd.setPctQuantileLeValue(int(stat[1:]))
             elif stat.startswith("qgt"):
                 restitution |= pyc.TIndicatorType.quantile_gt
                 pct_list = parse_quantile(stat, return_pct=True)
-                self.bkd.setPctQuantileGtValue(pct_list[0])
+                self._bkd.setPctQuantileGtValue(pct_list[0])
             elif re.match(r"P\d{1,3}$", stat) and 50 <= int(stat[1:]) <= 100:
                 restitution |= pyc.TIndicatorType.quantile_gt
-                self.bkd.setPctQuantileGtValue(100 - int(stat[1:]))
+                self._bkd.setPctQuantileGtValue(100 - int(stat[1:]))
 
             elif stat == "all_values":
                 restitution |= pyc.TIndicatorType.all_values
@@ -147,7 +147,7 @@ class PycIndicator(IndicatorModel):
                     f"Stat {stat} not supported for Pycatshoo indicator restitution"
                 )
 
-        self.bkd.setRestitutions(restitution)
+        self._bkd.setRestitutions(restitution)
 
     def update_computation(self):
         """Update the computation of the indicator."""
@@ -164,7 +164,7 @@ class PycIndicator(IndicatorModel):
                 f"Measure {self.measure} not supported for Pycatshoo indicator computaiton"
             )
 
-        self.bkd.setComputation(computation)
+        self._bkd.setComputation(computation)
 
     def to_pyc_stats(self, stat_name):
         """
@@ -180,19 +180,19 @@ class PycIndicator(IndicatorModel):
             ValueError: If the statistic is not supported.
         """
         if stat_name == "mean":
-            return self.bkd.means
+            return self._bkd.means
         elif stat_name == "stddev":
-            return self.bkd.stdDevs
+            return self._bkd.stdDevs
         elif stat_name.startswith("qle") or (
             re.match(r"P\d{1,2}$", stat_name) and 0 <= int(stat_name[1:]) <= 49
         ):
-            return self.bkd.quantilesLe
+            return self._bkd.quantilesLe
         elif stat_name.startswith("qgt") or (
             re.match(r"P\d{1,3}$", stat_name) and 50 <= int(stat_name[1:]) <= 100
         ):
-            return self.bkd.quantilesGt
+            return self._bkd.quantilesGt
         elif stat_name == "all_values":
-            return self.bkd.values
+            return self._bkd.values
         else:
             raise ValueError(f"Statistic {stat_name} not supported")
 
@@ -218,7 +218,7 @@ class PycFunIndicator(PycIndicator):
         Args:
             system_bkd: The system backend.
         """
-        self.bkd = system_bkd.addIndicator(self.name, self.fun)
+        self._bkd = system_bkd.addIndicator(self.name, self.fun)
 
     def update_values(self, system_bkd=None):
         """
@@ -334,11 +334,11 @@ class PycAttrIndicator(PycIndicator):
         """
         if self.value_test is None:
             # if self.attr_type == "AUT":
-            self.bkd = system_bkd.addIndicator(
+            self._bkd = system_bkd.addIndicator(
                 self.name, self.get_expr(), self.attr_type
             )
         else:
-            self.bkd = system_bkd.addIndicator(
+            self._bkd = system_bkd.addIndicator(
                 self.name,
                 self.get_expr(),
                 self.attr_type,
@@ -468,9 +468,9 @@ class PycVarIndicator(PycIndicator):
             system_bkd: The system backend.
         """
         if self.value_test is None:
-            self.bkd = system_bkd.addIndicator(self.name, self.get_expr(), "VAR")
+            self._bkd = system_bkd.addIndicator(self.name, self.get_expr(), "VAR")
         else:
-            self.bkd = system_bkd.addIndicator(
+            self._bkd = system_bkd.addIndicator(
                 self.name, self.get_expr(), "VAR", self.operator, self.value_test
             )
 
@@ -591,7 +591,7 @@ class PycSTIndicator(PycIndicator):
         Args:
             system_bkd: The system backend.
         """
-        self.bkd = system_bkd.addIndicator(
+        self._bkd = system_bkd.addIndicator(
             self.name, self.get_expr(), "ST", self.operator, self.value_test
         )
 

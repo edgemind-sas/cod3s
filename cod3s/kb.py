@@ -1,7 +1,7 @@
 from .core import ObjCOD3S
 from .utils import get_class_by_name
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, List, Dict, Any, Union, Literal
+from typing import Optional, List, Dict, Any, Union, Literal, ClassVar, Type
 import copy
 from colored import fg, attr as colored_attr
 
@@ -397,8 +397,10 @@ class ComponentClass(ObjCOD3S):
 
         template_copy.metadata.update(kwargs.pop("metadata", {}))
 
-        instance_specs = dict(kwargs, **template_copy.model_dump())
+        # __import__("ipdb").set_trace()
 
+        instance_specs = dict(kwargs, **template_copy.model_dump())
+        __import__("ipdb").set_trace()
         cls_instance = self.__class__.__name__.replace("Class", "Instance")
 
         instance_specs["cls"] = cls_instance
@@ -552,6 +554,8 @@ class KB(ObjCOD3S):
     with their complete specifications.
     """
 
+    component_class_type: ClassVar[Type[ComponentClass]] = ComponentClass
+
     name: str = Field(..., description="KB name/id")
     label: Optional[str] = Field(None, description="KB label to be displayed")
 
@@ -603,8 +607,9 @@ class KB(ObjCOD3S):
         """
         # Convert the dictionary to ComponentClass if necessary
         if isinstance(component_class, dict):
-            component_class = ComponentClass(**component_class)
-        elif not isinstance(component_class, ComponentClass):
+            component_class = ObjCOD3S.from_dict(component_class)
+
+        if not isinstance(component_class, self.component_class_type):
             raise TypeError("The template must be a ComponentClass or a dictionary")
 
         # Check if a template with the same name already exists
