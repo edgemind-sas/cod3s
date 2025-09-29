@@ -1,0 +1,385 @@
+system:
+  name: IMDR Stack
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  # H2O Components
+  - name: "S_H2O"
+    cls: "Source"
+    flow_type: "H2O"
+    flow_nominal: 5
+
+  - name: "P_H2O"
+    cls: "Pump"
+    flow_type: "H2O"
+    flow_nominal: 5
+
+  # Electrical Components
+  - name: "S_PV"
+    cls: "SourceSinusoidale"
+    flow_type: "Elec"
+    amplitude: 25
+    phase_shift: 6
+    period: 24
+    amplitude_offset: 20
+    value_min: 0
+
+  - name: "S_Eolienne"
+    cls: "SourceSinusoidale"
+    flow_type: "Elec"
+    amplitude: 4
+    phase_shift: 4
+    period: 6
+    amplitude_offset: 4
+    value_min: 0
+
+  - name: "C_Source_Elec"
+    cls: "Sensor"
+    method: "sum"
+    measure: "prod"
+
+  - name: "AP_Source_B1"
+    cls: "Automaton"
+    active_threshold: "<20"
+    inactive_threshold: ">20"
+
+  - name: "Distrib"
+    cls: "DistribNode"
+    flow_type: "Elec"
+    percent_value1: 0.0
+    percent_value2: 1.0
+
+  # Battery
+  - name: "B1"
+    cls: "Battery"
+    flow_types: ["Elec"]
+    capacity: 100
+    content_ini: 
+      Elec: 0
+    flow_nominal: 20
+
+  - name: "CT_B1"
+    cls: "Sensor"
+    measure: "content"
+
+  # Electrolyzer
+  - name: "Electro"
+    cls: "Stack"
+    flow_type_in1: "H2O"
+    flow_type_in2: "Elec"
+    flow_type_out: "H2"
+    flow_H2_nominal: 2
+    flow_O2_nominal: 3
+    demand_H2O_nominal: 5
+    demand_elec_nominal: 20
+    power_pct_min: 0.2
+    method: "or"
+
+  - name: "AP_Electro_H2_BP"
+    cls: "Automaton"
+    active_threshold: "< 3.8 "
+    inactive_threshold: ">= 4"
+
+  - name: "AP_Electro_Consumer"
+    cls: "Automaton"
+    active_threshold: ">= 0.4 "
+    inactive_threshold: "< 0.4"
+
+  # Sensors
+  - name: "CT_H2_BP_1"
+    cls: "Sensor"
+    measure: "content"
+
+  - name: "CT_H2_BP_2"
+    cls: "Sensor"
+    measure: "content"
+
+  - name: "CT_H2_BP_3"
+    cls: "Sensor"
+    measure: "content"
+
+  - name: "CT_Consumer_1"
+    cls: "Sensor"
+    measure: "consume"
+    method: "mean"
+
+  # Capacity Multi Flux
+  - name: "T_H2_BP"
+    cls: "CapacityMulti"
+    flow_types: ["H2", "O2_leak", "H2O_leak"]
+    capacity: 4
+    content_ini:
+      H2: 0
+      O2_leak: 0
+      H2O_leak: 0
+    flow_out_max: 2
+
+  - name: "Stack_Membrane"
+    cls: "CapacityMulti"
+    flow_types: ["H2", "O2"]
+    capacity: 100
+    content_ini:
+      H2: 0
+      O2: 0
+    flow_out_max: 0.10
+
+  - name: "Local"
+    cls: "CapacityMulti"
+    flow_types: ["H2", "O2"]
+    capacity: 100
+    content_ini:
+      H2: 0
+      O2: 90
+
+  - name: "C_ratio_H2_Membrane"
+    cls: "Sensor"
+    measure: "ratio"
+
+  - name: "C_H2_Local_1"
+    cls: "Sensor"
+    measure: "ratio"
+
+  - name: "C_H2_Local_2"
+    cls: "Sensor"
+    measure: "ratio"
+
+  - name: "C_H2_Local_3"
+    cls: "Sensor"
+    measure: "ratio"
+
+  # Ventilation
+  - name: "Ventilation"
+    cls: "Pump"
+    flow_type: "H2"
+    flow_nominal: 50
+
+  - name: "AP_Ventilation"
+    cls: "Automaton"
+    active_threshold: "> 0.02"
+    inactive_threshold: "< 0.01"
+
+  # Consumer
+  - name: "Consumer"
+    cls: "ConsumerSinusoidale"
+    flow_type: "H2"
+    amplitude: 1
+    phase_shift: 18
+    period: 24
+    amplitude_offset: 1
+    value_min: 0
+
+  # Atmosphere
+  - name: "Atmosphere"
+    cls: "Consumer"
+    flow_type: "All"
+    flow_nominal: -1
+
+connections:
+  - component_source: "S_H2O"
+    interface_source: "H2O_out"
+    component_target: "P_H2O"
+    interface_target: "H2O_in"
+
+  - component_source: "P_H2O"
+    interface_source: "H2O_out"
+    component_target: "Electro"
+    interface_target: "H2O_in"
+
+  - component_source: "S_PV"
+    interface_source: "Elec_prod"
+    component_target: "C_Source_Elec"
+    interface_target: "in"
+
+  - component_source: "S_Eolienne"
+    interface_source: "Elec_prod"
+    component_target: "C_Source_Elec"
+    interface_target: "in"
+
+  - component_source: "C_Source_Elec"
+    interface_source: "out"
+    component_target: "AP_Source_B1"
+    interface_target: "in"
+
+  - component_source: "AP_Source_B1"
+    interface_source: "out"
+    component_target: "B1"
+    interface_target: "cmd"
+
+  - component_source: "S_PV"
+    interface_source: "Elec_out"
+    component_target: "Distrib"
+    interface_target: "Elec_in"
+
+  - component_source: "S_Eolienne"
+    interface_source: "Elec_out"
+    component_target: "Distrib"
+    interface_target: "Elec_in"
+
+  - component_source: "Distrib"
+    interface_source: "Elec_out1"
+    component_target: "B1"
+    interface_target: "Elec_in"
+
+  - component_source: "Distrib"
+    interface_source: "Elec_out2"
+    component_target: "Electro"
+    interface_target: "Elec_in"
+
+  - component_source: "B1"
+    interface_source: "Elec_out"
+    component_target: "Electro"
+    interface_target: "Elec_in"
+
+  - component_source: "B1"
+    interface_source: "Elec_content"
+    component_target: "CT_B1"
+    interface_target: "in"
+
+  - component_source: "Electro"
+    interface_source: "H2_out"
+    component_target: "T_H2_BP"
+    interface_target: "H2_in"
+
+  - component_source: "Electro"
+    interface_source: "O2_leak_out"
+    component_target: "T_H2_BP"
+    interface_target: "O2_leak_in"
+
+  - component_source: "Electro"
+    interface_source: "H2O_leak_out"
+    component_target: "T_H2_BP"
+    interface_target: "H2O_leak_in"
+
+  - component_source: "Electro"
+    interface_source: "H2_membrane_leak_out"
+    component_target: "Stack_Membrane"
+    interface_target: "H2_in"
+
+  - component_source: "Electro"
+    interface_source: "O2_membrane_leak_out"
+    component_target: "Stack_Membrane"
+    interface_target: "O2_in"
+
+  - component_source: "Electro"
+    interface_source: "H2_local_leak_out"
+    component_target: "Local"
+    interface_target: "H2_in"
+
+  - component_source: "Electro"
+    interface_source: "O2_out"
+    component_target: "Atmosphere"
+    interface_target: "All_in"
+
+  - component_source: "T_H2_BP"
+    interface_source: "content_total"
+    component_target: "CT_H2_BP_1"
+    interface_target: "in"
+
+  - component_source: "T_H2_BP"
+    interface_source: "content_total"
+    component_target: "CT_H2_BP_2"
+    interface_target: "in"
+
+  - component_source: "T_H2_BP"
+    interface_source: "content_total"
+    component_target: "CT_H2_BP_3"
+    interface_target: "in"
+
+  - component_source: "CT_H2_BP_1"
+    interface_source: "out"
+    component_target: "AP_Electro_H2_BP"
+    interface_target: "in"
+
+  - component_source: "CT_H2_BP_2"
+    interface_source: "out"
+    component_target: "AP_Electro_H2_BP"
+    interface_target: "in"
+
+  - component_source: "CT_H2_BP_3"
+    interface_source: "out"
+    component_target: "AP_Electro_H2_BP"
+    interface_target: "in"
+
+  - component_source: "AP_Electro_H2_BP"
+    interface_source: "out"
+    component_target: "Electro"
+    interface_target: "cmd"
+
+  - component_source: "T_H2_BP"
+    interface_source: "H2_out"
+    component_target: "Consumer"
+    interface_target: "H2_in"
+
+  - component_source: "Consumer"
+    interface_source: "H2_consume"
+    component_target: "CT_Consumer_1"
+    interface_target: "in"
+  
+  - component_source: "CT_Consumer_1"
+    interface_source: "out"
+    component_target: "AP_Electro_Consumer"
+    interface_target: "in"
+  
+  - component_source: "AP_Electro_Consumer"
+    interface_source: "out"
+    component_target: "Electro"
+    interface_target: "cmd"
+
+  - component_source: "Stack_Membrane"
+    interface_source: "H2_out"
+    component_target: "Local"
+    interface_target: "H2_in"
+
+  - component_source: "Stack_Membrane"
+    interface_source: "O2_out"
+    component_target: "Atmosphere"
+    interface_target: "All_in"
+
+  - component_source: "Local"
+    interface_source: "H2_out"
+    component_target: "Ventilation"
+    interface_target: "H2_in"
+
+  - component_source: "Ventilation"
+    interface_source: "H2_out"
+    component_target: "Atmosphere"
+    interface_target: "All_in"
+
+  - component_source: "Local"
+    interface_source: "H2_ratio"
+    component_target: "C_H2_Local_1"
+    interface_target: "in"
+
+  - component_source: "Local"
+    interface_source: "H2_ratio"
+    component_target: "C_H2_Local_2"
+    interface_target: "in"
+
+  - component_source: "Local"
+    interface_source: "H2_ratio"
+    component_target: "C_H2_Local_3"
+    interface_target: "in"
+
+  - component_source: "C_H2_Local_1"
+    interface_source: "out"
+    component_target: "AP_Ventilation"
+    interface_target: "in"
+
+  - component_source: "C_H2_Local_2"
+    interface_source: "out"
+    component_target: "AP_Ventilation"
+    interface_target: "in"
+
+  - component_source: "C_H2_Local_3"
+    interface_source: "out"
+    component_target: "AP_Ventilation"
+    interface_target: "in"
+
+  - component_source: "AP_Ventilation"
+    interface_source: "out"
+    component_target: "Ventilation"
+    interface_target: "cmd"

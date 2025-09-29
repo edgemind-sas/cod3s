@@ -1,0 +1,13 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,0.0,1.0,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,0.5454545454545454,2.6363637447357178,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,1.0909090909090908,4.2727274894714355,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,1.6363636363636362,5.909090995788574,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,2.1818181818181817,7.545454502105713,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,2.727272727272727,9.181818008422852,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,3.2727272727272725,10.818181991577148,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,3.818181818181818,12.454545021057129,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,4.363636363636363,14.090909004211426,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,4.909090909090908,15.727272987365723,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,5.454545454545454,16.0,
+B1_Elec_content,B1_Elec_content,B1_Elec_content,B1,Elec_content,==,,VAR,value,mean,6.0,16.0,

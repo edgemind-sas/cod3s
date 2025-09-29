@@ -1,0 +1,33 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 10
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "S_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "capacity_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "consumer_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+results:
+  indicators:
+  - id: "all"
+    output: ["csv"]
+   

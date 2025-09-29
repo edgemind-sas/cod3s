@@ -1,0 +1,34 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 10
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "S_PV"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "consumer"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+results:
+  indicators:
+  - id: "S_PV_allIndics"
+    output: ["csv"]
+    comp_pattern: "S_PV"
+    attr_pattern: ".*$"
+    
+  - id: "consumer_allIndics"
+    output: ["csv"]
+    comp_pattern: "consumer"
+    attr_pattern: ".*$"
+

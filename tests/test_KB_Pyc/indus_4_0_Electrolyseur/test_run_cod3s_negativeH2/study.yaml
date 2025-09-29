@@ -1,0 +1,685 @@
+# Study specifications
+simulation:
+  nb_runs: 2
+  schedule:
+    - start: 0
+      end: 96
+      nvalues: 1000
+  seed: 56860
+  rng: yarn5
+  rng_bloc_size: 1000
+  trace_level: 2
+
+# Some custom configuration used to produce YAML anchors
+custom_config:
+  plot_layout_base: &plot_layout_base
+    markers: false
+    layout:
+      title_font_size: 16
+      title_font_weight: bold
+      xaxis_title: "Temps (h)"
+      yaxis_title: null
+      showlegend: False
+      margin:
+        l: 0
+        r: 0
+        t: 30
+        b: 20
+    traces:
+      line:
+        width: 3
+    write_options:
+      width: 800
+      height: 400
+
+  # Nice discrete colormap for consistent plot styling
+  color_palette:
+    blue: &cs_blue
+      - "#1f77b4"
+    green: &cs_green
+      - "#2ca02c"
+    green_dark: &cs_green_dark
+      - "#0faf2c"
+    orange: &cs_orange
+      - "#ff7f0e" 
+    red: &cs_red
+      - "#d62728"
+    3cols: &cs_3cols
+      - "#bcbd22"
+      - "#17becf"
+      - "#e377c2"    
+      # purple: "#9467bd"
+      # brown: "#8c564b"
+      # pink: "#e377c2"
+      # gray: "#7f7f7f"
+      # olive: "#bcbd22"
+      # cyan: "#17becf"
+      # light_blue: "#aec7e8"
+      # light_orange: "#ffbb78"
+
+  
+failure_modes:  
+    
+  # Electro leak failure modes
+  - fm_name: "df_fuite"
+    targets: ["Electro"]
+    failure_effects:
+      v_H2_local_leak_pct: 0.20
+    occ_law: "exp"
+    failure_param: 0.000005
+    repair_param: 0.0625
+    enabled: true
+
+  - fm_name: "df_membrane"
+    targets: ["Electro"]
+    failure_effects:
+      v_H2_membrane_leak_pct: 0.5
+    occ_law: "exp"
+    failure_param: 0.0001
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_rupture_separateur"
+    targets: ["Electro"]
+    failure_effects:
+      v_H2_local_leak_pct: 0.5
+    occ_law: "exp"
+    failure_param: 0.000005
+    repair_param: 0.006
+    enabled: true
+
+  - fm_name: "df_rupture_membrane"
+    targets: ["Electro"]
+    failure_effects:
+      v_H2_membrane_leak_pct: 0.5
+    occ_law: "exp"
+    failure_param: 0.0064
+    repair_param: 0.0139
+    enabled: true
+
+  - fm_name: "vc_automate"
+    targets: ["AP_Source_B1"]
+    failure_effects:
+      v_inactive_forced: true
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_capteur_CT_H2_BP_2"
+    targets: ["CT_H2_BP_2"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_capteur_CT_H2_BP_3"
+    targets: ["CT_H2_BP_3"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+    
+  - fm_name: "df_degradation"
+    targets: ["P_H2O"]
+    failure_effects:
+      v_prod_pct: 0.5
+    occ_law: "exp"
+    failure_param: 0.045
+    repair_param: 0.083
+    enabled: true
+   
+  # Sensor failure modes
+  - fm_name: "df_capteur_CT_B1"
+    targets: ["CT_B1"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_capteur_CT_H2_BP_1"
+    targets: ["CT_H2_BP_1"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_capteur_C_Local_1"
+    targets: ["C_H2_Local_1"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_capteur_C_Local_2"
+    targets: ["C_H2_Local_2"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+
+  - fm_name: "df_capteur_C_Local_3"
+    targets: ["C_H2_Local_3"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 0
+    occ_law: "exp"
+    failure_param: 0.01
+    repair_param: 0.167
+    enabled: true
+  
+  - fm_name: "vc_capteur"
+    targets: ["C_H2_Local_1", "C_H2_Local_2", "C_H2_Local_3"]
+    failure_effects:
+      v_measure_blocked: true
+    occ_law: "exp"
+    failure_param: [0.01, 0.001, 0.0001]
+    repair_param: [0.167, 0.167, 0.167]
+    enabled: true
+
+  # Valve failure mode
+  - fm_name: "df_vanne"
+    targets: ["S_H2O"]
+    failure_effects:
+      v_flow_prod: 0
+    occ_law: "exp"
+    failure_param: 0.045
+    repair_param: 0.08
+    enabled: true
+
+# Event configuration
+events:
+  - name: top_event
+    cond:
+      - obj: Local
+        attr: H2_ratio
+        ope: ">"
+        value: 0.04
+
+# targets
+targets:
+  - name: top_event
+    
+# Indicators Configuration
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "top_event"
+    attr_type: "ST"
+    attr_name: "^occ$"
+    stats: ["mean"]
+    enabled: true
+  
+  - component: "S_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "P_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "S_PV"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "S_Eolienne"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Distrib"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "B1"
+    attr_type: "ST"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "CT_B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "AP_Source_B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Electro"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Electro"
+    attr_type: "ST"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "CT_H2_BP_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "AP_H2_BP"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "T_H2_BP"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Stack_Membrane"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Local"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "C_Local_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "C_H2_Local_.*"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "C_H2_Local_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "C_H2_Local_2"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "C_H2_Local_3"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "C_ratio_H2_Membrane"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Ventilation"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "AP_Ventilation"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Consumer"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Atmosphere"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+# Plot Results Configuration
+# This section contains all plot specifications for the system      
+plot_results:
+  # - plot_id: "S_PV"
+  #   title: "Production PV"
+  #   comp_pattern: "S_PV"
+  #   attr_pattern: ".*prod$"
+  #   range_y: [0, 50]
+  #   color_discrete_sequence: *cs_green
+  #   <<: *plot_layout_base
+
+  # - plot_id: "S_Eolienne"
+  #   title: "Production Éolienne"
+  #   comp_pattern: "S_Eolienne"
+  #   attr_pattern: ".*prod$"
+  #   range_y: [0, 50]
+  #   color_discrete_sequence: *cs_green_dark
+  #   <<: *plot_layout_base
+
+  - plot_id: "Electro"
+    title: "Production H2"
+    comp_pattern: "Electro"
+    attr_pattern: ".*flow_out$"
+    range_y: [0, 3]
+    color_discrete_sequence: *cs_orange
+    <<: *plot_layout_base
+
+  - plot_id: "Electro Leak"
+    title: "Leak H2"
+    comp_pattern: "Electro"
+    attr_pattern: ".*leak.*$"
+    range_y: [0, 3]
+    color_discrete_sequence: *cs_orange
+    <<: *plot_layout_base
+
+  - plot_id: "top_event"
+    title: "Top event fuite H2 local"
+    comp_pattern: "top_event"
+    attr_pattern: ".*occ$"
+    range_y: [0.25, 2]
+    color_discrete_sequence: *cs_orange
+    <<: *plot_layout_base
+
+  # - plot_id: "Batterie_brut"
+  #   title: "Batterie"
+  #   comp_pattern: "B1"
+  #   attr_pattern: ".*$"
+    
+  # - plot_id: "AP_Source_B1_brut"
+  #   title: "Automate batterie"
+  #   comp_pattern: "AP_Source_B1"
+  #   attr_pattern: ".*$"
+
+  - plot_id: "Tank_H2"
+    title: "Réservoir H2"
+    comp_pattern: "T_H2_BP"
+    attr_pattern: ".*H2_content$"
+    range_y: [0, 5]
+    color_discrete_sequence: *cs_orange
+    <<: *plot_layout_base
+
+  # - plot_id: "Consumer_perf"
+  #   title: "Indice satisfaction demande H2"
+  #   comp_pattern: "Consumer"
+  #   attr_pattern: ".*perf$"
+  #   range_y: [0, 1.1]
+  #   color_discrete_sequence: *cs_orange
+  #   <<: *plot_layout_base
+
+  # - plot_id: "Consumer_demand"
+  #   title: "Demande H2"
+  #   comp_pattern: "Consumer"
+  #   attr_pattern: ".*flow_nominal$"
+  #   range_y: [0, 3]
+  #   color_discrete_sequence: *cs_blue
+  #   <<: *plot_layout_base
+
+  # - plot_id: "Consumer_brut"
+  #   title: "Demande H2"
+  #   comp_pattern: "Consumer"
+  #   attr_pattern: ".*$"
+    
+  # - plot_id: "Electro_brut"
+  #   title: "Production H2"
+  #   comp_pattern: "Electro"
+  #   attr_pattern: ".*$"
+
+  - plot_id: "Local_brut"
+    title: "Local"
+    comp_pattern: "Local"
+    attr_pattern: ".*$"
+
+  # - plot_id: "C_H2_Local_1_brut"
+  #   title: "C_H2_Local_1"
+  #   comp_pattern: "C_H2_Local_1"
+  #   attr_pattern: ".*$"
+
+  - plot_id: "C_H2_Local_brut"
+    title: "C_H2_Local_1"
+    comp_pattern: "C_H2_Local_.*"
+    attr_pattern: ".*$"
+    
+  # - plot_id: "AP_Electro_brut"
+  #   title: "AP_Elec"
+  #   comp_pattern: "AP_Electro"
+  #   attr_pattern: ".*$"
+    
+  # - plot_id: "S_H2O"
+  #   title: "S_H2O"
+  #   comp_pattern: "S_H2O"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "P_H2O"
+  #   title: "P_H2O"
+  #   comp_pattern: "P_H2O"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "S_PV"
+  #   title: "S_PV"
+  #   comp_pattern: "S_PV"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "S_Eolienne"
+  #   title: "S_Eolienne"
+  #   comp_pattern: "S_Eolienne"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Distrib"
+  #   title: "Distrib"
+  #   comp_pattern: "Distrib"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "B1"
+  #   title: "B1"
+  #   comp_pattern: "B1"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "CT_B1"
+  #   title: "CT_B1"
+  #   comp_pattern: "CT_B1"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "AP_B1"
+  #   title: "AP_B1"
+  #   comp_pattern: "AP_B1"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Electro"
+  #   title: "Electro"
+  #   comp_pattern: "Electro"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "CT_H2_BP_1"
+  #   title: "CT_H2_BP_1"
+  #   comp_pattern: "CT_H2_BP_1"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "AP_H2_BP"
+  #   title: "AP_H2_BP"
+  #   comp_pattern: "AP_H2_BP"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "T_H2_BP"
+  #   title: "T_H2_BP"
+  #   comp_pattern: "T_H2_BP"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Stack_Membrane"
+  #   title: "Stack_Membrane"
+  #   comp_pattern: "Stack_Membrane"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Local"
+  #   title: "Local"
+  #   comp_pattern: "Local"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "C_Local_1"
+  #   title: "C_Local_1"
+  #   comp_pattern: "C_Local_1"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "C_H2_Local_1"
+  #   title: "C_H2_Local_1"
+  #   comp_pattern: "C_H2_Local_1"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "C_ratio_H2_Membrane"
+  #   title: "C_ratio_H2_Membrane"
+  #   comp_pattern: "C_ratio_H2_Membrane"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Ventilation"
+  #   title: "Ventilation"
+  #   comp_pattern: "Ventilation"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "AP_Ventilation"
+  #   title: "AP_Ventilation"
+  #   comp_pattern: "AP_Ventilation"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Consumer"
+  #   title: "Consumer"
+  #   comp_pattern: "Consumer"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Atmosphere"
+  #   title: "Atmosphere"
+  #   comp_pattern: "Atmosphere"
+  #   attr_pattern: ".*$"
+
+  # - plot_id: "Source_elec"
+  #   title: "Atmosphere"
+  #   comp_pattern: "S_PV|S_Eolienne|Distrib"
+  #   attr_pattern: ".*$"
+  
+results:
+  indicators:
+  - id: "Electro"
+    output: ["csv"]
+    comp_pattern: "Electro"
+    attr_pattern: ".*$"
+    
+  - id: "T_H2_BP"
+    output: ["csv"]
+    comp_pattern: "T_H2_BP"
+    attr_pattern: ".*$"
+    
+  - id: "S_H2O"
+    output: ["csv"]
+    comp_pattern: "S_H2O"
+    attr_pattern: ".*$"
+    
+  - id: "S_PV"
+    output: ["csv"]
+    comp_pattern: "S_PV"
+    attr_pattern: ".*$"
+    
+  - id: "S_Eolienne"
+    output: ["csv"]
+    comp_pattern: "S_Eolienne"
+    attr_pattern: ".*$"
+    
+  - id: "P_H2O"
+    output: ["csv"]
+    comp_pattern: "P_H2O"
+    attr_pattern: ".*$"
+    
+  - id: "Consumer"
+    output: ["csv"]
+    comp_pattern: "Consumer"
+    attr_pattern: ".*$"
+    
+  - id: "Atmosphere"
+    output: ["csv"]
+    comp_pattern: "Atmosphere"
+    attr_pattern: ".*$"
+    
+  plot_indicators:
+  - id: "Electro"
+    output: ["html"]
+    comp_pattern: "Electro"
+    attr_pattern: ".*$"
+    
+  - id: "T_H2_BP"
+    output: ["html"]
+    comp_pattern: "T_H2_BP"
+    attr_pattern: ".*$"
+    
+  - id: "S_H2O"
+    output: ["html"]
+    comp_pattern: "S_H2O"
+    attr_pattern: ".*$"
+    
+  - id: "S_PV"
+    output: ["html"]
+    comp_pattern: "S_PV"
+    attr_pattern: ".*$"
+    
+  - id: "S_Eolienne"
+    output: ["html"]
+    comp_pattern: "S_Eolienne"
+    attr_pattern: ".*$"
+    
+  - id: "P_H2O"
+    output: ["html"]
+    comp_pattern: "P_H2O"
+    attr_pattern: ".*$"
+    
+  - id: "Consumer"
+    output: ["html"]
+    comp_pattern: "Consumer"
+    attr_pattern: ".*$"
+    
+  - id: "Atmosphere"
+    output: ["html"]
+    comp_pattern: "Atmosphere"
+    attr_pattern: ".*$"
+    

@@ -1,0 +1,11 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,0.0,3.0,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,0.3333333333333333,3.2666666507720947,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,0.6666666666666666,3.5333333015441895,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,1.0,3.799999952316284,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,1.3333333333333333,4.066666603088379,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,1.6666666666666665,4.333333492279053,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,2.0,4.599999904632568,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,2.333333333333333,4.866666793823242,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,2.6666666666666665,5.133333206176758,
+Local_content_total,Local_content_total,Local_content_total,Local,content_total,==,,VAR,value,mean,3.0,5.400000095367432,

@@ -1,0 +1,22 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 4
+      nvalues: 5
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "Node"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+results:
+  indicators:
+  - id: "Node"
+    output: ["csv"]
+    comp_pattern: "Node"
+    attr_pattern: ".*$"

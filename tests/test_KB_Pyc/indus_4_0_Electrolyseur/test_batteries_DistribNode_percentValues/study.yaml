@@ -1,0 +1,71 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 4.5
+      nvalues: 14
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "S_PV"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+  - component: "Node"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "B2"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+
+results:
+  indicators:
+  - id: "Node_flow_out1"
+    output: ["csv"]
+    comp_pattern: "Node"
+    attr_pattern: ".*flow_out1$"
+    
+  - id: "Node_flow_out2"
+    output: ["csv"]
+    comp_pattern: "Node"
+    attr_pattern: ".*flow_out2$"
+    
+  - id: "Node_flow_demand_export"
+    output: ["csv"]
+    comp_pattern: "Node"
+    attr_pattern: ".*flow_demand_export$"
+    
+  - id: "B1_demand_export"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*flow_demand_export$"
+    
+  - id: "B1_content"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*content$"
+    
+  - id: "B2_content"
+    output: ["csv"]
+    comp_pattern: "B2"
+    attr_pattern: ".*content$"
+    
+  - id: "B2_demand_export"
+    output: ["csv"]
+    comp_pattern: "B2"
+    attr_pattern: ".*demand_export$"

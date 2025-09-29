@@ -1,0 +1,10 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,0.0,0.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,1.0,0.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,2.0,0.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,3.0,0.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,4.0,0.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,5.0,1.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,6.0,1.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,7.0,1.0,
+C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3_measure_blocked,C_H2_Local_3,measure_blocked,==,,VAR,value,mean,8.0,0.0,

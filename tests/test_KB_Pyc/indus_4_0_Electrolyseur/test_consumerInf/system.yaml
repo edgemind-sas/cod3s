@@ -1,0 +1,48 @@
+system:
+  name: test_run_cod3S_consumerInf
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "S_H2O"
+    cls: "Source"
+    flow_type: "H2O"
+    flow_nominal: 3
+    
+  - name: "P_H2O"
+    cls: "Pump"
+    flow_type: "H2O"
+    flow_nominal: 3
+    
+  - name: "capacity_H2O"
+    cls: "CapacityMulti"
+    flow_types: ["H2O"]
+    capacity: 15
+    content_ini:
+      H2O: 14
+
+  - name: "consumer_H2O"
+    cls: "Consumer"
+    flow_type: "H2O"
+    flow_nominal: 5
+    flow_type: "All"
+    flow_in_max: 6
+
+connections:
+  - component_source: "S_H2O"
+    interface_source: "H2O_out"
+    component_target: "P_H2O"
+    interface_target: "H2O_in"
+    
+  - component_source: "P_H2O"
+    interface_source: "H2O_out"
+    component_target: "capacity_H2O"
+    interface_target: "H2O_in"
+    
+  - component_source: "capacity_H2O"
+    interface_source: "H2O_out"
+    component_target: "consumer_H2O"
+    interface_target: "All_in"

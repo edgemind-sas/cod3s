@@ -1,0 +1,59 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 20
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "S_H2"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+  - component: "H2_BP"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "ConsumerSin"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+results:
+  indicators:
+  - id: "S_H2_flow_H2_out"
+    output: ["csv"]
+    comp_pattern: "S_H2"
+    attr_pattern: ".*_flow_H2_out$"
+    
+  - id: "H2_BP_flow_out_max"
+    output: ["csv"]
+    comp_pattern: "H2_BP"
+    attr_pattern: ".*flow_out_max$"
+    
+  - id: "H2_BP_content_total"
+    output: ["csv"]
+    comp_pattern: "H2_BP"
+    attr_pattern: ".*content_total$"
+    
+  - id: "ConsumerSin_flow_nominal"
+    output: ["csv"]
+    comp_pattern: "ConsumerSin"
+    attr_pattern: ".*flow_nominal$"
+    
+  - id: "ConsumerSin_flow_out"
+    output: ["csv"]
+    comp_pattern: "ConsumerSin"
+    attr_pattern: ".*flow_out$"
+    
+  - id: "ConsumerSin_perf"
+    output: ["csv"]
+    comp_pattern: "ConsumerSin"
+    attr_pattern: ".*perf$"

@@ -1,0 +1,54 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 5
+      nvalues: 6
+      
+#failure_modes:
+#  - fm_name: "df_stack"
+#    targets: ["Electro"]
+#    failure_effects:
+#      v_H2O_leak_pct: 0.20
+#    occ_law: "delay"
+#    failure_param: 2
+#    repair_param: 2
+#    enabled: true
+    
+indicators:
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+  - component: "Electro"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "Local"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+  indicators:
+  - id: "B1"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*$"
+    
+  - id: "Electro"
+    output: ["csv"]
+    comp_pattern: "Electro"
+    attr_pattern: ".*$"
+    
+  - id: "Local"
+    output: ["csv"]
+    comp_pattern: "Local"
+    attr_pattern: ".*$"
+    

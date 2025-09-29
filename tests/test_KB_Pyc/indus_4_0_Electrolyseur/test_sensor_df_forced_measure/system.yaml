@@ -1,0 +1,12 @@
+system:
+  name: test_run_cod3s_sensor
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "CT"
+    cls: "Sensor"
+    measure: "content"

@@ -1,0 +1,13 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,0.0,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,0.5454545454545454,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,1.0909090909090908,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,1.6363636363636362,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,2.1818181818181817,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,2.727272727272727,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,3.2727272727272725,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,3.818181818181818,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,4.363636363636363,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,4.909090909090908,3.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,5.454545454545454,0.0,
+B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1_flow_Elec_demand_export,B1,flow_Elec_demand_export,==,,VAR,value,mean,6.0,0.0,

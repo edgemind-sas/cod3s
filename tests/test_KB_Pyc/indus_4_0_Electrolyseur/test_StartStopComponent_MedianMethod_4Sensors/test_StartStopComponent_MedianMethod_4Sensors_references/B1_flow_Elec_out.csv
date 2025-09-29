@@ -1,0 +1,6 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+B1_flow_Elec_out,B1_flow_Elec_out,B1_flow_Elec_out,B1,flow_Elec_out,==,,VAR,value,mean,0.0,6.0,
+B1_flow_Elec_out,B1_flow_Elec_out,B1_flow_Elec_out,B1,flow_Elec_out,==,,VAR,value,mean,1.0,6.0,
+B1_flow_Elec_out,B1_flow_Elec_out,B1_flow_Elec_out,B1,flow_Elec_out,==,,VAR,value,mean,2.0,6.0,
+B1_flow_Elec_out,B1_flow_Elec_out,B1_flow_Elec_out,B1,flow_Elec_out,==,,VAR,value,mean,3.0,6.0,
+B1_flow_Elec_out,B1_flow_Elec_out,B1_flow_Elec_out,B1,flow_Elec_out,==,,VAR,value,mean,4.0,6.0,

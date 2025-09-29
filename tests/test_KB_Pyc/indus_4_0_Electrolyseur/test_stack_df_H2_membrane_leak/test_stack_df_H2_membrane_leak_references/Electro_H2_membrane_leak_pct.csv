@@ -1,0 +1,11 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,0.0,0.0,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,0.3888888888888889,0.0,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,0.7777777777777778,0.0,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,1.1666666666666667,0.10000000149011612,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,1.5555555555555556,0.10000000149011612,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,1.9444444444444444,0.10000000149011612,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,2.3333333333333335,0.10000000149011612,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,2.7222222222222223,0.10000000149011612,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,3.111111111111111,0.0,
+Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro_H2_membrane_leak_pct,Electro,H2_membrane_leak_pct,==,,VAR,value,mean,3.5,0.0,

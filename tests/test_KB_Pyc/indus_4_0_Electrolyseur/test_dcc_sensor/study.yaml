@@ -1,0 +1,61 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 8
+      nvalues: 9
+  trace_elements:             
+    - attr_name: "variable"
+      pattern: ".*"      
+      level: 2
+    - attr_name: "transition"
+      pattern: ".*"      
+      level: 2
+      
+failure_modes:
+  - fm_name: "vc_capteur"
+    targets: ["C_H2_Local_1", "C_H2_Local_2", "C_H2_Local_3"]
+    failure_effects:
+      v_measure_blocked: true
+    occ_law: "delay"
+    failure_param: [4, 5, 6]
+    repair_param: [1, 1, 1]
+    
+indicators:
+  - component: "C_H2_Local_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "C_H2_Local_2"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "C_H2_Local_3"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+ indicators:
+  - id: "C_H2_Local_1"
+    output: ["csv"]
+    comp_pattern: "C_H2_Local_1"
+    attr_pattern: ".*measure_blocked$"
+    
+  - id: "C_H2_Local_2"
+    output: ["csv"]
+    comp_pattern: "C_H2_Local_2"
+    attr_pattern: ".*measure_blocked$"
+    
+  - id: "C_H2_Local_3"
+    output: ["csv"]
+    comp_pattern: "C_H2_Local_3"
+    attr_pattern: ".*measure_blocked$"
+   
+    

@@ -1,0 +1,29 @@
+system:
+  name: test_run_cod3S_consumer
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "capacity"
+    cls: "CapacityMulti"
+    flow_types: ["H2"]
+    capacity: 50
+    content_ini:
+      H2: 50
+    flow_out_max: 10
+
+  - name: "consumer"
+    cls: "Consumer"
+    flow_type: "H2"
+    flow_nominal: 8
+    flow_type: "All"
+    flow_in_max: 2
+
+connections:
+  - component_source: "capacity"
+    interface_source: "H2_out"
+    component_target: "consumer"
+    interface_target: "All_in"

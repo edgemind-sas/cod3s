@@ -1,0 +1,34 @@
+# Study specifications
+
+failure_modes:
+  - fm_name: "df_capteur"
+    targets: ["CT"]
+    failure_effects:
+      v_forced_measure: true
+      v_value_forced: 2
+    occ_law: "delay"
+    failure_param: 2
+    repair_param: 3
+    enabled: true
+    
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 12
+      nvalues: 12
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "CT"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+results:
+  indicators:
+  - id: "CT"
+    output: ["csv"]
+    comp_pattern: "CT"
+    attr_pattern: ".*$"

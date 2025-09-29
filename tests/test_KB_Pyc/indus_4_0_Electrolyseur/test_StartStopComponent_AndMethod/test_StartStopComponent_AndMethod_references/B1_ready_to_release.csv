@@ -1,0 +1,6 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+B1_ready_to_release,B1_ready_to_release,B1_ready_to_release,B1,ready_to_release,==,,VAR,value,mean,0.0,0.0,
+B1_ready_to_release,B1_ready_to_release,B1_ready_to_release,B1,ready_to_release,==,,VAR,value,mean,1.0,0.0,
+B1_ready_to_release,B1_ready_to_release,B1_ready_to_release,B1,ready_to_release,==,,VAR,value,mean,2.0,0.0,
+B1_ready_to_release,B1_ready_to_release,B1_ready_to_release,B1,ready_to_release,==,,VAR,value,mean,3.0,0.0,
+B1_ready_to_release,B1_ready_to_release,B1_ready_to_release,B1,ready_to_release,==,,VAR,value,mean,4.0,0.0,

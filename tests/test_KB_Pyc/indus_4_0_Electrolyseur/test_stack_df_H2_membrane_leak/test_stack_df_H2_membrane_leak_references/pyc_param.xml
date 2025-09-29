@@ -1,0 +1,60 @@
+<PY_PARAM NAME="test_stack_df_H2_membrane_leak" RNG_BS="1000" RNG="yarn5" RNG_S="1" DATE="2025-09-26 13:54:41" RUN_TIME="38" TRACE="0" TMAX="3" SEQ_NB="1">
+	<INST T="0"/>
+	<INST T="0.388889"/>
+	<INST T="0.777778"/>
+	<INST T="1.16667"/>
+	<INST T="1.55556"/>
+	<INST T="1.94444"/>
+	<INST T="2.33333"/>
+	<INST T="2.72222"/>
+	<INST T="3.11111"/>
+	<INST T="3.5"/>
+	<CPT NAME="B1" CLASS="Battery"/>
+	<CPT NAME="Electro" CLASS="Stack"/>
+	<CPT NAME="Electro__df_H2_membrane" CLASS="ObjFMDelay"/>
+	<CPT NAME="Local" CLASS="CapacityMulti"/>
+	<CPT NAME="S_H2O" CLASS="Source"/>
+	<CNX MSGB1="B1.Elec_out" MSGB2="Electro.Elec_in"/>
+	<CNX MSGB1="Electro.H2O_in" MSGB2="S_H2O.H2O_out"/>
+	<CNX MSGB1="Electro.H2_out" MSGB2="Local.H2_in"/>
+	<TR NAME="B1.empty_to_intermediate" MONIT="1"/>
+	<TR NAME="B1.full_to_intermediate" MONIT="1"/>
+	<TR NAME="B1.start" MONIT="1"/>
+	<TR NAME="B1.stop" MONIT="1"/>
+	<TR NAME="B1.to_empty" MONIT="1"/>
+	<TR NAME="B1.to_full" MONIT="1"/>
+	<TR NAME="Electro.start" MONIT="1"/>
+	<TR NAME="Electro.stop" MONIT="1"/>
+	<TR NAME="Electro__df_H2_membrane.occ" MONIT="1"/>
+	<TR NAME="Electro__df_H2_membrane.rep" MONIT="1"/>
+	<TR NAME="Local.empty_to_intermediate" MONIT="1"/>
+	<TR NAME="Local.full_to_intermediate" MONIT="1"/>
+	<TR NAME="Local.to_empty" MONIT="1"/>
+	<TR NAME="Local.to_full" MONIT="1"/>
+	<ST NAME="B1.full" INIT="1" AUT="content_status" IND="2"/>
+	<ST NAME="B1.start" INIT="1" AUT="operation" IND="1"/>
+	<ST NAME="Electro.start" INIT="1" AUT="operation" IND="1"/>
+	<ST NAME="Electro__df_H2_membrane.rep" INIT="1" AUT="df_H2_membrane" IND="0"/>
+	<ST NAME="Local.intermediate" INIT="1" AUT="content_status" IND="1"/>
+	<IND NAME="Electro_H2O_leak_pct" TYPE="1" VAR="Electro.H2O_leak_pct"/>
+	<IND NAME="Electro_H2_local_leak_pct" TYPE="1" VAR="Electro.H2_local_leak_pct"/>
+	<IND NAME="Electro_H2_membrane_leak_pct" TYPE="1" VAR="Electro.H2_membrane_leak_pct"/>
+	<IND NAME="Electro_O2_leak_pct" TYPE="1" VAR="Electro.O2_leak_pct"/>
+	<IND NAME="Electro_O2_membrane_leak_pct" TYPE="1" VAR="Electro.O2_membrane_leak_pct"/>
+	<IND NAME="Electro_demand_H2O_nominal" TYPE="1" VAR="Electro.demand_H2O_nominal"/>
+	<IND NAME="Electro_demand_elec_nominal" TYPE="1" VAR="Electro.demand_elec_nominal"/>
+	<IND NAME="Electro_flow_H2O_leak" TYPE="1" VAR="Electro.flow_H2O_leak"/>
+	<IND NAME="Electro_flow_H2_local_leak" TYPE="1" VAR="Electro.flow_H2_local_leak"/>
+	<IND NAME="Electro_flow_H2_membrane_leak" TYPE="1" VAR="Electro.flow_H2_membrane_leak"/>
+	<IND NAME="Electro_flow_H2_nominal" TYPE="1" VAR="Electro.flow_H2_nominal"/>
+	<IND NAME="Electro_flow_O2_leak" TYPE="1" VAR="Electro.flow_O2_leak"/>
+	<IND NAME="Electro_flow_O2_membrane_leak" TYPE="1" VAR="Electro.flow_O2_membrane_leak"/>
+	<IND NAME="Electro_flow_O2_nominal" TYPE="1" VAR="Electro.flow_O2_nominal"/>
+	<IND NAME="Electro_flow_O2_out" TYPE="1" VAR="Electro.flow_O2_out"/>
+	<IND NAME="Electro_flow_demand_export1" TYPE="1" VAR="Electro.flow_demand_export1"/>
+	<IND NAME="Electro_flow_demand_export2" TYPE="1" VAR="Electro.flow_demand_export2"/>
+	<IND NAME="Electro_flow_in_max" TYPE="1" VAR="Electro.flow_in_max"/>
+	<IND NAME="Electro_flow_out" TYPE="1" VAR="Electro.flow_out"/>
+	<IND NAME="Electro_flow_out_max" TYPE="1" VAR="Electro.flow_out_max"/>
+	<IND NAME="Electro_power_pct_min" TYPE="1" VAR="Electro.power_pct_min"/>
+</PY_PARAM>

@@ -1,0 +1,38 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 5
+      nvalues: 6
+      
+indicators:
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+  indicators:
+  - id: "B1_flow_Elec_out"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*flow_Elec_out$"
+    
+  - id: "B1_ready_to_release"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*ready_to_release$"
+    
+    
+  - id: "B1_Elec_content"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*Elec_content$"
+    
+  - id: "B1_content_total"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*content_total$"
+    

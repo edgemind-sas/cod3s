@@ -1,0 +1,46 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 20
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "Source_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+  - component: "Pump_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "Reservoir_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["stddev", "mean"]
+    enabled: true
+
+  - component: "Automaton_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+
+results:
+  indicators:
+  - id: "Reservoir_1"
+    output: ["csv"]
+    comp_pattern: "Reservoir_1"
+    attr_pattern: ".*content$"
+    
+  - id: "Automaton_1"
+    output: ["csv"]
+    comp_pattern: "Automaton_1"
+    attr_pattern: ".*signal_out$"

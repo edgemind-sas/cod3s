@@ -1,0 +1,72 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 4
+      nvalues: 5
+    
+indicators:
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Autom_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "Autom_2"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "Autom_3"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "Autom_4"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+ indicators:
+  - id: "B1_ready_to_release"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*ready_to_release$"
+    
+  - id: "B1_flow_Elec_out"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*flow_Elec_out$"
+    
+  - id: "Autom_1"
+    output: ["csv"]
+    comp_pattern: "Autom_1"
+    attr_pattern: ".*signal_out$"
+    
+  - id: "Autom_2"
+    output: ["csv"]
+    comp_pattern: "Autom_2"
+    attr_pattern: ".*signal_out$"
+    
+  - id: "Autom_3"
+    output: ["csv"]
+    comp_pattern: "Autom_3"
+    attr_pattern: ".*signal_out$"
+    
+  - id: "Autom_4"
+    output: ["csv"]
+    comp_pattern: "Autom_4"
+    attr_pattern: ".*signal_out$"
+  
+    

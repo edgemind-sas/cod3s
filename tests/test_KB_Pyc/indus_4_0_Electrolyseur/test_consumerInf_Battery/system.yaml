@@ -1,0 +1,72 @@
+system:
+  name: test_run_cod3S_consumerInf
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "S_Elec"
+    cls: "Source"
+    flow_type: "Elec"
+    flow_nominal: 1
+    
+  - name: "P_Elec"
+    cls: "Pump"
+    flow_type: "Elec"
+    flow_nominal: 1
+    
+  - name: "B1"
+    cls: "Battery"
+    flow_types: ["Elec"]
+    capacity: 5
+    content_ini:
+      Elec: 0
+    
+  - name: "C1"
+    cls: "Sensor"
+    measure: "content"
+
+  - name: "A1"
+    cls: "Automaton"
+    active_threshold: "<0"
+    inactive_threshold: ">20"
+
+  - name: "consumer_Elec"
+    cls: "Consumer"
+    flow_type: "Elec"
+    flow_nominal: 1
+    flow_type: "All"
+    flow_in_max: 1
+
+connections:
+  - component_source: "S_Elec"
+    interface_source: "Elec_out"
+    component_target: "P_Elec"
+    interface_target: "Elec_in"
+    
+  - component_source: "P_Elec"
+    interface_source: "Elec_out"
+    component_target: "B1"
+    interface_target: "Elec_in"
+    
+  - component_source: "B1"
+    interface_source: "Elec_out"
+    component_target: "consumer_Elec"
+    interface_target: "All_in"
+    
+  - component_source: "B1"
+    interface_source: "Elec_content"
+    component_target: "C1"
+    interface_target: "in"
+
+  - component_source: "C1"
+    interface_source: "out"
+    component_target: "A1"
+    interface_target: "in"
+
+  - component_source: "A1"
+    interface_source: "out"
+    component_target: "B1"
+    interface_target: "cmd"

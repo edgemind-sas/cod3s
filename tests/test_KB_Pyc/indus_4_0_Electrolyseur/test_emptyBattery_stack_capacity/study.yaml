@@ -1,0 +1,44 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 3
+      nvalues: 10
+      
+indicators:
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+  - component: "Electro"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "Local"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+  indicators:
+  - id: "B1"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*$"
+    
+  - id: "Electro"
+    output: ["csv"]
+    comp_pattern: "Electro"
+    attr_pattern: ".*$"
+    
+  - id: "Local"
+    output: ["csv"]
+    comp_pattern: "Local"
+    attr_pattern: ".*content_total$"
+    

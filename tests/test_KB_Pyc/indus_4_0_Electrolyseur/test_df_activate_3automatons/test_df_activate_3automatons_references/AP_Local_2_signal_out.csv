@@ -1,0 +1,8 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,0.0,-1.0,
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,1.0,-1.0,
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,2.0,0.0,
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,3.0,0.0,
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,4.0,-1.0,
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,5.0,1.0,
+AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2_signal_out,AP_Local_2,signal_out,==,,VAR,value,mean,6.0,1.0,

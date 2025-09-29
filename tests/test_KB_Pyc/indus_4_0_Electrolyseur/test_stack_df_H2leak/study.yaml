@@ -1,0 +1,35 @@
+failure_modes:
+  - fm_name: "df_H2"
+    targets: ["Electro"]
+    failure_effects:
+      v_H2_local_leak_pct: 0.8
+    occ_law: "delay"
+    failure_param: 1
+    repair_param: 2
+    enabled: true
+    
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 3.5
+      nvalues: 10
+
+indicators:
+  - component: "Electro"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+  indicators:
+  - id: "Electro_H2_leak_pct"
+    output: ["csv"]
+    comp_pattern: "Electro"
+    attr_pattern: ".*H2_local_leak_pct$"
+    
+  - id: "Electro_flow_H2_leak"
+    output: ["csv"]
+    comp_pattern: "Electro"
+    attr_pattern: ".*flow_H2_local_leak$"

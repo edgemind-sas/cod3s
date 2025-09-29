@@ -1,0 +1,54 @@
+# Study specifications
+
+failure_modes:
+  - fm_name: "df_capteur"
+    targets: ["CT_Stack_H2O_Content"]
+    failure_effects:
+      v_measure_blocked: true
+    occ_law: "delay"
+    failure_param: 5
+    repair_param: 3
+    enabled: true
+    
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 20
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "Stack_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "CT_Stack_H2O_Content"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+results:
+  indicators:
+  - id: "Stack_H2O_content"
+    output: ["csv"]
+    comp_pattern: "Stack_H2O"
+    attr_pattern: ".*content$"
+    
+  - id: "Stack_H2O_capacity"
+    output: ["csv"]
+    comp_pattern: "Stack_H2O"
+    attr_pattern: ".*capacity$"
+    
+  - id: "CT_Stack_H2O_Content_value_out"
+    output: ["csv"]
+    comp_pattern: "CT_Stack_H2O"
+    attr_pattern: ".*value_out$"
+ 
+  - id: "CT_Stack_H2O_Content_measure_blocked"
+    output: ["csv"]
+    comp_pattern: "CT_Stack_H2O"
+    attr_pattern: ".*measure_blocked$"

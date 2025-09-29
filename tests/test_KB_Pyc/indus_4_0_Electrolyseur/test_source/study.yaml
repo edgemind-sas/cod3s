@@ -1,0 +1,33 @@
+# Study specifications
+
+failure_modes:
+  - fm_name: "df_H2O"
+    targets: ["S_H2O"]
+    failure_effects:
+      v_flow_prod: 1
+    occ_law: "delay"
+    failure_param: 1
+    repair_param: 2
+    enabled: true
+    
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 5
+      nvalues: 5
+
+indicators:
+  - component: "S_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+results:
+  indicators:
+  - id: "S_H2O_allIndics"
+    output: ["csv"]
+    comp_pattern: "S_H2O"
+    attr_pattern: ".*$"
+

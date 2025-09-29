@@ -1,0 +1,65 @@
+system:
+  name: test_run_cod3S_automaton
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  # H2O Components
+  - name: "Source_1"
+    cls: "Source"
+    flow_type: "H2O"
+    flow_nominal: 5
+
+  # pump H2O
+  - name: "Pump_1"
+    cls: "Pump"
+    flow_type: "H2O"
+    flow_nominal: 5
+
+  # Automatons
+  - name: "Automaton_1"
+    cls: "Automaton"
+    active_threshold: "< 5 "
+    inactive_threshold: "> 12"
+
+  # Sensors 
+  - name: "Sensor_1"
+    cls: "Sensor"
+    measure: "content"
+
+  # Capacity
+  - name: "Reservoir_1"
+    cls: "CapacityMulti"
+    flow_types: ["H2O"]
+    capacity: 20
+    content_ini:
+      H2O: 1
+
+connections:
+  - component_source: "Source_1"
+    interface_source: "H2O_out"
+    component_target: "Pump_1"
+    interface_target: "H2O_in"
+
+  - component_source: "Pump_1"
+    interface_source: "H2O_out"
+    component_target: "Reservoir_1"
+    interface_target: "H2O_in"
+
+  - component_source: "Reservoir_1"
+    interface_source: "H2O_content"
+    component_target: "Sensor_1"
+    interface_target: "in"
+
+  - component_source: "Sensor_1"
+    interface_source: "out"
+    component_target: "Automaton_1"
+    interface_target: "in"
+
+  - component_source: "Automaton_1"
+    interface_source: "out"
+    component_target: "Pump_1"
+    interface_target: "cmd"

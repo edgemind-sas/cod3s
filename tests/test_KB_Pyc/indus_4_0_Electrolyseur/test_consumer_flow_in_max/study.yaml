@@ -1,0 +1,20 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 20
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "consumer"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+results:
+  indicators:
+  - id: "all_indics"
+    output: ["csv"]

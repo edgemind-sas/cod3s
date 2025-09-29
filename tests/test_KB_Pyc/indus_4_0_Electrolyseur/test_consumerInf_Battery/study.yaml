@@ -1,0 +1,82 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 10
+      nvalues: 20
+
+
+failure_modes:
+  # Active failure modes (Electro component - H2 and O2 membrane leaks)
+  - fm_name: "df_automate_active"
+    targets: ["A1"]
+    failure_effects:
+      v_inactive_forced: 1
+    occ_law: "delay"
+    failure_param: 1
+    repair_param: 7
+    enabled: true
+    
+  # Active failure modes (Electro component - H2 and O2 membrane leaks)
+  - fm_name: "df_automate_inactive"
+    targets: ["A1"]
+    failure_effects:
+      v_active_forced: 1
+    occ_law: "delay"
+    failure_param: 7
+    repair_param: 4
+    enabled: true
+
+  
+# This section contains all indicator specifications for the system
+indicators:
+#  - component: "S_Elec"
+#    attr_type: "VAR"
+#    attr_name: "."
+#    stats: ["mean"]
+#    enabled: true
+    
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "A1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+#  - component: "consumer_Elec"
+#    attr_type: "VAR"
+#    attr_name: "."
+#    stats: ["mean"]
+#    enabled: true
+  
+results:
+#  plot_indicators:
+#  - id: "S_Elec"
+#    output: ["html"]
+#    comp_pattern: "S_Elec"
+#    attr_pattern: ".*$"
+#    
+#  - id: "B1"
+#    output: ["html"]
+#    comp_pattern: "B1"
+#    attr_pattern: ".*$"
+    
+#  - id: "consumer_Elec"
+#    output: ["html"]
+#    comp_pattern: "consumer_Elec"
+#    attr_pattern: ".*$"
+    
+#  - id: "A1"
+#    output: ["html"]
+#    comp_pattern: "A1"
+#    attr_pattern: ".*$"
+    
+  indicators:
+  - id: "all"
+    output: ["csv"]

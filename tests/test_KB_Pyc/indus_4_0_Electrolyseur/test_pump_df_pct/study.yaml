@@ -1,0 +1,33 @@
+# Study specifications
+
+failure_modes:
+  - fm_name: "df_pump"
+    targets: ["Pump_H2O"]
+    failure_effects:
+      v_prod_pct: 0.25
+    occ_law: "delay"
+    failure_param: 3
+    repair_param: 2
+    enabled: true
+    
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 6
+      nvalues: 20
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "Pump_H2O"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+results:
+  indicators:
+  - id: "Pump_H2O"
+    output: ["csv"]
+    comp_pattern: "Pump_H2O"
+    attr_pattern: ".*$"

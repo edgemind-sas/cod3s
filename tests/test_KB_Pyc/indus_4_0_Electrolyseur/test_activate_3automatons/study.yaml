@@ -1,0 +1,66 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 6
+      nvalues: 7
+    
+indicators:
+  - component: "Local"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "CT_Local"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+
+  - component: "AP_Local_1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "AP_Local_2"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "AP_Local_3"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+results:
+ indicators:
+  - id: "Local"
+    output: ["csv"]
+    comp_pattern: "Local"
+    attr_pattern: ".*H2_content$"
+    
+  - id: "CT_Local"
+    output: ["csv"]
+    comp_pattern: "CT_Local"
+    attr_pattern: ".*Local_value_out$"
+    
+  - id: "AP_Local_1"
+    output: ["csv"]
+    comp_pattern: "AP_Local_1"
+    attr_pattern: ".*signal_out$"
+    
+  - id: "AP_Local_2"
+    output: ["csv"]
+    comp_pattern: "AP_Local_2"
+    attr_pattern: ".*signal_out$"
+    
+  - id: "AP_Local_3"
+    output: ["csv"]
+    comp_pattern: "AP_Local_3"
+    attr_pattern: ".*signal_out$"
+    

@@ -1,0 +1,78 @@
+system:
+  name: test_run_cod3S_dcc_sensor
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "S_H2O"
+    cls: "Source"
+    flow_type: "H2O"
+    flow_nominal: 5
+    
+  - name: "S_PV"
+    cls: "Source"
+    flow_type: "Elec"
+    flow_nominal: 5
+
+  - name: "Electro"
+    cls: "Stack"
+    flow_type_in1: "H2O"
+    flow_type_in2: "Elec"
+    flow_type_out: "H2"
+    flow_H2_nominal: 2
+    flow_O2_nominal: 2.5
+    demand_H2O_nominal: 5
+    demand_elec_nominal: 5
+
+  - name: "Local"
+    cls: "CapacityMulti"
+    flow_types: ["H2"]
+    capacity: 12
+    content_ini:
+      H2: 3
+    
+  - name: "C_H2_Local_1"
+    cls: "Sensor"
+    measure: "content"
+    
+  - name: "C_H2_Local_2"
+    cls: "Sensor"
+    measure: "content"
+    
+  - name: "C_H2_Local_3"
+    cls: "Sensor"
+    measure: "content"
+
+connections:
+  - component_source: "S_H2O"
+    interface_source: "H2O_out"
+    component_target: "Electro"
+    interface_target: "H2O_in"
+
+  - component_source: "S_PV"
+    interface_source: "Elec_out"
+    component_target: "Electro"
+    interface_target: "Elec_in"
+
+  - component_source: "Electro"
+    interface_source: "H2_out"
+    component_target: "Local"
+    interface_target: "H2_in"
+    
+  - component_source: "Local"
+    interface_source: "content_total"
+    component_target: "C_H2_Local_1"
+    interface_target: "in"
+    
+  - component_source: "Local"
+    interface_source: "content_total"
+    component_target: "C_H2_Local_2"
+    interface_target: "in"
+    
+  - component_source: "Local"
+    interface_source: "content_total"
+    component_target: "C_H2_Local_3"
+    interface_target: "in"

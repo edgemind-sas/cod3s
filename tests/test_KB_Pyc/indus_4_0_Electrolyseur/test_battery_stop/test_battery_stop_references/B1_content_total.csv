@@ -1,0 +1,7 @@
+name,label,description,comp,attr,operator,value_test,type,measure,stat,instant,values,unit
+B1_content_total,B1_content_total,B1_content_total,B1,content_total,==,,VAR,value,mean,0.0,0.0,
+B1_content_total,B1_content_total,B1_content_total,B1,content_total,==,,VAR,value,mean,1.0,3.0,
+B1_content_total,B1_content_total,B1_content_total,B1,content_total,==,,VAR,value,mean,2.0,6.0,
+B1_content_total,B1_content_total,B1_content_total,B1,content_total,==,,VAR,value,mean,3.0,9.0,
+B1_content_total,B1_content_total,B1_content_total,B1,content_total,==,,VAR,value,mean,4.0,9.0,
+B1_content_total,B1_content_total,B1_content_total,B1,content_total,==,,VAR,value,mean,5.0,9.0,

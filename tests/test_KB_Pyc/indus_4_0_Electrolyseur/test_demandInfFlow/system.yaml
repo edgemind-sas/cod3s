@@ -1,0 +1,27 @@
+system:
+  name: test_run_cod3S_demandInfFlow
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "SourceElec"
+    cls: "Source"
+    flow_type: "Elec"
+    flow_nominal: 10
+    
+  - name: "B1"
+    cls: "Battery"
+    flow_types: ["Elec"]
+    capacity: 16
+    content_ini:
+      Elec: 1
+    flow_nominal: 3
+
+connections:
+  - component_source: "SourceElec"
+    interface_source: "Elec_out"
+    component_target: "B1"
+    interface_target: "Elec_in"

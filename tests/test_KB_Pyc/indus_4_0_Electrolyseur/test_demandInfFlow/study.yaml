@@ -1,0 +1,49 @@
+# Study specifications
+simulation:
+  nb_runs: 1
+  schedule:
+    - start: 0
+      end: 6
+      nvalues: 12
+
+# This section contains all indicator specifications for the system
+indicators:
+  - component: "SourceElec"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+    
+  - component: "B1"
+    attr_type: "VAR"
+    attr_name: "."
+    stats: ["mean"]
+    enabled: true
+  
+results:
+  indicators:
+  - id: "SourceElec_flow_out"
+    output: ["csv"]
+    comp_pattern: "SourceElec"
+    attr_pattern: ".*flow_out$"
+    
+  - id: "SourceElec_flow_demand_export"
+    output: ["csv"]
+    comp_pattern: "SourceElec"
+    attr_pattern: ".*demand_export$"
+   
+  - id: "SourceElec_flow_prod"
+    output: ["csv"]
+    comp_pattern: "SourceElec"
+    attr_pattern: ".*flow_prod$"
+    
+  - id: "B1_content"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*content$"
+    
+  - id: "B1_flow_demand_export"
+    output: ["csv"]
+    comp_pattern: "B1"
+    attr_pattern: ".*demand_export$"
+ 

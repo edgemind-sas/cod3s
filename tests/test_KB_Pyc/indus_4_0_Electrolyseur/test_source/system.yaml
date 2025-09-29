@@ -1,0 +1,14 @@
+system:
+  name: test_run_cod3S_source
+  python_class: SystemHybrid
+
+imports:
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/composants.py
+  - tests/test_KB_Pyc/indus_4_0_Electrolyseur/Lib/objFlow.py
+  
+components:
+  - name: "S_H2O"
+    cls: "Source"
+    flow_type: "H2O"
+    flow_nominal: 5
+    flow_out_max: 4
