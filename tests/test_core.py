@@ -20,6 +20,9 @@ class SimpleClass:
         self.x = x
         self.y = y
 
+    def serialize(self):
+        return {"x": self.x, "y": self.y}
+
 
 SimpleClassType = TypeVar("SimpleClass")
 
@@ -93,6 +96,30 @@ class TestModelDump:
                 {"cls": "SimpleObject", "var1": "c", "var2": "d"},
             ],
             "var2": "f",
+        }
+
+    def test_list_exclude_var2_and_list(self):
+        obj1 = SimpleObject(var1="a", var2="b")
+        obj2 = SimpleObject(var1="c", var2="d")
+        complex_object = ObjectWithList(
+            var1="e", var2="f", simple_object_list=[obj1, obj2]
+        )
+        dump = complex_object.model_dump(exclude={"var2", "simple_object_list"})
+        assert dump == {
+            "cls": "ObjectWithList",
+            "var1": "e",
+        }
+
+    def test_list_include_var1(self):
+        obj1 = SimpleObject(var1="a", var2="b")
+        obj2 = SimpleObject(var1="c", var2="d")
+        complex_object = ObjectWithList(
+            var1="e", var2="f", simple_object_list=[obj1, obj2]
+        )
+        dump = complex_object.model_dump(include={"var1"})
+        assert dump == {
+            "cls": "ObjectWithList",
+            "var1": "e",
         }
 
     def test_list_exclude_none(self):
@@ -247,5 +274,18 @@ class TestModelDump:
             "var1": "c",
             "var2": "d",
             "simple_object_class": obj1,
+            "cls": "ObjectWithSimpleClass",
+        }
+
+    def test_simple_class_with_fallback(self):
+        obj1 = SimpleClass(x="a", y="b")
+        complex_object = ObjectWithSimpleClass(
+            var1="c", var2="d", simple_object_class=obj1
+        )
+        dump = complex_object.model_dump(fallback=lambda obj: obj.serialize())
+        assert dump == {
+            "var1": "c",
+            "var2": "d",
+            "simple_object_class": {"x": "a", "y": "b"},
             "cls": "ObjectWithSimpleClass",
         }
