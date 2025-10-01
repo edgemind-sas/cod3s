@@ -1,6 +1,6 @@
 import pydantic
-import copy
 import yaml
+
 from .utils import update_dict_deep
 
 
@@ -105,28 +105,24 @@ class ObjCOD3S(pydantic.BaseModel):
         Sérialise le modèle en préservant les types pour ajouter 'cls' aux objets COD3S.
         """
 
-        def serialize_field(value):
+        def add_cls_rec(value, dump):
+            if isinstance(value, ObjCOD3S):
+                dump["cls"] = value.__class__.__name__
+                # Itérer sur les champs définis du modèle
             if isinstance(value, pydantic.BaseModel):
-                return value.model_dump(**kwrds)
+                for field_name in value.model_fields:
+                    if field_name in dump:
+                        field_value = getattr(value, field_name, None)
+                        add_cls_rec(field_value, dump[field_name])
             elif isinstance(value, list):
-                return [serialize_field(item) for item in value]
+                for i in range(len(dump)):
+                    add_cls_rec(value[i], dump[i])
             elif isinstance(value, dict):
-                return {k: serialize_field(v) for k, v in value.items()}
-            else:
-                return value
+                for k in dump.keys():
+                    add_cls_rec(value[k], dump[k])
 
-        result = {"cls": self.__class__.__name__}
-
-        # Itérer sur les champs définis du modèle
-        for field_name in self.model_fields:
-            field_value = getattr(self, field_name, None)
-            if isinstance(field_value, (pydantic.BaseModel, list, dict)):
-                # Sérialiser manuellement pour préserver les types
-                result[field_name] = serialize_field(field_value)
-            else:
-                # Utiliser la sérialisation Pydantic pour les types primitifs
-                temp_dict = super().model_dump(include={field_name}, **kwrds)
-                result[field_name] = temp_dict.get(field_name, field_value)
+        result = super().model_dump(**kwrds)
+        add_cls_rec(self, result)
 
         return result
 
