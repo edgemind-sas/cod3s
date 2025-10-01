@@ -23,7 +23,6 @@ class SimpleClass:
     def serialize(self):
         return {"x": self.x, "y": self.y}
 
-
 SimpleClassType = TypeVar("SimpleClass")
 
 
