@@ -110,7 +110,7 @@ class ObjCOD3S(pydantic.BaseModel):
                 dump["cls"] = value.__class__.__name__
                 # Itérer sur les champs définis du modèle
             if isinstance(value, pydantic.BaseModel):
-                for field_name in value.model_fields:
+                for field_name in type(value).model_fields:
                     if field_name in dump:
                         field_value = getattr(value, field_name, None)
                         add_cls_rec(field_value, dump[field_name])
