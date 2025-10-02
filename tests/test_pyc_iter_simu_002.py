@@ -71,39 +71,39 @@ def test_system(the_system):
     trans_fired = the_system.isimu_step_forward()
     assert len(trans_fired) == 1
 
-    assert str(trans_fired[0].model_dump()) == str(
-        {
-            "cls": "PycTransition",
-            "name": "toss",
-            "source": "toss",
-            "target": [{"state": "even", "prob": 0.6}, {"state": "odd", "prob": 0.4}],
-            "occ_law": {"cls": "InstOccDistribution", "probs": [0.6]},
-            "end_time": 0.0,
-            "condition": None,
-            "comp_name": "Coin",
-            "comp_classname": "PycComponent",
-            "is_interruptible": True,
-        }
-    )
+    expected_dump = {
+        "cls": "PycTransition",
+        "name": "toss",
+        "source": "toss",
+        "target": [{"state": "even", "prob": 0.6}, {"state": "odd", "prob": 0.4}],
+        "occ_law": {"cls": "InstOccDistribution", "probs": [0.6]},
+        "end_time": 0.0,
+        "condition": None,
+        "comp_name": "Coin",
+        "comp_classname": "PycComponent",
+        "is_interruptible": True,
+    }
+
+    assert trans_fired[0].model_dump() == expected_dump
 
     transitions = the_system.isimu_fireable_transitions()
 
     assert len(transitions) == 1
 
-    assert str(transitions[0].model_dump()) == str(
-        {
-            "cls": "PycTransition",
-            "name": "even_toss",
-            "source": "even",
-            "target": "toss",
-            "occ_law": {"cls": "DelayOccDistribution", "time": 2.0},
-            "end_time": 2.0,
-            "condition": None,
-            "comp_name": "Coin",
-            "comp_classname": "PycComponent",
-            "is_interruptible": False,
-        }
-    )
+    expected_dump = {
+        "cls": "PycTransition",
+        "name": "even_toss",
+        "source": "even",
+        "target": "toss",
+        "occ_law": {"cls": "DelayOccDistribution", "time": 2.0},
+        "end_time": 2.0,
+        "condition": None,
+        "comp_name": "Coin",
+        "comp_classname": "PycComponent",
+        "is_interruptible": False,
+    }
+
+    assert transitions[0].model_dump() == expected_dump
 
 
 def test_delete(the_system):
