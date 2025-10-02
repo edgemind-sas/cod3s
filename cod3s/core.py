@@ -79,6 +79,8 @@ class ObjCOD3S(pydantic.BaseModel):
                 cls_sub_dict[basecls.__name__] = basecls
 
                 clsname = obj.pop("cls")
+                if isinstance(clsname, type):
+                    clsname = clsname.__name__
                 cls = cls_sub_dict.get(clsname)
 
                 if cls is None:

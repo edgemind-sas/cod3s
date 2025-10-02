@@ -20,18 +20,19 @@ class PycVariable(ObjCOD3S):
     comp_name: str = pydantic.Field(None, description="Component name")
     value_init: typing.Any = pydantic.Field(None, description="Variable init value")
     value_current: typing.Any = pydantic.Field(None, description="Current value")
-    _bkd: pydantic.PrivateAttr(None)
+    _bkd: typing.Any = pydantic.PrivateAttr(None)
 
     @classmethod
     def from_bkd(basecls, bkd):
-        return basecls(
+        obj = basecls(
             id=bkd.name(),
             name=bkd.basename(),
             comp_name=bkd.parent().name(),
             value_init=bkd.initValue(),
             value_current=bkd.value(),
-            _bkd=bkd,
         )
+        obj._bkd = bkd
+        return obj
 
 
 class PycComponent(pyc.CComponent):
