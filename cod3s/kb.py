@@ -400,7 +400,6 @@ class ComponentClass(ObjCOD3S):
         # __import__("ipdb").set_trace()
 
         instance_specs = dict(kwargs, **template_copy.model_dump())
-        __import__("ipdb").set_trace()
         cls_instance = self.__class__.__name__.replace("Class", "Instance")
 
         instance_specs["cls"] = cls_instance
@@ -607,6 +606,8 @@ class KB(ObjCOD3S):
         """
         # Convert the dictionary to ComponentClass if necessary
         if isinstance(component_class, dict):
+
+            component_class.setdefault("cls", self.component_class_type)
             component_class = ObjCOD3S.from_dict(component_class)
 
         if not isinstance(component_class, self.component_class_type):
