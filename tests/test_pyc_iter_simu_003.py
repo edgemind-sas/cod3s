@@ -85,10 +85,20 @@ def test_system(the_system):
 
     assert len(trans_fired) == 1
 
-    assert (
-        str(trans_fired[0].model_dump())
-        == "{'cls': 'PycTransition', 'name': 'ok_nok', 'source': 'ok', 'target': 'nok', 'occ_law': {'cls': 'ExpOccDistribution', 'rate': 0.2}, 'end_time': 0.0, 'condition': None, 'comp_name': 'C', 'comp_classname': 'PycComponent', 'is_interruptible': False}"
-    )
+    expected_dump = {
+        "cls": "PycTransition",
+        "name": "ok_nok",
+        "source": "ok",
+        "target": "nok",
+        "occ_law": {"cls": "ExpOccDistribution", "rate": 0.2},
+        "end_time": 0.0,
+        "condition": None,
+        "comp_name": "C",
+        "comp_classname": "PycComponent",
+        "is_interruptible": False,
+    }
+
+    assert trans_fired[0].model_dump() == expected_dump
 
     the_system.isimu_step_backward()
 
@@ -100,20 +110,20 @@ def test_system(the_system):
 
     assert len(trans_fired) == 1
 
-    assert str(trans_fired[0].model_dump()) == str(
-        {
-            "cls": "PycTransition",
-            "name": "stop_start",
-            "source": "stop",
-            "target": "start",
-            "occ_law": {"cls": "ExpOccDistribution", "rate": 0.1},
-            "end_time": 0.0,
-            "condition": None,
-            "comp_name": "C",
-            "comp_classname": "PycComponent",
-            "is_interruptible": False,
-        }
-    )
+    expected_dump = {
+        "cls": "PycTransition",
+        "name": "stop_start",
+        "source": "stop",
+        "target": "start",
+        "occ_law": {"cls": "ExpOccDistribution", "rate": 0.1},
+        "end_time": 0.0,
+        "condition": None,
+        "comp_name": "C",
+        "comp_classname": "PycComponent",
+        "is_interruptible": False,
+    }
+
+    assert trans_fired[0].model_dump() == expected_dump
 
 
 def test_delete(the_system):
