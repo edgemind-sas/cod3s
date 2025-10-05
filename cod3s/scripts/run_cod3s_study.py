@@ -190,7 +190,7 @@ Examples:
     system.add_connections(model_specs.get("connections", []), logger=logger)
     if logger:
         logger.info1("Add failure modes")
-    system.add_failure_mode(study_specs_data.get("failure_modes", []), logger=logger)
+    system.add_failure_modes(study_specs_data.get("failure_modes", []), logger=logger)
     if logger:
         logger.info1("Add events")
     system.add_events(study_specs_data.get("events", []), logger=logger)
