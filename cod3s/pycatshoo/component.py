@@ -1023,6 +1023,11 @@ class ObjFM(PycComponent):
         self.failure_state = failure_state
         self.repair_state = repair_state
 
+        if isinstance(step, str):
+            step_name = step
+            step = self.system().step(step_name)
+            if step is None:
+                raise ValueError(f"Step {step_name} does not exist in this system")
         self.step = step
 
         self.cond_inner_logic = cond_inner_logic

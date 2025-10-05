@@ -385,6 +385,24 @@ class PycSystem(pyc.CSystem):
                 if logger:
                     logger.debug(f"=> Target {target_name} ignored")
 
+    def add_failure_modes(self, failure_modes_list, logger=None):
+        for fm in failure_modes_list:
+            fm_name = fm.get("fm_name")
+
+            # __import__("ipdb").set_trace()
+            if fm.get("enabled") is False:
+                if logger:
+                    logger.info3(f"FM {fm_name} Ignored")
+                continue
+
+            fm_law = fm.pop("occ_law")
+            fm["cls"] = f"ObjFM{fm_law.capitalize()}"
+
+            self.add_component(**fm)
+
+            if logger:
+                logger.info2(f"Processing FM: {fm_name}")
+
     def add_indicators(self, indic_list, logger=None):
 
         for indic_specs in indic_list:
