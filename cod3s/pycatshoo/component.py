@@ -302,16 +302,15 @@ class PycComponent(pyc.CComponent):
             pycautom = PycAutomaton.from_dict(dic_temp)
             dict_autom_temp = pycautom.describe()
             dict_autom[automKey] = dict_autom_temp
-    
+
         return {
             "name": self.name(),
-            "label" : self.label,
-            "cls" : self.className(),
-            "description" : self.description,
+            "label": self.label,
+            "cls": self.className(),
+            "description": self.description,
             "variables": [var.basename() for var in self.variables()],
-            "automatons": dict_autom
+            "automatons": dict_autom,
         }
-    
 
     def add_automaton(self, **aut_specs):
 

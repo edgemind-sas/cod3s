@@ -1,11 +1,12 @@
 import pytest
 import cod3s
 from cod3s.pycatshoo.system import PycSystem
-from bk_ObjFlow import ObjFlow 
+from bk_ObjFlow import ObjFlow
+
 
 @pytest.fixture(scope="module")
 def the_system():
-    system = PycSystem(name="Sys")
+    system = cod3s.PycSystem(name="Sys")
 
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
@@ -25,7 +26,8 @@ def the_system():
         targets=["C1", "C2"],
         failure_effects={"flow_in_max": 3, "flow_available_out": False},
         failure_param=[0.1, 0.1],
-        repair_param=[0.1, 0.1]
+        # repair_effects={"flow_in_max": -1},
+        repair_param=[0.1, 0.1],
     )
 
     return system
@@ -33,7 +35,7 @@ def the_system():
 
 def test_system(the_system):
     # Run simulation
-    #the_system.traceVariable("#.*", 2) 
+    # the_system.traceVariable("#.*", 2)
     the_system.isimu_start()
 
     assert the_system.comp["C1"].flow_in_max.value() == -1
@@ -46,7 +48,7 @@ def test_system(the_system):
     assert len(transitions) == 3
     assert transitions[0].end_time == float("inf")
 
-    #__import__("ipdb").set_trace()
+    # __import__("ipdb").set_trace()
 
     the_system.isimu_set_transition(0, date=10)
     trans_fired = the_system.isimu_step_forward()
@@ -64,7 +66,7 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions()
 
     assert the_system.currentTime() == 10
-    the_system.isimu_set_transition(2) 
+    the_system.isimu_set_transition(2)
     trans_fired = the_system.isimu_step_forward()
     assert len(trans_fired) == 1
     assert the_system.currentTime() == 10
@@ -76,7 +78,6 @@ def test_system(the_system):
     assert the_system.comp["C1"].flow_available_out.value() is False
     assert the_system.comp["C2"].flow_in_max.value() == 3
     assert the_system.comp["C2"].flow_available_out.value() is False
-
 
     the_system.isimu_stop()
 
