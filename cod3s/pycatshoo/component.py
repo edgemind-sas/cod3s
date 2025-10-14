@@ -1281,7 +1281,7 @@ class ObjFM(PycComponent):
         return failure_cond_fun
 
     def get_repair_cond(self, target_comps, **kwrds):
-        if self.repair_cond is not True:
+        if isinstance(self.repair_cond, dict):
 
             def repair_cond_fun():
                 return self.outer_logic(
@@ -1306,11 +1306,46 @@ class ObjFM(PycComponent):
             #         ]
             #     )
 
-            return repair_cond_fun
+        elif callable(self.repair_cond):
+            repair_cond_fun = self.repair_cond
         else:
-            return True
 
-        # __import__("ipdb").set_trace()
+            def repair_cond_fun():
+                return self.repair_cond
+
+        return repair_cond_fun
+
+    # def get_repair_cond(self, target_comps, **kwrds):
+    #     if self.repair_cond is not True:
+
+    #         def repair_cond_fun():
+    #             return self.outer_logic(
+    #                 [
+    #                     self.inner_logic(
+    #                         [
+    #                             c_inner["var"].value() == c_inner["value"]
+    #                             for c_inner in c_outer
+    #                         ]
+    #                     )
+    #                     for c_outer in self.repair_cond.items()
+    #                     for comp in target_comps
+    #                 ]
+    #             )
+
+    #         # def repair_cond_fun():
+    #         #     return all(
+    #         #         [
+    #         #             comp.flows_in[flow].var_fed.value() == flow_value
+    #         #             for flow, flow_value in self.repair_cond.items()
+    #         #             for comp in target_comps
+    #         #         ]
+    #         #     )
+
+    #         return repair_cond_fun
+    #     else:
+    #         return True
+
+    #     # __import__("ipdb").set_trace()
 
     # TO BE OVERLOADED IF NEEDED
     def set_default_failure_param_name(self):
@@ -1445,22 +1480,14 @@ class ObjFMExp(ObjFM):
 
         return failure_cond_fun
 
-    def get_repair_cond(self, target_comps, param):
-        if self.repair_cond is not True:
+    def get_repair_cond(self, target_comps, param, **kwrds):
 
-            def repair_cond_fun():
-                return param[self.repair_param_name[0]].bValue() and all(
-                    [
-                        comp.flows_in[flow].var_fed.value() == flow_value
-                        for flow, flow_value in self.repair_cond.items()
-                        for comp in target_comps
-                    ]
-                )
+        parent_repair_cond_fun = super().get_repair_cond(target_comps)
 
-        else:
-
-            def repair_cond_fun():
-                return param[self.repair_param_name[0]].bValue()
+        def repair_cond_fun():
+            return (
+                param[self.repair_param_name[0]].bValue() and parent_repair_cond_fun()
+            )
 
         return repair_cond_fun
 
