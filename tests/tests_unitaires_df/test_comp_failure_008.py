@@ -1,14 +1,8 @@
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'Lib'))
-from Lib import objFlow,composants
-
 import pytest
-import itertools
-
-from cod3s import terminate_session
+import cod3s
 from cod3s.pycatshoo.system import PycSystem
-
+from bk_ObjFlow import ObjFlow 
+import itertools
 
 @pytest.fixture(scope="module")
 def the_system():
@@ -39,13 +33,13 @@ def test_system(the_system):
         drop_inactive_automata=False, # pas de suppression des automates inactifs
     )
 
+    # expected value : len(obj_frun.automata_d) = 31
     assert len(obj_frun.automata_d) == sum(
         [
             len(list(itertools.combinations(range(nb_comp), i + 1)))
             for i in range(nb_comp)
         ]
     )
-    # expected value : len(obj_frun.automata_d) = 31
 
     # Run simulation
     the_system.isimu_start()
@@ -87,5 +81,5 @@ def test_system(the_system):
 
 def test_delete(the_system):
     the_system.deleteSys()
-    terminate_session()
+    cod3s.terminate_session()
 

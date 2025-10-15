@@ -1,13 +1,7 @@
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'Lib'))
-from Lib import objFlow,composants
-
 import pytest
-import itertools
-
-from cod3s import terminate_session
+import cod3s
 from cod3s.pycatshoo.system import PycSystem
+from bk_ObjFlow import ObjFlow 
 
 
 @pytest.fixture(scope="module")
@@ -65,5 +59,5 @@ def test_system(the_system):
 
 def test_delete(the_system):
     the_system.deleteSys()
-    terminate_session()
+    cod3s.terminate_session()
 
