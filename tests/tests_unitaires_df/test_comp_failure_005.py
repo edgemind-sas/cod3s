@@ -1,7 +1,7 @@
 import pytest
 import cod3s
 from cod3s.pycatshoo.system import PycSystem
-from bk_ObjFlow import ObjFlow 
+from kb_test import ObjFlow 
 
 @pytest.fixture(scope="module")
 def the_system():
