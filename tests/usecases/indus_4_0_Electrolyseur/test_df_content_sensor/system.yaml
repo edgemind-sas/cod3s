@@ -1,0 +1,47 @@
+system:
+  name: test_run_cod3S_df_content_sensor
+  python_class: SystemHybrid
+
+imports:
+  - ../Lib/composants.py
+  - ../Lib/objFlow.py
+  
+components:
+  - name: "Source_H2O"
+    cls: "SourceSinusoidale"
+    flow_type: "H2O"
+    amplitude: 5
+    phase_shift: 0.
+    period: 6.283185307 #2*pi
+    amplitude_offset: 6
+    
+  - name: "Pump_H2O"
+    cls: "Pump"
+    flow_type: "H2O"
+    ini_state: "start"
+    method: "AutomatonCommand.MEAN.value"
+    
+  - name: "Stack_H2O"
+    cls: "CapacityMulti"
+    flow_types: ["H2O"]
+    capacity: 8
+    
+  - name: "CT_Stack_H2O_Content"
+    cls: "Sensor"
+    measure: "content"
+
+connections:
+  - component_source: "Source_H2O"
+    interface_source: "H2O_out"
+    component_target: "Pump_H2O"
+    interface_target: "H2O_in"
+    
+  - component_source: "Pump_H2O"
+    interface_source: "H2O_out"
+    component_target: "Stack_H2O"
+    interface_target: "H2O_in"
+    
+  - component_source: "Stack_H2O"
+    interface_source: "H2O_content"
+    component_target: "CT_Stack_H2O_Content"
+    interface_target: "in"

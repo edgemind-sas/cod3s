@@ -18,6 +18,37 @@ import logging
 import importlib.util
 
 
+def import_module_from_path(import_path, logger=None):
+    """
+    Import a module from a given file path.
+    
+    Args:
+        import_path (Path): Path to the module file
+        logger: Optional logger for info messages
+    
+    Returns:
+        str: Success message with the imported file path
+    """
+    # Add the directory to Python path if not already there
+    import_dir = import_path.parent
+    if str(import_dir) not in sys.path:
+        sys.path.insert(0, str(import_dir))
+
+    # Import the module
+    module_name = import_path.stem
+    spec = importlib.util.spec_from_file_location(module_name, import_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    # Import all public names from the module into global namespace
+    for name in dir(module):
+        if not name.startswith("_"):
+            globals()[name] = getattr(module, name)
+
+    return f"Dynamically imported: {import_path}"
+
+
 def main():
     """Point d'entrée principal du CLI COD3S Study."""
     # Parse command line arguments
@@ -107,31 +138,26 @@ Examples:
     if import_files:
         for import_file in import_files:
             import_path = Path(import_file).resolve()
+
             if import_path.exists():
-                # Add the directory to Python path if not already there
-                import_dir = import_path.parent
-                if str(import_dir) not in sys.path:
-                    sys.path.insert(0, str(import_dir))
-
-                # Import the module
-                module_name = import_path.stem
-                spec = importlib.util.spec_from_file_location(module_name, import_path)
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
-
-                # Import all public names from the module into global namespace
-                for name in dir(module):
-                    if not name.startswith("_"):
-                        globals()[name] = getattr(module, name)
-
+                success_msg = import_module_from_path(import_path, logger)
                 if logger:
-                    logger.info(f"Dynamically imported: {import_file}")
+                    logger.info(success_msg)
             else:
-                if logger:
-                    logger.warning(f"Import file not found: {import_file}")
+                # Try to import from the directory where the MODEL_SPECS_FILENAME stands
+                model_dir_import_path = MODEL_SPECS_FILENAME.parent / import_file
+                if model_dir_import_path.exists():
+                    success_msg = import_module_from_path(model_dir_import_path, logger)
+                    if logger:
+                        logger.info(f"Dynamically imported from model directory: {import_file}")
                 else:
-                    print(f"Warning: Import file not found: {import_file}")
+                    # File not found in both locations, stop the script with error
+                    error_msg = f"Import file not found: {import_file} (searched in current directory and model directory)"
+                    if logger:
+                        logger.error(error_msg)
+                    else:
+                        print(f"Error: {error_msg}")
+                    sys.exit(1)
 
     system_specs = model_specs.get("system", {})
     # Get system class from model specs or use default

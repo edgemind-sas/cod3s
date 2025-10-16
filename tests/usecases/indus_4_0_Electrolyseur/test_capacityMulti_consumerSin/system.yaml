@@ -1,0 +1,48 @@
+system:
+  name: test_run_cod3S_system_batteries_distribNode
+  python_class: SystemHybrid
+
+imports:
+  - ../Lib/composants.py
+  - ../Lib/objFlow.py
+  
+components:
+  - name: "S_H2"
+    cls: "Source"
+    flow_type: "H2"
+    flow_nominal: 3
+
+  - name: "P_H2"
+    cls: "Pump"
+    flow_type: "H2"
+    flow_nominal: 5
+
+  - name: "H2_BP"
+    cls: "CapacityMulti"
+    flow_types: ["H2"]
+    capacity: 6
+    flow_out_max: 6
+
+  - name: "ConsumerSin"
+    cls: "ConsumerSinusoidale"
+    flow_type: "H2"
+    amplitude: 20
+    phase_shift: 10
+    period: 20
+    amplitude_offset: 0 
+
+connections:
+  - component_source: "S_H2"
+    interface_source: "H2_out"
+    component_target: "P_H2"
+    interface_target: "H2_in"
+
+  - component_source: "P_H2"
+    interface_source: "H2_out"
+    component_target: "H2_BP"
+    interface_target: "H2_in"
+
+  - component_source: "H2_BP"
+    interface_source: "H2_out"
+    component_target: "ConsumerSin"
+    interface_target: "H2_in"

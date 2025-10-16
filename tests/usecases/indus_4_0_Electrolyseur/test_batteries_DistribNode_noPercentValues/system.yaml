@@ -1,0 +1,52 @@
+system:
+  name: test_run_cod3S_system_batteries_distribNode_percentValues
+  python_class: SystemHybrid
+
+imports:
+  - ../Lib/composants.py
+  - ../Lib/objFlow.py
+  
+components:
+  - name: "S_PV"
+    cls: "Source"
+    flow_type: "Elec"
+    flow_nominal: 30
+
+  - name: "Node"
+    cls: "DistribNode"
+    percent_value1: 0.0
+    percent_value2: 0.0
+    flow_type: "Elec"
+
+  - name: "B1"
+    cls: "Battery"
+    flow_types: ["Elec"]
+    capacity: 30
+    content_ini:
+      Elec: 0
+    flow_nominal: 5
+
+  - name: "B2"
+    cls: "Battery"
+    flow_types: ["Elec"]
+    capacity: 30
+    content_ini:
+      Elec: 0
+    flow_nominal: 4
+
+
+connections:
+  - component_source: "S_PV"
+    interface_source: "Elec_out"
+    component_target: "Node"
+    interface_target: "Elec_in"
+
+  - component_source: "Node"
+    interface_source: "Elec_out1"
+    component_target: "B1"
+    interface_target: "Elec_in"
+
+  - component_source: "Node"
+    interface_source: "Elec_out2"
+    component_target: "B2"
+    interface_target: "Elec_in"

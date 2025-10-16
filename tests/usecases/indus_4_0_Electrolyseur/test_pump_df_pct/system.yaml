@@ -1,0 +1,35 @@
+system:
+  name: test_run_cod3S_pump_df_pct
+  python_class: SystemHybrid
+
+imports:
+  - ../Lib/composants.py
+  - ../Lib/objFlow.py
+  
+components:
+  - name: "Source_H2O"
+    cls: "Source"
+    flow_type: "H2O"
+    flow_nominal: 2
+    
+  - name: "Pump_H2O"
+    cls: "Pump"
+    flow_type: "H2O"
+    flow_nominal: 6
+    ini_state: "start"
+    method: "AutomatonCommand.MEAN.value"
+    
+  - name: "Stack_H2O"
+    cls: "CapacityMulti"
+    flow_types: ["H2O"]
+
+connections:
+  - component_source: "Source_H2O"
+    interface_source: "H2O_out"
+    component_target: "Pump_H2O"
+    interface_target: "H2O_in"
+    
+  - component_source: "Pump_H2O"
+    interface_source: "H2O_out"
+    component_target: "Stack_H2O"
+    interface_target: "H2O_in"
