@@ -7,11 +7,10 @@ from .automaton import (
     StateModel,
 )
 from .system import PycSystem, PycMCSimulationParam
-from .sequence import PycSequence
+from .sequence import PycSequence, Sequence, SeqEvent, SequenceAnalyser
 
 from .component import PycComponent, ObjEvent, ObjFM, ObjFMDelay, ObjFMExp
 from ..utils import remove_key_from_dict
-
 
 
 # from .kb import PycKB
