@@ -3,6 +3,10 @@ import cod3s
 from cod3s.pycatshoo.system import PycSystem
 from kb_test import ObjFlow 
 
+# Test on the ObjEvent object using an attribute and a state "occ"
+# Verify the condition applied to a dictionaries
+# Test the functionality of the != operator and value False
+
 @pytest.fixture(scope="module")
 def the_system():
     system = PycSystem(name="Sys")
@@ -21,11 +25,7 @@ def the_system():
         failure_effects={"flow_in_max": 2},
         failure_param = 1,
     )
-
-    # test avec attr state occ 
-    # test operator != 
-    # test cond avec dict : dict pour conditions transformé en liste de liste de dict
-    # état inverse de l'évènement 
+ 
     event_list = [
         {
             "name": "top_event3",  

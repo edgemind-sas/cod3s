@@ -3,6 +3,12 @@ import cod3s
 from cod3s.pycatshoo.system import PycSystem
 from kb_test import ObjFlow 
 
+# Test on the ObjEvent object using an attribute and a variable
+# Verify the condition applied to a list of dictionaries
+# Test on the logic of conditions (inner/outer) with two conditions:
+# "inner_logic": all,
+# "outer_logic": any,
+
 @pytest.fixture(scope="module")
 def the_system():
     system = PycSystem(name="Sys")
@@ -31,9 +37,6 @@ def the_system():
         failure_param=4,
     )
 
-    # test logique de conditions (inner/outer):
-    # "inner_logic" :all,
-    #"outer_logic":any,
     event_list = [
         {
             "name": "top_event5",  

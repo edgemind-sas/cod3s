@@ -3,6 +3,10 @@ import cod3s
 from cod3s.pycatshoo.system import PycSystem
 from kb_test import ObjFlow 
 
+# Test on the ObjEvent object using an attribute and a variable
+# Verify the condition applied to a list of dictionaries
+# Test the functionality of the >= operator 
+
 @pytest.fixture(scope="module")
 def the_system():
     system = PycSystem(name="Sys")
@@ -22,10 +26,7 @@ def the_system():
         failure_param=2,
     )
 
-    # test avec attr + variable 
-    # test cond avec liste de dict
-    # attendu : liste de dict transforméee et liste de liste de dict 
-    # test de l'operateur >=
+
     event_list = [
         {
             "name": "top_event1",  
