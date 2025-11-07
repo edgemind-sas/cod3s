@@ -12,28 +12,19 @@ def the_system():
     system.add_component(
         name="C1",
         cls="ObjFlow",
-        var_prod_default=True,
     )
 
     system.add_component(
-        name="C2",
-        cls="ObjFlow",
-        logic="and",
-    )
-
-    system.connect("C1", "out", "C2", "in")
-
-    system.add_component(
-        cls="ObjFMExp",
+        cls="ObjFMDelay",
         fm_name="frun",
         targets=["C1"],
-        failure_effects={"v_flow_out": 2, "flow_out_max": 2},
-        failure_param=1 / 10,
-        repair_param=0.1,
+        failure_effects={"flow_in_max": 2},
+        failure_param = 1,
     )
 
-    # test avec attr + state occ + operator != + dict
-    # dict pour conditions transformé en liste de liste de dict
+    # test avec attr state occ 
+    # test operator != 
+    # test cond avec dict : dict pour conditions transformé en liste de liste de dict
     # état inverse de l'évènement 
     event_list = [
         {
@@ -47,11 +38,33 @@ def the_system():
             "occ_state_name": "occ",
             "not_occ_state_name": "not_occ",
             "enabled": True
-        }
+        },
     ]
 
     system.add_events(event_list)
     system.add_targets([{"name": "top_event3", "enabled": True}])  
+
+    system.add_indicator(
+        component="top_event3",
+        attr_type="ST",
+        attr_name="occ",
+        stats=["mean"],
+    )
+
+    system.add_indicator(
+        component="top_event3",
+        attr_type="ST",
+        attr_name="not_occ",
+        stats=["mean"],
+    )
+
+    system.add_indicator(
+        component="C1",
+        attr_type="VAR",
+        attr_name="flow_in_max",
+        stats=["mean"],
+    )
+
     return system
 
 
@@ -64,38 +77,53 @@ def test_system(the_system):
     assert comp_event.className() == "ObjEvent"
     assert comp_event.metadata == {}
     automaton = comp_event.automata_d["ev"]
+    assert len(automaton.transitions) == 2
     assert automaton.transitions[0].name == "occ"
     assert automaton.transitions[0].source == "not_occ"
     assert automaton.transitions[0].target == "occ"
+    assert automaton.transitions[1].name == "not_occ"
+    assert automaton.transitions[1].source == "occ"
+    assert automaton.transitions[1].target == "not_occ"
 
     # Run simulation
-    the_system.isimu_start()
-    
-    #assert the_system.comp["C1"].v_flow_out.value() == 0
-    #assert the_system.comp["C1"].flow_out_max.value() == -1
+    from cod3s.pycatshoo.system import PycMCSimulationParam
+    schedule = [1, 2, 3, 4, 5]
+    simu_params = PycMCSimulationParam(
+        nb_runs=1,
+        schedule=schedule,
+    )
+    the_system.simulate(simu_params)
 
-    # # Ensure transitions are valid before proceeding
-    # transitions = the_system.isimu_fireable_transitions()
-    # assert len(transitions) == 2
-    # assert transitions[0].end_time == float("inf")
+    # Check results
+    assert "C1_flow_in_max" in the_system.indicators.keys()
+    ind_C1= the_system.indicators["C1_flow_in_max"]
+    val = ind_C1.values["values"].to_list()
+    assert ind_C1.instants == schedule
+    assert val[0] == -1
+    assert val[1] == 2
+    assert val[2] == 2
+    assert val[3] == 2
+    assert val[4] == 2
 
-    # the_system.isimu_set_transition(0, date=10)
-    # trans_fired = the_system.isimu_step_forward()
+    assert "top_event3_occ" in the_system.indicators.keys()
+    ind_occ = the_system.indicators["top_event3_occ"]
+    val = ind_occ.values["values"].to_list()
+    assert ind_occ.instants == schedule
+    assert val[0] == False
+    assert val[1] == True
+    assert val[2] == True
+    assert val[3] == True
+    assert val[4] == True
 
-    # assert len(trans_fired) == 1
-
-    # transitions = the_system.isimu_fireable_transitions()
-
-    # assert the_system.currentTime() == 10
-
-    # the_system.isimu_set_transition(0)
-    # the_system.isimu_step_forward()
-
-    # assert the_system.currentTime() == 10
-    # assert the_system.comp["C1"].v_flow_out.value() == 2
-    # assert the_system.comp["C1"].flow_out_max.value() == 2
-
-    # the_system.isimu_stop()
+    assert "top_event3_not_occ" in the_system.indicators.keys()
+    ind_not_occ = the_system.indicators["top_event3_not_occ"]
+    val = ind_not_occ.values["values"].to_list()
+    assert ind_not_occ.instants == schedule
+    assert val[0] == True
+    assert val[1] == False
+    assert val[2] == False
+    assert val[3] == False
+    assert val[4] == False
 
 
 def test_delete(the_system):

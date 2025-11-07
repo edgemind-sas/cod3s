@@ -22,7 +22,8 @@ def the_system():
         failure_param=2,
     )
 
-    # test avec attr + variable + liste de list de dict
+    # test avec attr + variable 
+    # test cond en liste de list ede dict
     # test de l'operateur < 
     event_list = [
         {
