@@ -154,7 +154,6 @@ def cod3s_deepcopy(obj):
         return obj
 
 
-# TODO: Both sanitize_cond_format and prepare_attr_tree are not PyCATSHOO specific functions => Move it to cod3s.utils.common
 def sanitize_cond_format(cond):
 
     if isinstance(cond, dict):
@@ -190,6 +189,7 @@ def prepare_attr_tree(attr_tree, obj_default=None, system=None):
         obj_default (pyc.CComponent, optional): Default component object to use when "obj" key is not
             specified in dictionary elements. If None, each dictionary must contain an "obj" key.
         system (pyc.CSystem, optional): System object used to resolve component names when "obj"
+
             contains a string reference. Required when obj references are strings.
 
     Returns:

@@ -776,13 +776,6 @@ class ObjEvent(PycComponent):
 
         cond = sanitize_cond_format(cond)
 
-        if isinstance(inner_logic, str):
-            inner_logic = getattr(builtins, inner_logic)
-        if isinstance(outer_logic, str):
-            outer_logic = getattr(builtins, outer_logic)
-
-        cond_operator_fun = get_operator_function(cond_operator)
-
         if isinstance(cond, list):
 
             cond_bis = prepare_attr_tree(cond, system=self.system())
@@ -1398,6 +1391,7 @@ class ObjFM(PycComponent):
                                 for c_outer in cond_bis_cur
                             ]
                         )
+
                         for cond_bis_cur in cond_bis_list
                     ]
                 )
