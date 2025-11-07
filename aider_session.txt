@@ -1,0 +1,12 @@
+/drop
+/add       LICENSE
+/add       README.md
+/add       cod3s/pycatshoo/common.py
+/add       cod3s/pycatshoo/component.py
+/add       docs/api-reference/system.md
+/add       docs/index.md
+/add       mkdocs.yml
+/add       pyproject.toml
+/add       tests/pyc_obj/obj_fm/test_comp_failure_012.py
+/add       tests/pyc_obj/obj_fm/test_comp_failure_013.py
+/read-only CONVENTIONS.md
