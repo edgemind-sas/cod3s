@@ -10,26 +10,16 @@ def the_system():
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
     system.add_component(
-        name="C1",
-        cls="ObjFlow",
-        var_prod_default=True,
-    )
-
-    system.add_component(
         name="C2",
         cls="ObjFlow",
-        logic="and",
     )
 
-    system.connect("C1", "out", "C2", "in")
-
     system.add_component(
-        cls="ObjFMExp",
+        cls="ObjFMDelay",
         fm_name="frun",
-        targets=["C1"],
-        failure_effects={"v_flow_out": 2, "flow_out_max": 2},
-        failure_param=1 / 10,
-        repair_param=0.1,
+        targets=["C2"],
+        failure_effects={"flow_out_max": 3},
+        failure_param=2,
     )
 
     # test avec attr + variable + liste de list de dict
@@ -37,7 +27,7 @@ def the_system():
     event_list = [
         {
             "name": "top_event2",  
-            "cond" : [[{"attr": "flow_out_max", "obj": "C1", "ope": "<", "value": 0}]],
+            "cond" : [[{"attr": "flow_out_max", "obj": "C2", "ope": "<", "value": -1}]],
             "inner_logic" :all,
             "outer_logic":any,
             "tempo_occ" :0,
@@ -46,11 +36,59 @@ def the_system():
             "occ_state_name": "occ",
             "not_occ_state_name": "not_occ",
             "enabled": True
+        },
+        {
+            "name": "top_event22",  
+            "cond" : [[{"attr": "flow_out_max", "obj": "C2", "ope": ">", "value": -1}]],
+            "inner_logic" :all,
+            "outer_logic":any,
+            "tempo_occ" :0,
+            "tempo_not_occ" : 0,
+            "event_aut_name": "ev",
+            "occ_state_name": "occ2",
+            "not_occ_state_name": "not_occ2",
+            "enabled": True
         }
     ]
 
     system.add_events(event_list)
-    system.add_targets([{"name": "top_event2", "enabled": True}])  
+    system.add_targets([{"name": "top_event2", "enabled": True}]) 
+
+    system.add_indicator(
+        component="top_event2",
+        attr_type="ST",
+        attr_name="not_occ",
+        stats=["mean"],
+    )
+
+    system.add_indicator(
+        component="top_event2",
+        attr_type="ST",
+        attr_name="occ",
+        stats=["mean"],
+    )
+
+    system.add_indicator(
+        component="top_event22",
+        attr_type="ST",
+        attr_name="not_occ2",
+        stats=["mean"],
+    )
+
+    system.add_indicator(
+        component="top_event22",
+        attr_type="ST",
+        attr_name="occ2",
+        stats=["mean"],
+    )
+
+    system.add_indicator(
+        component="C2",
+        attr_type="VAR",
+        attr_name="flow_out_max",
+        stats=["mean"],
+    )
+
     return system
 
 
@@ -63,38 +101,83 @@ def test_system(the_system):
     assert comp_event.className() == "ObjEvent"
     assert comp_event.metadata == {}
     automaton = comp_event.automata_d["ev"]
+    assert len(automaton.transitions) == 2
     assert automaton.transitions[0].name == "occ"
     assert automaton.transitions[0].source == "not_occ"
     assert automaton.transitions[0].target == "occ"
+    assert automaton.transitions[1].name == "not_occ"
+    assert automaton.transitions[1].source == "occ"
+    assert automaton.transitions[1].target == "not_occ"
+
+    assert "top_event22" in the_system.comp
+    comp_event = the_system.comp["top_event22"]
+
+    assert comp_event.name() == "top_event22"
+    assert comp_event.className() == "ObjEvent"
+    assert comp_event.metadata == {}
+    automaton = comp_event.automata_d["ev"]
+    assert len(automaton.transitions) == 2
+    assert automaton.transitions[0].name == "occ2"
+    assert automaton.transitions[0].source == "not_occ2"
+    assert automaton.transitions[0].target == "occ2"
+    assert automaton.transitions[1].name == "not_occ2"
+    assert automaton.transitions[1].source == "occ2"
+    assert automaton.transitions[1].target == "not_occ2"
 
     # Run simulation
-    the_system.isimu_start()
-    
-    #assert the_system.comp["C1"].v_flow_out.value() == 0
-    #assert the_system.comp["C1"].flow_out_max.value() == -1
+    from cod3s.pycatshoo.system import PycMCSimulationParam
+    schedule = [1, 2, 3, 4]
+    simu_params = PycMCSimulationParam(
+        nb_runs=1,
+        schedule=schedule,
+    )
+    the_system.simulate(simu_params)
 
-    # # Ensure transitions are valid before proceeding
-    # transitions = the_system.isimu_fireable_transitions()
-    # assert len(transitions) == 2
-    # assert transitions[0].end_time == float("inf")
+    # Check results
+    assert "C2_flow_out_max" in the_system.indicators.keys()
+    ind_C1= the_system.indicators["C2_flow_out_max"]
+    val = ind_C1.values["values"].to_list()
+    assert ind_C1.instants == schedule
+    assert val[0] == -1
+    assert val[1] == -1
+    assert val[2] == 3
+    assert val[3] == 3
 
-    # the_system.isimu_set_transition(0, date=10)
-    # trans_fired = the_system.isimu_step_forward()
+    assert "top_event2_not_occ" in the_system.indicators.keys()
+    ind_not_occ = the_system.indicators["top_event2_not_occ"]
+    val = ind_not_occ.values["values"].to_list()
+    assert ind_not_occ.instants == schedule
+    assert val[0] == True
+    assert val[1] == True
+    assert val[2] == True
+    assert val[3] == True
 
-    # assert len(trans_fired) == 1
+    assert "top_event2_occ" in the_system.indicators.keys()
+    ind_occ = the_system.indicators["top_event2_occ"]
+    val = ind_occ.values["values"].to_list()
+    assert ind_occ.instants == schedule
+    assert val[0] == False
+    assert val[1] == False
+    assert val[2] == False
+    assert val[3] == False
 
-    # transitions = the_system.isimu_fireable_transitions()
+    assert "top_event22_not_occ2" in the_system.indicators.keys()
+    ind_not_occ = the_system.indicators["top_event22_not_occ2"]
+    val = ind_not_occ.values["values"].to_list()
+    assert ind_not_occ.instants == schedule
+    assert val[0] == True
+    assert val[1] == True
+    assert val[2] == False
+    assert val[3] == False
 
-    # assert the_system.currentTime() == 10
-
-    # the_system.isimu_set_transition(0)
-    # the_system.isimu_step_forward()
-
-    # assert the_system.currentTime() == 10
-    # assert the_system.comp["C1"].v_flow_out.value() == 2
-    # assert the_system.comp["C1"].flow_out_max.value() == 2
-
-    # the_system.isimu_stop()
+    assert "top_event22_occ2" in the_system.indicators.keys()
+    ind_occ = the_system.indicators["top_event22_occ2"]
+    val = ind_occ.values["values"].to_list()
+    assert ind_occ.instants == schedule
+    assert val[0] == False
+    assert val[1] == False
+    assert val[2] == True
+    assert val[3] == True
 
 
 def test_delete(the_system):
