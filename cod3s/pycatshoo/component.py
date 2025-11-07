@@ -5,7 +5,7 @@ import typing
 from ..core import ObjCOD3S
 from ..utils import get_operator_function
 from .automaton import PycAutomaton, PycState
-from .common import prepare_attr_tree
+from .common import prepare_attr_tree, sanitize_cond_format
 import Pycatshoo as pyc
 import copy
 import re
@@ -360,83 +360,83 @@ class PycComponent(pyc.CComponent):
         pdmp_managers=[],
     ):
         """
-        Adds a two-state automaton to the component.
+                Adds a two-state automaton to the component.
 
-        This method creates an automaton with two states and bidirectional transitions
-        between them. It allows for configurable conditions, occurrence laws, and
-        effects for each state and transition.
+                This method creates an automaton with two states and bidirectional transitions
+                between them. It allows for configurable conditions, occurrence laws, and
+                effects for each state and transition.
 
-        Parameters
-        ----------
-        name : str
-            The name of the automaton.
-        st1 : str, optional
-            The name of the first state (default is "absent").
-        st2 : str, optional
-            The name of the second state (default is "present").
-        init_st2 : bool, optional
-            If True, the initial state is st2; otherwise st1 (default is False).
-        trans_name_12_fmt : str, optional
-            Format string for the transition name from st1 to st2
-            (default is "{st1}_to_{st2}").
-        cond_occ_12 : bool, str, or callable, optional
-            The condition for the transition from st1 to st2 (default is True).
-            Can be a boolean, variable name string, or callable.
-        occ_law_12 : dict, optional
-            The occurrence law for the transition from st1 to st2
-            (default is {"cls": "delay", "time": 0}).
-        occ_interruptible_12 : bool, optional
-            If True, the transition from st1 to st2 is interruptible (default is True).
-        effects_st1 : dict or list, optional
-            Effects to apply when in state st1 (default is {}).
-            Format depends on effects_st1_format parameter.
-        effects_st1_format : str, optional
-            Format of effects_st1: "dict" for {var: value} or "records" for
-            [{"var": var_obj, "value": value}] (default is "dict").
-        trans_name_21_fmt : str, optional
-            Format string for the transition name from st2 to st1
-            (default is "{st2}_to_{st1}").
-        cond_occ_21 : bool, str, or callable, optional
-            The condition for the transition from st2 to st1 (default is True).
-            Can be a boolean, variable name string, or callable.
-        occ_law_21 : dict, optional
-            The occurrence law for the transition from st2 to st1
-            (default is {"cls": "delay", "time": 0}).
-        occ_interruptible_21 : bool, optional
-            If True, the transition from st2 to st1 is interruptible (default is True).
-        effects_st2 : dict or list, optional
-            Effects to apply when in state st2 (default is {}).
-            Format depends on effects_st2_format parameter.
-        effects_st2_format : str, optional
-            Format of effects_st2: "dict" for {var: value} or "records" for
-            [{"var": var_obj, "value": value}] (default is "dict").
-        step : object, optional
-            Step object to add the sensitive methods to (default is None).
-        pdmp_managers : list or object, optional
-            PDMP manager(s) to watch the transitions (default is []).
+                Parameters
+                ----------
+                name : str
+                    The name of the automaton.
+                st1 : str, optional
+                    The name of the first state (default is "absent").
+                st2 : str, optional
+                    The name of the second state (default is "present").
+                init_st2 : bool, optional
+                    If True, the initial state is st2; otherwise st1 (default is False).
+                trans_name_12_fmt : str, optional
+                    Format string for the transition name from st1 to st2
+                    (default is "{st1}_to_{st2}").
+                cond_occ_12 : bool, str, or callable, optional
+                    The condition for the transition from st1 to st2 (default is True).
+                    Can be a boolean, variable name string, or callable.
+                occ_law_12 : dict, optional
+                    The occurrence law for the transition from st1 to st2
+                    (default is {"cls": "delay", "time": 0}).
+                occ_interruptible_12 : bool, optional
+                    If True, the transition from st1 to st2 is interruptible (default is True).
+                effects_st1 : dict or list, optional
+                    Effects to apply when in state st1 (default is {}).
+                    Format depends on effects_st1_format parameter.
+                effects_st1_format : str, optional
+                    Format of effects_st1: "dict" for {var: value} or "records" for
+                    [{"var": var_obj, "value": value}] (default is "dict").
+                trans_name_21_fmt : str, optional
+                    Format string for the transition name from st2 to st1
+                    (default is "{st2}_to_{st1}").
+                cond_occ_21 : bool, str, or callable, optional
+                    The condition for the transition from st2 to st1 (default is True).
+                    Can be a boolean, variable name string, or callable.
+                occ_law_21 : dict, optional
+                    The occurrence law for the transition from st2 to st1
+                    (default is {"cls": "delay", "time": 0}).
+                occ_interruptible_21 : bool, optional
+                    If True, the transition from st2 to st1 is interruptible (default is True).
+                effects_st2 : dict or list, optional
+                    Effects to apply when in state st2 (default is {}).
+                    Format depends on effects_st2_format parameter.
+                effects_st2_format : str, optional
+                    Format of effects_st2: "dict" for {var: value} or "records" for
+                    [{"var": var_obj, "value": value}] (default is "dict").
+                step : object, optional
+                    Step object to add the sensitive methods to (default is None).
+                pdmp_managers : list or object, optional
+                    PDMP manager(s) to watch the transitions (default is []).
 
-        Returns
-        -------
-        PycAutomaton
-            The created automaton object.
+                Returns
+                -------
+                PycAutomaton
+                    The created automaton object.
 
-        Raises
-        ------
-        ValueError
-            If unsupported condition types or effect formats are provided.
+                Raises
+                ------
+                ValueError
+                    If unsupported condition types or effect formats are provided.
 
-        Examples
-        --------
-        >>> # Simple two-state automaton
-        >>> comp.add_aut2st("power", st1="off", st2="on")
+                Examples
+                --------
+                >>> # Simple two-state automaton
+                >>> comp.add_aut2st("power", st1="off", st2="on")
 
-        >>> # With variable effects
-        >>> comp.add_aut2st(
-        ...     "valve",
-        ...     st1="closed",
-        ...     st2="open",
-        ...     effects_st2={"flow_rate": 100}
-        ... )
+                >>> # With variable effects
+                >>> comp.add_aut2st(
+                ...     "valve",
+                ...     st1="closed",
+        b        ...     st2="open",
+                ...     effects_st2={"flow_rate": 100}
+                ... )
         """
 
         # st1_name = st_name_fmt.format(name=name, st=st1)
@@ -771,7 +771,7 @@ class ObjEvent(PycComponent):
     ):
         super().__init__(name, **kwargs)
 
-        cond = self.sanitize_cond_format(cond)
+        cond = sanitize_cond_format(cond)
 
         if isinstance(cond, list):
 
@@ -813,28 +813,28 @@ class ObjEvent(PycComponent):
             occ_interruptible_21=True,
         )
 
-    def sanitize_cond_format(self, cond):
+    # def sanitize_cond_format(self, cond):
 
-        if isinstance(cond, dict):
-            cond = [[cond]]
-        else:
-            if isinstance(cond, list):
-                if all([isinstance(c, list) for c in cond]):
-                    if any(
-                        [any([not isinstance(ci, dict) for ci in co]) for co in cond]
-                    ):
-                        raise ValueError(
-                            "ObjEvent condition specification must be a list of list of dict"
-                        )
-                elif all([isinstance(c, dict) for c in cond]):
-                    # Just add the second level of list
-                    cond = [cond]
-                else:
-                    raise ValueError(
-                        "ObjEvent condition specification must be a list of list of dict"
-                    )
+    #     if isinstance(cond, dict):
+    #         cond = [[cond]]
+    #     else:
+    #         if isinstance(cond, list):
+    #             if all([isinstance(c, list) for c in cond]):
+    #                 if any(
+    #                     [any([not isinstance(ci, dict) for ci in co]) for co in cond]
+    #                 ):
+    #                     raise ValueError(
+    #                         "ObjEvent condition specification must be a list of list of dict"
+    #                     )
+    #             elif all([isinstance(c, dict) for c in cond]):
+    #                 # Just add the second level of list
+    #                 cond = [cond]
+    #             else:
+    #                 raise ValueError(
+    #                     "ObjEvent condition specification must be a list of list of dict"
+    #                 )
 
-        return cond
+    #     return cond
 
 
 class ObjFM(PycComponent):
@@ -850,6 +850,26 @@ class ObjFM(PycComponent):
     specified order and generates corresponding automata with failure and repair transitions.
     Each automaton is named using customizable prefixes to distinguish between different
     target combinations.
+
+    Failure and Repair Conditions
+    ----------------------------
+    The failure_cond and repair_cond parameters support multiple formats for defining
+    when transitions should occur:
+
+    1. **Boolean values**: Simple True/False conditions
+    2. **Callable functions**: Custom Python functions returning boolean values
+    3. **Structured conditions**: Lists of dictionaries specifying attribute-based conditions
+
+    For structured conditions, the format follows a nested list structure:
+    - Outer list: OR logic between elements (controlled by cond_outer_logic)
+    - Inner list: AND logic between elements (controlled by cond_inner_logic)
+    - Dictionary elements: Individual attribute conditions
+
+    Each dictionary must contain:
+    - "attr": Attribute name (string) or attribute object
+    - "value": Expected value for comparison
+    - "ope": Comparison operator (optional, default: "==")
+    - "obj": Component object reference (optional if obj_default is used)
 
     Attributes
     ----------
@@ -875,6 +895,10 @@ class ObjFM(PycComponent):
         Template string for generating transition/automaton name suffixes
     trans_name_prefix_fun : callable, optional
         Custom function for generating transition/automaton name suffixes
+    cond_inner_logic : callable, optional
+        Logic function for combining inner condition elements (default: all)
+    cond_outer_logic : callable, optional
+        Logic function for combining outer condition elements (default: any)
 
     Parameters
     ----------
@@ -886,7 +910,7 @@ class ObjFM(PycComponent):
         Custom name for the target combination. If None, auto-generated from targets
     failure_state : str, optional
         Name of the failure state (default: "occ")
-    failure_cond : bool or callable, optional
+    failure_cond : bool, callable, or list, optional
         Condition that must be met for failure to occur (default: True)
     failure_effects : dict, optional
         Effects applied when failure occurs (default: {})
@@ -896,7 +920,7 @@ class ObjFM(PycComponent):
         Values of failure parameters (default: [])
     repair_state : str, optional
         Name of the repair state (default: "rep")
-    repair_cond : bool or callable, optional
+    repair_cond : bool, callable, or list, optional
         Condition that must be met for repair to occur (default: True)
     repair_effects : dict, optional
         Effects applied when repair occurs (default: {})
@@ -914,6 +938,10 @@ class ObjFM(PycComponent):
         target_set_idx, target_comb, target_binary, target_comb_u, order, order_max
     drop_inactive_automata : bool, optional
         Whether to skip creating automata with inactive occurrence laws (default: True)
+    cond_inner_logic : callable, optional
+        Logic function for inner condition combinations (default: all)
+    cond_outer_logic : callable, optional
+        Logic function for outer condition combinations (default: any)
     step : optional
         Step parameter for automaton transitions
 
@@ -974,6 +1002,88 @@ class ObjFM(PycComponent):
     ...     failure_effects={"active": False}
     ... )
     # Creates automata like: "mode__targets_1_2", "mode__targets_2_3", etc.
+
+    Failure condition examples:
+
+    Simple boolean condition:
+    >>> fm = ObjFM(
+    ...     fm_name="simple_failure",
+    ...     targets=["pump1"],
+    ...     failure_cond=True,  # Always ready to fail
+    ...     repair_cond=False   # Never repairs automatically
+    ... )
+
+    Custom function condition:
+    >>> def custom_failure_condition():
+    ...     return system_pressure > 100 and temperature < 50
+    ...
+    >>> fm = ObjFM(
+    ...     fm_name="pressure_failure",
+    ...     targets=["valve1"],
+    ...     failure_cond=custom_failure_condition
+    ... )
+
+    Structured attribute-based conditions:
+    >>> # Single condition: fail when pressure >= 100
+    >>> fm = ObjFM(
+    ...     fm_name="pressure_fm",
+    ...     targets=["pump1"],
+    ...     failure_cond=[{"attr": "pressure", "ope": ">=", "value": 100}]
+    ... )
+
+    >>> # Multiple conditions with AND logic: fail when pressure >= 100 AND temperature <= 50
+    >>> fm = ObjFM(
+    ...     fm_name="combined_fm",
+    ...     targets=["pump1"],
+    ...     failure_cond=[[
+    ...         {"attr": "pressure", "ope": ">=", "value": 100},
+    ...         {"attr": "temperature", "ope": "<=", "value": 50}
+    ...     ]]
+    ... )
+
+    >>> # Multiple conditions with OR logic: fail when pressure >= 100 OR temperature <= 50
+    >>> fm = ObjFM(
+    ...     fm_name="either_fm",
+    ...     targets=["pump1"],
+    ...     failure_cond=[
+    ...         [{"attr": "pressure", "ope": ">=", "value": 100}],
+    ...         [{"attr": "temperature", "ope": "<=", "value": 50}]
+    ...     ]
+    ... )
+
+    >>> # Complex nested conditions: (pressure >= 100 AND temp <= 50) OR (flow <= 0)
+    >>> fm = ObjFM(
+    ...     fm_name="complex_fm",
+    ...     targets=["system1"],
+    ...     failure_cond=[
+    ...         [
+    ...             {"attr": "pressure", "ope": ">=", "value": 100},
+    ...             {"attr": "temperature", "ope": "<=", "value": 50}
+    ...         ],
+    ...         [{"attr": "flow", "ope": "<=", "value": 0}]
+    ...     ]
+    ... )
+
+    >>> # Using explicit component references:
+    >>> fm = ObjFM(
+    ...     fm_name="multi_comp_fm",
+    ...     targets=["pump1", "pump2"],
+    ...     failure_cond=[
+    ...         {"attr": "pressure", "obj": "sensor1", "ope": ">=", "value": 100}
+    ...     ]
+    ... )
+
+    >>> # Custom logic functions:
+    >>> fm = ObjFM(
+    ...     fm_name="custom_logic_fm",
+    ...     targets=["pump1"],
+    ...     failure_cond=[[
+    ...         {"attr": "sensor1", "ope": ">=", "value": 10},
+    ...         {"attr": "sensor2", "ope": ">=", "value": 20}
+    ...     ]],
+    ...     cond_inner_logic=any,  # OR logic for inner conditions
+    ...     cond_outer_logic=all   # AND logic for outer conditions
+    ... )
     """
 
     def __init__(
@@ -1245,30 +1355,39 @@ class ObjFM(PycComponent):
                 )
 
     def get_failure_cond(self, target_comps, **kwrds):
-        if isinstance(self.failure_cond, dict):
+
+        cond = sanitize_cond_format(self.failure_cond)
+
+        if isinstance(self.failure_cond, list):
+
+            cond_bis_list = [
+                prepare_attr_tree(cond, obj_default=comp, system=self.system())
+                for comp in target_comps
+            ]
 
             def failure_cond_fun():
-                return self.outer_logic(
+                return all(
                     [
-                        self.inner_logic(
+                        self.cond_outer_logic(
                             [
-                                c_inner["var"].value() == c_inner["value"]
-                                for c_inner in c_outer
+                                self.cond_inner_logic(
+                                    [
+                                        get_operator_function(c_inner.get("ope", "=="))(
+                                            getattr(
+                                                c_inner["attr"],
+                                                c_inner["attr_val_name"],
+                                            )(),
+                                            c_inner["value"],
+                                        )
+                                        for c_inner in c_outer
+                                    ]
+                                )
+                                for c_outer in cond_bis_cur
                             ]
                         )
-                        for c_outer in self.failure_cond.items()
-                        for comp in target_comps
+                        for cond_bis_cur in cond_bis_list
                     ]
                 )
-
-            # def failure_cond_fun():
-            #     return all(
-            #         [
-            #             comp.flows_in[flow].var_fed.value() == flow_value
-            #             for flow, flow_value in self.failure_cond.items()
-            #             for comp in target_comps
-            #         ]
-            #     )
 
         elif callable(self.failure_cond):
             failure_cond_fun = self.failure_cond
@@ -1280,30 +1399,39 @@ class ObjFM(PycComponent):
         return failure_cond_fun
 
     def get_repair_cond(self, target_comps, **kwrds):
-        if isinstance(self.repair_cond, dict):
+
+        cond = sanitize_cond_format(self.repair_cond)
+
+        if isinstance(self.repair_cond, list):
+
+            cond_bis_list = [
+                prepare_attr_tree(cond, obj_default=comp, system=self.system())
+                for comp in target_comps
+            ]
 
             def repair_cond_fun():
-                return self.outer_logic(
+                return all(
                     [
-                        self.inner_logic(
+                        self.cond_outer_logic(
                             [
-                                c_inner["var"].value() == c_inner["value"]
-                                for c_inner in c_outer
+                                self.cond_inner_logic(
+                                    [
+                                        get_operator_function(c_inner.get("ope", "=="))(
+                                            getattr(
+                                                c_inner["attr"],
+                                                c_inner["attr_val_name"],
+                                            )(),
+                                            c_inner["value"],
+                                        )
+                                        for c_inner in c_outer
+                                    ]
+                                )
+                                for c_outer in cond_bis_cur
                             ]
                         )
-                        for c_outer in self.repair_cond.items()
-                        for comp in target_comps
+                        for cond_bis_cur in cond_bis_list
                     ]
                 )
-
-            # def repair_cond_fun():
-            #     return all(
-            #         [
-            #             comp.flows_in[flow].var_fed.value() == flow_value
-            #             for flow, flow_value in self.repair_cond.items()
-            #             for comp in target_comps
-            #         ]
-            #     )
 
         elif callable(self.repair_cond):
             repair_cond_fun = self.repair_cond
@@ -1313,38 +1441,6 @@ class ObjFM(PycComponent):
                 return self.repair_cond
 
         return repair_cond_fun
-
-    # def get_repair_cond(self, target_comps, **kwrds):
-    #     if self.repair_cond is not True:
-
-    #         def repair_cond_fun():
-    #             return self.outer_logic(
-    #                 [
-    #                     self.inner_logic(
-    #                         [
-    #                             c_inner["var"].value() == c_inner["value"]
-    #                             for c_inner in c_outer
-    #                         ]
-    #                     )
-    #                     for c_outer in self.repair_cond.items()
-    #                     for comp in target_comps
-    #                 ]
-    #             )
-
-    #         # def repair_cond_fun():
-    #         #     return all(
-    #         #         [
-    #         #             comp.flows_in[flow].var_fed.value() == flow_value
-    #         #             for flow, flow_value in self.repair_cond.items()
-    #         #             for comp in target_comps
-    #         #         ]
-    #         #     )
-
-    #         return repair_cond_fun
-    #     else:
-    #         return True
-
-    #     # __import__("ipdb").set_trace()
 
     # TO BE OVERLOADED IF NEEDED
     def set_default_failure_param_name(self):

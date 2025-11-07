@@ -153,7 +153,29 @@ def cod3s_deepcopy(obj):
         return obj
 
 
-def prepare_attr_tree(attr_tree, system=None):
+def sanitize_cond_format(cond):
+
+    if isinstance(cond, dict):
+        cond = [[cond]]
+    else:
+        if isinstance(cond, list):
+            if all([isinstance(c, list) for c in cond]):
+                if any([any([not isinstance(ci, dict) for ci in co]) for co in cond]):
+                    raise ValueError(
+                        "Condition specification must be a list of list of dict"
+                    )
+            elif all([isinstance(c, dict) for c in cond]):
+                # Just add the second level of list
+                cond = [cond]
+            else:
+                raise ValueError(
+                    "Condition specification must be a list of list of dict"
+                )
+
+    return cond
+
+
+def prepare_attr_tree(attr_tree, obj_default=None, system=None):
     """
     Prepare an attribute tree by replacing string attribute names with actual objects.
 
@@ -162,13 +184,41 @@ def prepare_attr_tree(attr_tree, system=None):
     attribute names are replaced with the corresponding variable or state objects.
 
     Args:
-        attr_tree: Hierarchical structure of lists and dictionaries
+        attr_tree: Hierarchical structure of lists and dictionaries containing attribute specifications
+        obj_default (pyc.CComponent, optional): Default component object to use when "obj" key is not 
+            specified in dictionary elements. If None, each dictionary must contain an "obj" key.
+        system (pyc.CSystem, optional): System object used to resolve component names when "obj" 
+            contains a string reference. Required when obj references are strings.
 
     Returns:
         Deep copy of attr_tree with string attributes replaced by objects
 
     Raises:
-        ValueError: If an attribute name is not found in variables or states
+        ValueError: If an attribute name is not found in variables or states, or if required
+            parameters are missing
+
+    Examples:
+        Basic usage with obj_default:
+        >>> component = pyc_system.comp["pump_01"]
+        >>> attr_tree = [{"attr": "flow_rate", "operator": ">=", "value": 10}]
+        >>> processed_tree = prepare_attr_tree(attr_tree, obj_default=component)
+        
+        Usage with explicit obj references:
+        >>> attr_tree = [
+        ...     {"attr": "pressure", "obj": pump_component, "operator": ">", "value": 5},
+        ...     {"attr": "temperature", "obj": "heater_01", "operator": "<=", "value": 100}
+        ... ]
+        >>> processed_tree = prepare_attr_tree(attr_tree, system=pyc_system)
+        
+        Complex nested structure:
+        >>> attr_tree = [
+        ...     [
+        ...         {"attr": "state_active", "obj": component1},
+        ...         {"attr": "flow_rate", "obj": component2, "operator": ">=", "value": 0}
+        ...     ],
+        ...     [{"attr": "temperature", "operator": "<", "value": 80}]
+        ... ]
+        >>> processed_tree = prepare_attr_tree(attr_tree, obj_default=default_comp, system=sys)
     """
 
     # Make a deep copy of attr_tree
@@ -186,8 +236,10 @@ def prepare_attr_tree(attr_tree, system=None):
                 if isinstance(element["attr"], str):
                     attr_name = element["attr"]
 
-                    if "obj" in element:
-                        obj = element["obj"]
+                    obj = element.get("obj", obj_default)
+
+                    if obj:
+                        # obj = element["obj"]
                         if isinstance(obj, str):
                             if system and isinstance(system, pyc.CSystem):
                                 obj = system.comp[obj]
