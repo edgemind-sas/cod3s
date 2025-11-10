@@ -37,6 +37,7 @@ def get_pyc_attr_list_name(attr_type):
         raise ValueError(f"{attr_type} not supported by PyCATSHOO")
 
 
+# TODO: Why not uniformizing it using cod3s.utils.get_operator_function ?
 def parse_inequality(input_string, default_ope=">="):
 
     if input_string is None:
@@ -153,6 +154,7 @@ def cod3s_deepcopy(obj):
         return obj
 
 
+# TODO: Both sanitize_cond_format and prepare_attr_tree are not PyCATSHOO specific functions => Move it to cod3s.utils.common
 def sanitize_cond_format(cond):
 
     if isinstance(cond, dict):
@@ -179,15 +181,15 @@ def prepare_attr_tree(attr_tree, obj_default=None, system=None):
     """
     Prepare an attribute tree by replacing string attribute names with actual objects.
 
-    Takes a hierarchical structure of nested lists where terminal elements are dictionaries
+    Takes a hierarcbhical structure of nested lists where terminal elements are dictionaries
     containing at least an "attr" key. Returns a deep copy of this structure where string
     attribute names are replaced with the corresponding variable or state objects.
 
     Args:
         attr_tree: Hierarchical structure of lists and dictionaries containing attribute specifications
-        obj_default (pyc.CComponent, optional): Default component object to use when "obj" key is not 
+        obj_default (pyc.CComponent, optional): Default component object to use when "obj" key is not
             specified in dictionary elements. If None, each dictionary must contain an "obj" key.
-        system (pyc.CSystem, optional): System object used to resolve component names when "obj" 
+        system (pyc.CSystem, optional): System object used to resolve component names when "obj"
             contains a string reference. Required when obj references are strings.
 
     Returns:
@@ -202,14 +204,14 @@ def prepare_attr_tree(attr_tree, obj_default=None, system=None):
         >>> component = pyc_system.comp["pump_01"]
         >>> attr_tree = [{"attr": "flow_rate", "operator": ">=", "value": 10}]
         >>> processed_tree = prepare_attr_tree(attr_tree, obj_default=component)
-        
+
         Usage with explicit obj references:
         >>> attr_tree = [
         ...     {"attr": "pressure", "obj": pump_component, "operator": ">", "value": 5},
         ...     {"attr": "temperature", "obj": "heater_01", "operator": "<=", "value": 100}
         ... ]
         >>> processed_tree = prepare_attr_tree(attr_tree, system=pyc_system)
-        
+
         Complex nested structure:
         >>> attr_tree = [
         ...     [
