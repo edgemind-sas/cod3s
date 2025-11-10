@@ -76,6 +76,12 @@ def the_system():
         cls="ObjFMExp",
         fm_name="frun",
         targets=["T1", "T2", "T3", "T4"],
+        failure_cond=[
+            [
+                {"obj": "CA", "attr": "flow_available_out", "value": True},
+                {"obj": "CB", "attr": "flow_available_out", "value": True}
+            ]
+        ],
         target_name="TXX",
         failure_effects={"v_flow_out": 4, "flow_available_out": False},
         failure_param=[0.1, 0.01, 0.001, 0.0001],

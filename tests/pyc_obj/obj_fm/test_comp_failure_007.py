@@ -79,11 +79,15 @@ def the_system():
         repair_param=[0.1, 0.1],
     )
 
+    failure_cond =[[{"obj": "CA", "attr": "flow_available_out", "value": True},
+                    {"obj": "CB", "attr": "flow_available_out", "value": True}]]
+    
     system.add_component(
         cls="ObjFMExp",
         fm_name="frun",
         targets=["T1", "T2", "T3", "T4"],
         target_name="TXX",
+        failure_cond=failure_cond,
         failure_effects={"v_flow_out": 3, "flow_available_out": False},
         failure_param=[0.1, 0, 0, 0.0001],
         repair_param=[0.0001, 0.001, 0.01, 0.1],
@@ -113,7 +117,7 @@ def test_system(the_system):
 
     # Ensure transitions are valid before proceeding
     transitions = the_system.isimu_fireable_transitions()
-    assert len(transitions) == 8
+    assert len(transitions) == 8 
 
     the_system.isimu_set_transition("CX__frun.occ__cc_12")
     trans_fired = the_system.isimu_step_forward()
@@ -137,13 +141,13 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions()
 
     assert the_system.currentTime() == 0
-    assert len(transitions) == 8
+    assert len(transitions) == 3 # TXX__frun unavailable ( CA.flow_available_out = False, CB.flow_available_out = False)
     the_system.isimu_set_transition("CX__frun.occ__cc_2")
     trans_fired = the_system.isimu_step_forward()
 
     transitions = the_system.isimu_fireable_transitions()
 
-    assert len(transitions) == 8
+    assert len(transitions) == 3 # TXX__frun unavailable ( CA.flow_available_out = False, CB.flow_available_out = False)
     the_system.isimu_set_transition("CX__frun.rep__cc_12")
     trans_fired = the_system.isimu_step_forward()
     transitions = the_system.isimu_fireable_transitions()

@@ -82,9 +82,9 @@ def test_system(the_system):
     assert automaton.transitions[0].name == "occ"
     assert automaton.transitions[0].source == "not_occ"
     assert automaton.transitions[0].target == "occ"
-    assert automaton.transitions[0].name == "not_occ"
-    assert automaton.transitions[0].source == "occ"
-    assert automaton.transitions[0].target == "not_occ"
+    assert automaton.transitions[1].name == "not_occ"
+    assert automaton.transitions[1].source == "occ"
+    assert automaton.transitions[1].target == "not_occ"
 
     # Run simulation
     from cod3s.pycatshoo.system import PycMCSimulationParam

@@ -74,6 +74,10 @@ def the_system():
         fm_name="frun",
         targets=["T1", "T2", "T3", "T4"],
         target_name="TXX",
+        failure_cond=[
+            {"obj": "CA", "attr": "flow_available_out", "value": True},
+            {"obj": "CB", "attr": "flow_available_out", "value": True}
+        ],
         failure_effects={"v_flow_out": 1},
         failure_param=[0.1, 0.01, 0.001, 0.0001],
         repair_param=[0.0001, 0.001, 0.01, 0.1],
