@@ -154,6 +154,7 @@ def cod3s_deepcopy(obj):
         return obj
 
 
+# TODO: Both sanitize_cond_format and prepare_attr_tree are not PyCATSHOO specific functions => Move it to cod3s.utils.common
 def sanitize_cond_format(cond):
 
     if isinstance(cond, dict):
