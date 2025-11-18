@@ -762,6 +762,8 @@ class ObjEvent(PycComponent):
         cond,
         inner_logic=all,
         outer_logic=any,
+        cond_operator="==",
+        cond_value=True,
         tempo_occ=0,
         tempo_not_occ=0,
         event_aut_name="ev",
@@ -773,26 +775,31 @@ class ObjEvent(PycComponent):
 
         cond = sanitize_cond_format(cond)
 
+        cond_operator_fun = get_operator_function(cond_operator)
+
         if isinstance(cond, list):
 
             cond_bis = prepare_attr_tree(cond, system=self.system())
 
             def cond_fun():
-                return outer_logic(
-                    [
-                        inner_logic(
-                            [
-                                get_operator_function(c_inner.get("ope", "=="))(
-                                    getattr(
-                                        c_inner["attr"], c_inner["attr_val_name"]
-                                    )(),
-                                    c_inner["value"],
-                                )
-                                for c_inner in c_outer
-                            ]
-                        )
-                        for c_outer in cond_bis
-                    ]
+                return cond_operator_fun(
+                    outer_logic(
+                        [
+                            inner_logic(
+                                [
+                                    get_operator_function(c_inner.get("ope", "=="))(
+                                        getattr(
+                                            c_inner["attr"], c_inner["attr_val_name"]
+                                        )(),
+                                        c_inner["value"],
+                                    )
+                                    for c_inner in c_outer
+                                ]
+                            )
+                            for c_outer in cond_bis
+                        ]
+                    ),
+                    cond_value,
                 )
 
         else:
