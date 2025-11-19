@@ -1,7 +1,7 @@
 import pytest
 import cod3s
 from cod3s.pycatshoo.system import PycSystem
-from kb_test import ObjFlow
+from pyc_obj.kb_test import ObjFlow 
 
 """
 Test Suite: Component Failure Mode Dependencies
