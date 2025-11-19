@@ -12,6 +12,7 @@ import re
 import colored
 import textwrap
 import itertools
+import builtins
 
 
 class PycVariable(ObjCOD3S):
@@ -774,6 +775,11 @@ class ObjEvent(PycComponent):
         super().__init__(name, **kwargs)
 
         cond = sanitize_cond_format(cond)
+
+        if isinstance(inner_logic, str):
+            inner_logic = getattr(builtins, inner_logic)
+        if isinstance(outer_logic, str):
+            outer_logic = getattr(builtins, outer_logic)
 
         cond_operator_fun = get_operator_function(cond_operator)
 
