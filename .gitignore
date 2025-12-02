@@ -164,3 +164,4 @@ cython_debug/
 archive/
 Pipfile.lock
 third_party_docs
+uv.lock
