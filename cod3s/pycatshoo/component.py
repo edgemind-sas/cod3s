@@ -1149,20 +1149,6 @@ class ObjFM(PycComponent):
             )
         self.behaviour = behaviour
 
-        if self.behaviour in ("external", "external_rep_indep"):
-            if failure_effects:
-                warnings.warn(
-                    f"failure_effects in '{behaviour}' behaviour for FM '{fm_name}' "
-                    "are handled by the target component's local automaton.",
-                    UserWarning,
-                )
-            if repair_effects:
-                warnings.warn(
-                    f"repair_effects in '{behaviour}' behaviour for FM '{fm_name}' "
-                    "are handled by the target component's local automaton.",
-                    UserWarning,
-                )
-
         # Create control variables for external behaviours
         self.ctrl_vars = {}
         if self.behaviour in ("external", "external_rep_indep"):
