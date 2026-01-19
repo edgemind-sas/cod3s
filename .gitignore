@@ -164,3 +164,7 @@ cython_debug/
 archive/
 Pipfile.lock
 third_party_docs
+
+.gemini/
+gha-creds-*.json
+.github

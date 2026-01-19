@@ -2,6 +2,7 @@
 
 import pydantic
 import typing
+import warnings
 from ..core import ObjCOD3S
 from ..utils import get_operator_function
 from .automaton import PycAutomaton, PycState
@@ -497,21 +498,21 @@ class PycComponent(pyc.CComponent):
 
                 def sensitive_method_st_2():
                     if st2_bkd.isActive():
-                        [
-                            # getattr(self, var).setValue(value)
-                            self.variable(var).setValue(value)
-                            for var, value in effects_st2.items()
-                        ]
+                        for var, value in effects_st2.items():
+                            v = self.variable(var)
+                            if v.value() != value:
+                                v.setValue(value)
 
             elif effects_st2_format == "records":
 
                 def sensitive_method_st_2():
                     if st2_bkd.isActive():
-                        [
-                            # getattr(self, var).setValue(value)
-                            elt["var"].setValue(elt["value"])
-                            for elt in effects_st2
-                        ]
+                        for elt in effects_st2:
+                            # print(
+                            #     f'{elt["var"].name()} [{elt["var"].value()}] -> {elt["value"]}'
+                            # )
+                            if elt["var"].value() != elt["value"]:
+                                elt["var"].setValue(elt["value"])
 
             else:
                 raise ValueError(
@@ -573,21 +574,18 @@ class PycComponent(pyc.CComponent):
 
                 def sensitive_method_st_1():
                     if st1_bkd.isActive():
-                        [
-                            # getattr(self, var).setValue(value)
-                            self.variable(var).setValue(value)
-                            for var, value in effects_st1.items()
-                        ]
+                        for var, value in effects_st1.items():
+                            v = self.variable(var)
+                            if v.value() != value:
+                                v.setValue(value)
 
             elif effects_st1_format == "records":
 
                 def sensitive_method_st_1():
                     if st1_bkd.isActive():
-                        [
-                            # getattr(self, var).setValue(value)
-                            elt["var"].setValue(elt["value"])
-                            for elt in effects_st1
-                        ]
+                        for elt in effects_st1:
+                            if elt["var"].value() != elt["value"]:
+                                elt["var"].setValue(elt["value"])
 
             else:
                 raise ValueError(
@@ -921,6 +919,9 @@ class ObjFM(PycComponent):
         Target component(s) that can be affected by this failure mode
     target_name : str, optional
         Custom name for the target combination. If None, auto-generated from targets
+    behaviour : str, optional
+        The behaviour of the failure mode. One of "internal", "external", "external_rep_indep".
+        (default: "internal")
     failure_state : str, optional
         Name of the failure state (default: "occ")
     failure_cond : bool, callable, or list, optional
@@ -1099,11 +1100,14 @@ class ObjFM(PycComponent):
     ... )
     """
 
+    VALID_BEHAVIOURS = ("internal", "external", "external_rep_indep")
+
     def __init__(
         self,
         fm_name,
         targets=[],
         target_name=None,
+        behaviour="internal",
         failure_state="occ",
         failure_cond=True,
         failure_effects={},
@@ -1138,6 +1142,34 @@ class ObjFM(PycComponent):
         #     __import__("ipdb").set_trace()
 
         order_max = len(self.targets)
+
+        if behaviour not in self.VALID_BEHAVIOURS:
+            raise ValueError(
+                f"behaviour must be one of {self.VALID_BEHAVIOURS}, got '{behaviour}'"
+            )
+        self.behaviour = behaviour
+
+        if self.behaviour in ("external", "external_rep_indep"):
+            if failure_effects:
+                warnings.warn(
+                    f"failure_effects in '{behaviour}' behaviour for FM '{fm_name}' "
+                    "are handled by the target component's local automaton.",
+                    UserWarning,
+                )
+            if repair_effects:
+                warnings.warn(
+                    f"repair_effects in '{behaviour}' behaviour for FM '{fm_name}' "
+                    "are handled by the target component's local automaton.",
+                    UserWarning,
+                )
+
+        # Create control variables for external behaviours
+        self.ctrl_vars = {}
+        if self.behaviour in ("external", "external_rep_indep"):
+            for target_name_cur in self.targets:
+                ctrl_var_name = f"ctrl_{self.fm_name}_{target_name_cur}"
+                ctrl_var = self.addVariable(ctrl_var_name, pyc.TVarType.t_bool, False)
+                self.ctrl_vars[target_name_cur] = ctrl_var
 
         self.failure_cond = copy.deepcopy(failure_cond)
         self.repair_cond = copy.deepcopy(repair_cond)
@@ -1202,6 +1234,12 @@ class ObjFM(PycComponent):
                 f"Failure mode of order {order_max} but you provide {len(self.repair_param)} repair parameters: {self.repair_param}"
             )
 
+        # Store order 1 repair params for external_rep_indep behaviour
+        self.repair_var_params_order1 = None
+
+        # Track impacting automata for each target in external modes
+        self.target_impacting_automata = {t: [] for t in self.targets}
+
         for order in range(1, order_max + 1):
 
             failure_param_cur = self.failure_param[order - 1]
@@ -1244,6 +1282,10 @@ class ObjFM(PycComponent):
                 )
                 repair_var_params_cur.update({repair_param_name_cur: repair_var_param})
 
+            # Store order 1 params
+            if order == 1:
+                self.repair_var_params_order1 = repair_var_params_cur
+
             if (
                 drop_inactive_automata
                 and not self.is_occ_law_failure_active(failure_var_params_cur)
@@ -1253,56 +1295,41 @@ class ObjFM(PycComponent):
 
             for target_set_idx in itertools.combinations(range(order_max), order):
 
-                failure_effects_cur = []
-                for var, value in self.failure_effects.items():
-                    for target_idx in target_set_idx:
-                        comp_cur = self.system().component(self.targets[target_idx])
+                # Prepare effects based on behaviour
+                if self.behaviour in ("external", "external_rep_indep"):
+                    # Centralized management: automata don't set variables directly
+                    failure_effects_cur = []
+                    repair_effects_cur = []
+                else:  # internal behaviour
+                    failure_effects_cur = []
+                    for var, value in self.failure_effects.items():
+                        for target_idx in target_set_idx:
+                            comp_cur = self.system().component(self.targets[target_idx])
 
-                        if hasattr(comp_cur, var):
-                            comp_var = getattr(comp_cur, var)
-                        elif var in [v.basename() for v in comp_cur.variables()]:
-                            comp_var = comp_cur.variable(var)
-                        else:
-                            raise ValueError(
-                                f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
-                            )
-                        failure_effects_cur.append({"var": comp_var, "value": value})
+                            if hasattr(comp_cur, var):
+                                comp_var = getattr(comp_cur, var)
+                            elif var in [v.basename() for v in comp_cur.variables()]:
+                                comp_var = comp_cur.variable(var)
+                            else:
+                                raise ValueError(
+                                    f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                                )
+                            failure_effects_cur.append({"var": comp_var, "value": value})
 
-                repair_effects_cur = []
-                for var, value in self.repair_effects.items():
-                    for target_idx in target_set_idx:
-                        comp_cur = self.system().component(self.targets[target_idx])
+                    repair_effects_cur = []
+                    for var, value in self.repair_effects.items():
+                        for target_idx in target_set_idx:
+                            comp_cur = self.system().component(self.targets[target_idx])
 
-                        if hasattr(comp_cur, var):
-                            comp_var = getattr(comp_cur, var)
-                        elif var in [v.basename() for v in comp_cur.variables()]:
-                            comp_var = comp_cur.variable(var)
-                        else:
-                            raise ValueError(
-                                f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
-                            )
-                        repair_effects_cur.append({"var": comp_var, "value": value})
-
-                # failure_effects_cur = [
-                #     {
-                #         "var": getattr(
-                #             self.system().component(self.targets[target_idx]), var
-                #         ),
-                #         "value": value,
-                #     }
-                #     for var, value in self.failure_effects.items()
-                #     for target_idx in target_set_idx
-                # ]
-                # repair_effects_cur = [
-                #     {
-                #         "var": getattr(
-                #             self.system().component(self.targets[target_idx]), var
-                #         ),
-                #         "value": value,
-                #     }
-                #     for target_idx in target_set_idx
-                #     for var, value in self.repair_effects.items()
-                # ]
+                            if hasattr(comp_cur, var):
+                                comp_var = getattr(comp_cur, var)
+                            elif var in [v.basename() for v in comp_cur.variables()]:
+                                comp_var = comp_cur.variable(var)
+                            else:
+                                raise ValueError(
+                                    f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                                )
+                            repair_effects_cur.append({"var": comp_var, "value": value})
 
                 failure_state_name_cur = self.failure_state
                 repair_state_name_cur = self.repair_state
@@ -1345,9 +1372,49 @@ class ObjFM(PycComponent):
                     target_comps=target_comps_cur, param=repair_var_params_cur
                 )
 
+                if self.behaviour == "external":
+
+                    def make_external_cond(
+                        base_cond, targets, fm_name, required_state_name
+                    ):
+                        def cond():
+                            # Check base condition
+                            if not base_cond():
+                                return False
+                            # Check all targets are in required state
+                            for t in targets:
+                                # We need to access the automaton safely
+                                # At simulation time, automata_d should be populated
+                                if fm_name not in t.automata_d:
+                                    return False
+                                st = t.automata_d[fm_name].get_state_by_name(
+                                    required_state_name
+                                )
+                                if not st._bkd.isActive():
+                                    return False
+                            return True
+
+                        return cond
+
+                    # Failure: targets must be in repair state (available)
+                    failure_cond_cur = make_external_cond(
+                        failure_cond_cur,
+                        target_comps_cur,
+                        self.fm_name,
+                        self.repair_state,
+                    )
+
+                    # Repair: targets must be in failure state (to be repaired)
+                    repair_cond_cur = make_external_cond(
+                        repair_cond_cur,
+                        target_comps_cur,
+                        self.fm_name,
+                        self.failure_state,
+                    )
+
                 # if fm_name_cur == "frun__cc_134":
                 # __import__("ipdb").set_trace()
-                self.add_aut2st(
+                aut = self.add_aut2st(
                     name=aut_name_cur,
                     st1=repair_state_name_cur,
                     st2=failure_state_name_cur,
@@ -1366,6 +1433,150 @@ class ObjFM(PycComponent):
                     effects_st1_format="records",
                     step=self.step,
                 )
+
+                # Record impacting automata for centralized control
+                if self.behaviour in ("external", "external_rep_indep"):
+                    for idx in target_set_idx:
+                        target_name = self.targets[idx]
+                        self.target_impacting_automata[target_name].append(
+                            (aut, failure_state_name_cur)
+                        )
+
+        # Centralized control for external behaviours
+        if self.behaviour in ("external", "external_rep_indep"):
+            for (
+                target_name,
+                impacting_info,
+            ) in self.target_impacting_automata.items():
+                ctrl_var = self.ctrl_vars[target_name]
+
+                # Create the centralized sensitive method for this target
+                def make_ctrl_method(cv, info_list):
+                    def ctrl_method():
+                        # Determine if any impacting automaton is in failure state
+                        should_be_failed = any(
+                            a.get_state_by_name(st_name)._bkd.isActive()
+                            for a, st_name in info_list
+                        )
+                        if cv.value() != should_be_failed:
+                            cv.setValue(should_be_failed)
+
+                    return ctrl_method
+
+                method = make_ctrl_method(ctrl_var, impacting_info)
+                method_name = f"ctrl_sync__{self.name()}_{target_name}"
+
+                # Register to all impacting automata
+                for aut, _ in impacting_info:
+                    aut._bkd.addSensitiveMethod(method_name, method)
+
+                # Also add as start method to initialize value
+                self.addStartMethod(method_name, method)
+
+        # Create automata in target components for external behaviours
+        if self.behaviour in ("external", "external_rep_indep"):
+            for target_name_cur in self.targets:
+                # Create fresh dict each time to avoid mutation issues
+                if self.behaviour == "external":
+                    repair_occ_law = {"cls": "delay", "time": 0}
+                else:  # external_rep_indep
+                    repair_occ_law = self.set_occ_law_repair(
+                        self.repair_var_params_order1
+                    )
+
+                self._create_target_automaton(
+                    target_name_cur,
+                    repair_occ_law,
+                    failure_effects=self.failure_effects,
+                    repair_effects=self.repair_effects,
+                )
+
+    def _create_target_automaton(
+        self, target_name, repair_occ_law, failure_effects={}, repair_effects={}
+    ):
+        """Create a synchronized automaton in the target component.
+
+        Args:
+            target_name: Name of the target component
+            repair_occ_law: Occurrence law for the repair transition
+                - {"cls": "delay", "time": 0} for external behaviour
+                - {"cls": "exp", "rate": mu_var} for external_rep_indep behaviour
+            failure_effects: Effects to apply when failure occurs (dict of var_name: value)
+            repair_effects: Effects to apply when repair occurs (dict of var_name: value)
+        """
+        target_comp = self.system().component(target_name)
+
+        # Check for name conflict
+        existing_aut_names = [aut.basename() for aut in target_comp.automata()]
+        if self.fm_name in existing_aut_names:
+            raise ValueError(
+                f"Target '{target_name}' already has an automaton named '{self.fm_name}'. "
+                f"Cannot create external FM automaton."
+            )
+
+        ctrl_var = self.ctrl_vars[target_name]
+
+        # Condition to transition to failure state
+        def occ_condition():
+            return ctrl_var.value() is True
+
+        # Condition for repair transition
+        if self.behaviour == "external":
+            # Synchronized with ObjFM
+            def rep_condition():
+                return ctrl_var.value() is False
+
+        else:  # external_rep_indep
+            # TODO: No ! not always ready, in fact we have to use the initial repair_cond be applied the component
+            def rep_condition():
+                return True
+
+        # Resolve and Prepare failure effects
+        final_failure_effects = []
+        for var, value in failure_effects.items():
+            if hasattr(target_comp, var):
+                comp_var = getattr(target_comp, var)
+            elif var in [v.basename() for v in target_comp.variables()]:
+                comp_var = target_comp.variable(var)
+            else:
+                continue
+            final_failure_effects.append({"var": comp_var, "value": value})
+
+        # Resolve and Prepare repair effects
+        final_repair_effects = []
+        for var, value in repair_effects.items():
+            if hasattr(target_comp, var):
+                comp_var = getattr(target_comp, var)
+            elif var in [v.basename() for v in target_comp.variables()]:
+                comp_var = target_comp.variable(var)
+            else:
+                continue
+            final_repair_effects.append({"var": comp_var, "value": value})
+
+        # Effects when repairing (for external_rep_indep)
+        if self.behaviour == "external_rep_indep":
+            # Reset ctrl to False to allow new failure
+            final_repair_effects.append({"var": ctrl_var, "value": False})
+
+        target_comp.add_aut2st(
+            name=self.fm_name,
+            st1=self.repair_state,
+            st2=self.failure_state,
+            init_st2=False,
+            trans_name_12_fmt="{st2}",
+            cond_occ_12=occ_condition,
+            occ_law_12={"cls": "delay", "time": 0},  # Always instantaneous
+            occ_interruptible_12=True,
+            effects_st2=final_failure_effects,
+            effects_st2_format="records",
+            trans_name_21_fmt="{st1}",
+            cond_occ_21=rep_condition,
+            occ_law_21=repair_occ_law,
+            occ_interruptible_21=True,
+            effects_st1=final_repair_effects,
+            effects_st1_format="records",
+            step=self.step,
+        )
 
     def get_failure_cond(self, target_comps, **kwrds):
 
