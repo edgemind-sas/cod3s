@@ -354,7 +354,7 @@ class PycSystem(pyc.CSystem):
         for event_specs in event_list:
             if event_specs.pop("enabled", True):
                 event_specs.setdefault("cls", "ObjEvent")
-                event_cur = self.add_component(**event_specs)
+                event_cur = self.add_component(logger=logger, **event_specs)
                 if logger:
                     logger.info3(f"=> Event {repr(event_cur)} added")
             else:
@@ -398,7 +398,7 @@ class PycSystem(pyc.CSystem):
             fm_law = fm.pop("occ_law")
             fm["cls"] = f"ObjFM{fm_law.capitalize()}"
 
-            self.add_component(**fm)
+            self.add_component(logger=logger, **fm)
 
             if logger:
                 logger.info2(f"Processing FM: {fm_name}")
