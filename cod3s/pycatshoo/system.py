@@ -293,7 +293,7 @@ class PycSystem(pyc.CSystem):
 
     def add_components(self, comp_specs_list=[], logger=None):
         for comp_specs in comp_specs_list:
-            comp_cur = self.add_component(**comp_specs)
+            comp_cur = self.add_component(logger=logger, **comp_specs)
             if logger:
                 logger.info2(f"Add: {repr(comp_cur)}")
 
