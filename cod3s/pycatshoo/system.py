@@ -398,6 +398,7 @@ class PycSystem(pyc.CSystem):
             fm_law = fm.pop("occ_law")
             fm["cls"] = f"ObjFM{fm_law.capitalize()}"
 
+            print(fm)
             self.add_component(logger=logger, **fm)
 
             if logger:
