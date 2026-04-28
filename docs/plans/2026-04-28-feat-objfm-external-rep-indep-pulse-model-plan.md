@@ -623,8 +623,8 @@ Out of scope for this plan but worth noting:
 - [x] Phase 3.4 — Full suite GREEN: 213 passed (197 baseline + 16 new), 0 failed.
 - [ ] Phase 3.5 — MC simulation smoke test (deferred — full suite passing is strong enough signal).
 - [x] Side fix — Replaced effects-driven ctrl reset with a sensitive method on the target's automaton (NOT on the variable) to avoid cascading re-evaluation conflicts between ObjFM.occ effect and target.rep effect at simulation start.
-- [ ] Phase 4.1 — Edit `FEAT_OBJFM_SPECS.md` sections "external" and "external_rep_indep".
-- [ ] Phase 4.2 — Edit "Tests / Liste des tests" to match the new file list.
+- [x] Phase 4.1 — Edit `FEAT_OBJFM_SPECS.md` sections "external" and "external_rep_indep" : pulse model documented, effects clarified (applied via target), errors table updated, migration section refreshed, versioning table aligned.
+- [x] Phase 4.2 — Edit "Tests / Liste des tests" to match the new file list (7 files, 28 tests).
 - [ ] Phase 5.1 — black + isort + flake8 + pytest sanity sweep.
 - [ ] Phase 5.2 — Bump `cod3s/version.py` to 1.1.0.
 - [ ] Phase 5.3 — Single descriptive commit.
