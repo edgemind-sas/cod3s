@@ -661,10 +661,10 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - [x] 5.5 — Validation gate Phase 5 : `pytest tests/` 259 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean (utilisation de `textual.coordinate.Coordinate` au lieu de tuples pour `update_cell_at`).
 
 ### Phase 6 — Actions avancées
-- [ ] 6.1 — `ExportModal`, `action_open_export_modal`, écriture CSV+JSON.
-- [ ] 6.2 — `ReplanModal`, `action_open_replan_modal`, `engine.replan(...)`.
-- [ ] 6.3 — Tests `tests/isimu/test_app_modals.py`.
-- [ ] 6.4 — Validation gate Phase 6.
+- [x] 6.1 — `ExportModal` (path input + Cancel/Export buttons + Enter sur Input). Binding `e` sur App. `_export_worker(path)` en thread écrit `<path>.csv` et `<path>.json` puis `notify` succès.
+- [x] 6.2 — `ReplanModal` (idx + date pré-remplis depuis le curseur fireable et `engine.current_time`). Binding `p`. `_replan_worker(idx, date)` appelle `engine.replan(trans_id, date)` puis `refresh_panels`. Erreurs notifiées via `notify(..., severity="error")`.
+- [x] 6.3 — Tests `tests/isimu/test_app_modals.py` (7 tests) : `e` push ExportModal, dismiss avec path écrit CSV+JSON (vérifié sur disque), dismiss None écrit rien, `p` push ReplanModal, dismiss avec (idx,date) appelle `engine.replan(trans_id=idx, date=date)`, dismiss None ne fait rien, `e`/`p` no-op si engine=None.
+- [x] 6.4 — Validation gate Phase 6 : `pytest tests/` 266 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean.
 
 ### Phase 7 — Entry-point, doc, finalisation
 - [ ] 7.1 — Créer `cod3s/scripts/run_cod3s_isimu.py` (argparse + main).

@@ -22,6 +22,8 @@ from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header
 
 from cod3s.pycatshoo.isimu.engine import ISimuEngine
+from cod3s.pycatshoo.isimu.export import export_csv, export_json
+from cod3s.pycatshoo.isimu.modals import ExportModal, ReplanModal
 from cod3s.pycatshoo.isimu.panels import (
     ComponentsPanel,
     FireablePanel,
@@ -48,6 +50,8 @@ class ISimuApp(App[None]):
         Binding("ctrl+c", "quit", "Quit", show=False),
         Binding("b", "step_backward", "Back"),
         Binding("r", "reset", "Reset"),
+        Binding("e", "export", "Export"),
+        Binding("p", "replan", "Re-plan"),
         Binding("?", "help", "Help"),
     ]
 
@@ -118,6 +122,45 @@ class ISimuApp(App[None]):
             return
         self._reset_worker()
 
+    def action_export(self) -> None:
+        if self._engine is None:
+            return
+        self.push_screen(ExportModal(), self._on_export_path)
+
+    def action_replan(self) -> None:
+        if self._engine is None:
+            return
+        # Pre-fill the modal with the currently highlighted transition (if any)
+        # and the simulator's current time as the default planned date.
+        try:
+            table = self.query_one("#fireable-table", DataTable)
+            cursor_row = table.cursor_row
+            if cursor_row is not None and 0 <= cursor_row < table.row_count:
+                idx = int(table.get_row_at(cursor_row)[0])
+            else:
+                idx = 0
+        except Exception:
+            idx = 0
+        date = float(self._engine.current_time)
+        self.push_screen(
+            ReplanModal(default_idx=idx, default_date=date),
+            self._on_replan_result,
+        )
+
+    # ------------------------------------------------------------------
+    # Modal callbacks
+    # ------------------------------------------------------------------
+    def _on_export_path(self, path: Optional["Path"]) -> None:
+        if path is None or self._engine is None:
+            return
+        self._export_worker(path)
+
+    def _on_replan_result(self, result: Optional[tuple]) -> None:
+        if result is None or self._engine is None:
+            return
+        idx, date = result
+        self._replan_worker(int(idx), float(date))
+
     # ------------------------------------------------------------------
     # Workers
     # ------------------------------------------------------------------
@@ -155,6 +198,36 @@ class ISimuApp(App[None]):
         if engine is None:
             return
         engine.reset()
+        self.call_from_thread(self.refresh_panels)
+
+    @work(thread=True, exclusive=True, group="export")
+    def _export_worker(self, path: "Path") -> None:
+        """Write the engine timeline to ``<path>.csv`` and ``<path>.json``."""
+        engine = self._engine
+        if engine is None:
+            return
+        csv_path = path.with_suffix(".csv")
+        json_path = path.with_suffix(".json")
+        export_csv(engine.history, csv_path)
+        export_json(engine.history, json_path)
+        self.call_from_thread(
+            self.notify,
+            f"Exported {csv_path.name} + {json_path.name}",
+            severity="information",
+        )
+
+    @work(thread=True, exclusive=True, group="engine")
+    def _replan_worker(self, idx: int, date: float) -> None:
+        engine = self._engine
+        if engine is None:
+            return
+        try:
+            engine.replan(trans_id=idx, date=date)
+        except Exception as exc:
+            self.call_from_thread(
+                self.notify, f"Replan failed: {exc}", severity="error"
+            )
+            return
         self.call_from_thread(self.refresh_panels)
 
     # ------------------------------------------------------------------
