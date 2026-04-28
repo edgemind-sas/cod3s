@@ -1,0 +1,157 @@
+"""Tests for ObjFM behaviour='external_rep_indep' — multi-target combos.
+
+Validates that combos of order > 1 trigger their respective targets, and that
+each target then repairs INDEPENDENTLY according to the order-1 law of the
+ObjFM. Partial repair must block re-firing of any combo that includes a still-
+failed target, while combos limited to repaired targets remain available.
+"""
+import pytest
+
+import cod3s
+from cod3s.pycatshoo.system import PycSystem
+from kb_test import ObjFlow  # noqa: F401  used via add_component(cls=...)
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    yield
+    cod3s.terminate_session()
+
+
+def is_state_active(automaton, state_name):
+    return automaton.get_state_by_name(state_name)._bkd.isActive()
+
+
+def fireable_names(system):
+    return {tr._bkd.name() for tr in system.isimu_fireable_transitions()}
+
+
+def fire(system, name, date=None):
+    if date is not None:
+        system.isimu_set_transition(name, date=date)
+    else:
+        system.isimu_set_transition(name)
+    system.isimu_step_forward()
+
+
+def test_rep_indep_combo_order2_independent_repair():
+    """cc_12 triggers C1 and C2; C1 self-repairs alone; ObjFM combos that
+    include C2 are still blocked until C2 also repairs."""
+    system = PycSystem(name="SysRepIndepO2Indep")
+    system.pdmp_manager = system.addPDMPManager("pdmp_manager")
+
+    system.add_component(name="C1", cls="ObjFlow")
+    system.add_component(name="C2", cls="ObjFlow")
+    fm_comp_name = "CX__frun"
+    system.add_component(
+        cls="ObjFMExp",
+        fm_name="frun",
+        targets=["C1", "C2"],
+        behaviour="external_rep_indep",
+        failure_param=[0.1, 0.05],  # mu_1, lambda_2
+        repair_param=[0.1, 0.5],    # only mu_1 matters for target repair
+    )
+
+    system.isimu_start()
+
+    c1_aut = system.comp["C1"].automata_d["frun"]
+    c2_aut = system.comp["C2"].automata_d["frun"]
+    fm = system.comp[fm_comp_name]
+
+    # All three combos initially fireable.
+    initial = fireable_names(system)
+    assert {f"{fm_comp_name}.occ__cc_1",
+            f"{fm_comp_name}.occ__cc_2",
+            f"{fm_comp_name}.occ__cc_12"} <= initial
+
+    # Trigger common-cause failure (cc_12).
+    fire(system, f"{fm_comp_name}.occ__cc_12", date=10)
+    assert fm.ctrl_vars["C1"].value() is True
+    assert fm.ctrl_vars["C2"].value() is True
+
+    # Propagate to both targets (delay 0). They must end up in occ.
+    fire(system, "C1.occ")
+    fire(system, "C2.occ")
+    assert is_state_active(c1_aut, "occ")
+    assert is_state_active(c2_aut, "occ")
+
+    # Pulse: ObjFM.rep__cc_12 is fireable (delay 0, no condition).
+    assert f"{fm_comp_name}.rep__cc_12" in fireable_names(system)
+    fire(system, f"{fm_comp_name}.rep__cc_12")
+
+    # ctrl_vars stay True (target owns repair lifecycle).
+    assert fm.ctrl_vars["C1"].value() is True
+    assert fm.ctrl_vars["C2"].value() is True
+
+    # No combo can fire again while any target is still in occ.
+    after_pulse = fireable_names(system)
+    assert f"{fm_comp_name}.occ__cc_1" not in after_pulse
+    assert f"{fm_comp_name}.occ__cc_2" not in after_pulse
+    assert f"{fm_comp_name}.occ__cc_12" not in after_pulse
+    # Target self-repairs are fireable.
+    assert "C1.rep" in after_pulse
+    assert "C2.rep" in after_pulse
+
+    # C1 self-repairs alone.
+    fire(system, "C1.rep")
+    assert is_state_active(c1_aut, "rep")
+    assert is_state_active(c2_aut, "occ")
+    assert fm.ctrl_vars["C1"].value() is False
+    assert fm.ctrl_vars["C2"].value() is True
+
+    # cc_1 is now fireable (only C1 needed in rep), but cc_2 and cc_12 are not.
+    after_c1_rep = fireable_names(system)
+    assert f"{fm_comp_name}.occ__cc_1" in after_c1_rep
+    assert f"{fm_comp_name}.occ__cc_2" not in after_c1_rep
+    assert f"{fm_comp_name}.occ__cc_12" not in after_c1_rep
+
+    # C2 finishes repairing.
+    fire(system, "C2.rep")
+    assert is_state_active(c2_aut, "rep")
+    assert fm.ctrl_vars["C2"].value() is False
+
+    # All combos fireable again.
+    final = fireable_names(system)
+    assert {f"{fm_comp_name}.occ__cc_1",
+            f"{fm_comp_name}.occ__cc_2",
+            f"{fm_comp_name}.occ__cc_12"} <= final
+
+    system.isimu_stop()
+
+
+def test_rep_indep_partial_state_blocks_higher_order_combo():
+    """If only one target is in rep state, only the order-1 combo on that
+    target should be fireable; higher-order combos involving the still-failed
+    target stay blocked."""
+    system = PycSystem(name="SysRepIndepO2Block")
+    system.pdmp_manager = system.addPDMPManager("pdmp_manager")
+
+    system.add_component(name="C1", cls="ObjFlow")
+    system.add_component(name="C2", cls="ObjFlow")
+    fm_comp_name = "CX__frun"
+    system.add_component(
+        cls="ObjFMExp",
+        fm_name="frun",
+        targets=["C1", "C2"],
+        behaviour="external_rep_indep",
+        failure_param=[0.1, 0.05],
+        repair_param=[0.1, 0.5],
+    )
+
+    system.isimu_start()
+
+    # Trigger cc_2 (C2 only).
+    fire(system, f"{fm_comp_name}.occ__cc_2", date=10)
+    fire(system, "C2.occ")
+    fire(system, f"{fm_comp_name}.rep__cc_2")  # auto-pulse
+
+    # C2 in occ, C1 in rep.
+    fireable = fireable_names(system)
+    # cc_1 fireable (C1 still in rep), cc_2 NOT (C2 in occ), cc_12 NOT.
+    assert f"{fm_comp_name}.occ__cc_1" in fireable
+    assert f"{fm_comp_name}.occ__cc_2" not in fireable
+    assert f"{fm_comp_name}.occ__cc_12" not in fireable
+    # C2.rep is fireable (its own mu_1 law).
+    assert "C2.rep" in fireable
+
+    system.isimu_stop()

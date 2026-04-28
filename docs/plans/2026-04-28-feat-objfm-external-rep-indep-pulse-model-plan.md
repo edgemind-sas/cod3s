@@ -604,13 +604,13 @@ Out of scope for this plan but worth noting:
 
 ## Implementation Checklist (in order)
 
-- [ ] Phase 1.1 — Write test_comp_failure_external_rep_indep_001.py (creation/structure). Confirm RED.
-- [ ] Phase 1.2 — Write 002.py (pulse single target). Confirm RED.
-- [ ] Phase 1.3 — Write 003.py (multi-target combos). Confirm RED.
-- [ ] Phase 1.4 — Write 004.py (effects propagation). Confirm RED.
-- [ ] Phase 1.5 — Write 005.py (repair_cond gating). Confirm RED.
-- [ ] Phase 1.6 — Write 006.py (ObjFMDelay compat). Confirm RED.
-- [ ] Phase 1.7 — Write test_comp_failure_external_modes_errors.py. Confirm RED.
+- [x] Phase 1.1 — Write test_comp_failure_external_rep_indep_001.py (creation/structure). 3/3 PASS coincidentally (creation already works in current code).
+- [x] Phase 1.2 — Write 002.py (pulse single target). 2/2 RED.
+- [x] Phase 1.3 — Write 003.py (multi-target combos). 2/2 RED.
+- [x] Phase 1.4 — Write 004.py (effects propagation). 2/2 RED.
+- [x] Phase 1.5 — Write 005.py (repair_cond gating). 2/2 RED.
+- [x] Phase 1.6 — Write 006.py (ObjFMDelay compat). 1/1 RED.
+- [x] Phase 1.7 — Write test_comp_failure_external_modes_errors.py. 2 PASS, 2 RED (drop_inactive guard + name_conflict isolation).
 - [ ] Phase 2.1 — In `add_failure_repair_automaton`, replace effects-prep block with direct ctrl-var effects.
 - [ ] Phase 2.2 — Apply external augmentation to both modes for `failure_cond`; differ for `repair_cond`.
 - [ ] Phase 2.3 — Override `occ_law_21` to `delay(0)` for `external_rep_indep`.
