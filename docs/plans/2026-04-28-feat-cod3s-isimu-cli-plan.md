@@ -630,12 +630,12 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - [x] 1.7 — Validation gate Phase 1 : `pytest tests/` 207 passed, 26 skipped ; `black --check` clean ; `flake8` clean sur les fichiers nouveaux/modifiés (warnings pré-existants ignorés).
 
 ### Phase 2 — Engine isimu
-- [ ] 2.1 — Créer arborescence `cod3s/pycatshoo/isimu/` (`__init__`, `engine`, `grouping`, `diff`, `export`).
-- [ ] 2.2 — Tests RED `tests/isimu/test_engine.py`, `test_grouping.py`, `test_diff.py`, `test_export.py`.
-- [ ] 2.3 — Implémenter `ISimuEngine.start/step_forward/step_backward/reset` ; corrige le bug séquence non-initialisée.
-- [ ] 2.4 — Implémenter `group_fires_together`, `snapshot_vars`, `snapshot_initials`, `export_csv`, `export_json`.
-- [ ] 2.5 — GREEN : `pytest tests/isimu/` passe.
-- [ ] 2.6 — Validation gate Phase 2 : full pytest + lint + mypy.
+- [x] 2.1 — Créer arborescence `cod3s/pycatshoo/isimu/` (`__init__`, `engine`, `grouping`, `diff`, `export`).
+- [x] 2.2 — Tests `tests/isimu/test_engine.py`, `test_grouping.py`, `test_diff.py`, `test_export.py` (31 tests, dont 12 pure unit grouping + 5 export + 6 diff + 8 engine intégration avec PycSystem).
+- [x] 2.3 — Implémenter `ISimuEngine.start/step_forward/step_backward/reset` ; corrige le bug séquence non-initialisée (cf. docstring de `engine.py`, points 1 et 2).
+- [x] 2.4 — Implémenter `group_fires_together`, `snapshot_vars`, `snapshot_initials`, `diff_snapshots`, `export_csv`, `export_json`, `history_to_records`.
+- [x] 2.5 — GREEN : `pytest tests/isimu/` 31/31.
+- [x] 2.6 — Validation gate Phase 2 : full pytest 238 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean (les 100+ erreurs résiduelles sont pré-existantes dans `cod3s/pycatshoo/system.py` et `sequence.py`).
 
 ### Phase 3 — Squelette Textual
 - [ ] 3.1 — Créer `app.py`, `panels.py`, `state.py`, `styles.tcss`.
