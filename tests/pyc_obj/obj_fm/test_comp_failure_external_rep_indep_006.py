@@ -29,9 +29,7 @@ def fire(system, name, date=None):
 
 
 def test_rep_indep_objfmdelay_uses_delay_law():
-    """With ObjFMDelay, target.rep uses the order-1 delay law (ttr_1).
-    After the pulse, target.rep should not be fireable until ttr_1 elapses
-    (verified by checking state and value at intermediate dates)."""
+    """With ObjFMDelay, target.rep uses the order-1 delay law (ttr_1)."""
     system = PycSystem(name="SysRepIndepDelay")
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
@@ -54,16 +52,14 @@ def test_rep_indep_objfmdelay_uses_delay_law():
     # Drive the pulse at date 10.
     fire(system, f"{fm_comp_name}.occ", date=10)
     fire(system, "C1.occ")
-    fire(system, f"{fm_comp_name}.rep")
     assert is_state_active(target_aut, "occ")
     assert system.comp["C1"].flow_in_max.value() == 0.0
 
-    # The next fireable target.rep should be at date 10 + ttr_1 = 30.
-    # Fire it without forcing a date — should land at 30.
+    # Fire C1.rep without forcing a date — should land at 10 + ttr_1 = 30
+    # (delay law).
     fire(system, "C1.rep")
     assert is_state_active(target_aut, "rep")
     assert system.comp["C1"].flow_in_max.value() == 10.0
-    # Verify the firing date is ~30 (delay law from date 10 + ttr_1=20).
     assert system.currentTime() == pytest.approx(30.0)
 
     system.isimu_stop()

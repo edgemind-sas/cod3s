@@ -27,7 +27,8 @@ def fire(system, name, date=None):
 
 def test_rep_indep_failure_effects_applied():
     """failure_effects must be applied to the target when its automaton
-    transitions to the failure state."""
+    transitions to the failure state (delay-0 chain in the same step as the
+    ObjFM occurrence)."""
     system = PycSystem(name="SysRepIndepFx1")
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
@@ -48,14 +49,10 @@ def test_rep_indep_failure_effects_applied():
     # Initial value untouched.
     assert system.comp["C1"].flow_in_max.value() == 10.0
 
-    # Pulse: ObjFM.occ -> C1.occ -> ObjFM.rep (auto).
+    # Pulse: ObjFM.occ at date=10 -> chain to C1.occ + ObjFM.rep.
     fire(system, f"{fm_comp_name}.occ", date=10)
     fire(system, "C1.occ")
-    # After C1.occ, the failure_effects on the target's automaton apply.
-    assert system.comp["C1"].flow_in_max.value() == 0.0
-
-    fire(system, f"{fm_comp_name}.rep")
-    # ObjFM.rep does NOT touch target vars in pulse mode.
+    # After the chain, target.frun is in occ, failure_effects applied.
     assert system.comp["C1"].flow_in_max.value() == 0.0
 
     system.isimu_stop()
@@ -75,20 +72,20 @@ def test_rep_indep_repair_effects_applied():
         targets=["C1"],
         behaviour="external_rep_indep",
         failure_effects={"flow_in_max": 0.0},
-        repair_effects={"flow_in_max": 7.5},  # different from initial to be specific
+        repair_effects={"flow_in_max": 7.5},  # specific to verify it ran
         failure_param=0.1,
         repair_param=0.1,
     )
 
     system.isimu_start()
 
-    # Run a full cycle: failure -> auto-pulse -> repair.
+    # Drive the pulse cycle.
     fire(system, f"{fm_comp_name}.occ", date=10)
     fire(system, "C1.occ")
-    fire(system, f"{fm_comp_name}.rep")
     assert system.comp["C1"].flow_in_max.value() == 0.0
+
+    # Fire target.rep -> repair_effects applied.
     fire(system, "C1.rep")
-    # C1.rep applies repair_effects to the target.
     assert system.comp["C1"].flow_in_max.value() == 7.5
 
     system.isimu_stop()

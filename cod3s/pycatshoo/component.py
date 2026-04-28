@@ -1281,10 +1281,20 @@ class ObjFM(PycComponent):
 
             for target_set_idx in itertools.combinations(range(order_max), order):
 
-                # Prepare effects based on behaviour
-                if self.behaviour in ("external", "external_rep_indep"):
-                    # Centralized management: automata don't set variables directly
+                # Prepare effects based on behaviour.
+                # external: centralized management via the sensitive method below;
+                #   ObjFM transitions carry no direct effects on ctrl_vars.
+                # external_rep_indep: pulse model — ObjFM.occ sets ctrl=True
+                #   directly on the transition; ObjFM.rep does NOT touch ctrl
+                #   (target owns the reset on its own repair transition).
+                if self.behaviour == "external":
                     failure_effects_cur = []
+                    repair_effects_cur = []
+                elif self.behaviour == "external_rep_indep":
+                    failure_effects_cur = [
+                        {"var": self.ctrl_vars[self.targets[idx]], "value": True}
+                        for idx in target_set_idx
+                    ]
                     repair_effects_cur = []
                 else:  # internal behaviour
                     failure_effects_cur = []
@@ -1358,7 +1368,7 @@ class ObjFM(PycComponent):
                     target_comps=target_comps_cur, param=repair_var_params_cur
                 )
 
-                if self.behaviour == "external":
+                if self.behaviour in ("external", "external_rep_indep"):
 
                     def make_external_cond(
                         base_cond, targets, fm_name, required_state_name
@@ -1369,8 +1379,6 @@ class ObjFM(PycComponent):
                                 return False
                             # Check all targets are in required state
                             for t in targets:
-                                # We need to access the automaton safely
-                                # At simulation time, automata_d should be populated
                                 if fm_name not in t.automata_d:
                                     return False
                                 st = t.automata_d[fm_name].get_state_by_name(
@@ -1382,7 +1390,7 @@ class ObjFM(PycComponent):
 
                         return cond
 
-                    # Failure: targets must be in repair state (available)
+                    # Failure: targets must be in repair state (available).
                     failure_cond_cur = make_external_cond(
                         failure_cond_cur,
                         target_comps_cur,
@@ -1390,16 +1398,25 @@ class ObjFM(PycComponent):
                         self.repair_state,
                     )
 
-                    # Repair: targets must be in failure state (to be repaired)
-                    repair_cond_cur = make_external_cond(
-                        repair_cond_cur,
-                        target_comps_cur,
-                        self.fm_name,
-                        self.failure_state,
-                    )
+                    if self.behaviour == "external":
+                        # Repair: targets must be in failure state (to be repaired).
+                        repair_cond_cur = make_external_cond(
+                            repair_cond_cur,
+                            target_comps_cur,
+                            self.fm_name,
+                            self.failure_state,
+                        )
+                    # external_rep_indep: ObjFM repair is unconditional (pulse,
+                    # delay(0), see occ_law_21 override below).
+                    else:
+                        repair_cond_cur = lambda: True
 
-                # if fm_name_cur == "frun__cc_134":
-                # __import__("ipdb").set_trace()
+                # ObjFM repair law: instantaneous in external_rep_indep (pulse).
+                if self.behaviour == "external_rep_indep":
+                    objfm_repair_law = {"cls": "delay", "time": 0}
+                else:
+                    objfm_repair_law = self.set_occ_law_repair(repair_var_params_cur)
+
                 aut = self.add_aut2st(
                     name=aut_name_cur,
                     st1=repair_state_name_cur,
@@ -1413,7 +1430,7 @@ class ObjFM(PycComponent):
                     effects_st2_format="records",
                     trans_name_21_fmt="{st1}",
                     cond_occ_21=repair_cond_cur,
-                    occ_law_21=self.set_occ_law_repair(repair_var_params_cur),
+                    occ_law_21=objfm_repair_law,
                     occ_interruptible_21=True,
                     effects_st1=repair_effects_cur,
                     effects_st1_format="records",
@@ -1428,18 +1445,21 @@ class ObjFM(PycComponent):
                             (aut, failure_state_name_cur)
                         )
 
-        # Centralized control for external behaviours
-        if self.behaviour in ("external", "external_rep_indep"):
+        # Centralized ctrl_var management for `external` only.
+        # `external_rep_indep` does NOT use this: ObjFM.occ sets ctrl=True via
+        # a direct effect on the transition (pulse model), and target.rep clears
+        # it via the target automaton's own repair effect. Re-introducing the
+        # OR-based sensitive method here would reset ctrl_var as soon as the
+        # ObjFM pulses back to rep, breaking the model.
+        if self.behaviour == "external":
             for (
                 target_name,
                 impacting_info,
             ) in self.target_impacting_automata.items():
                 ctrl_var = self.ctrl_vars[target_name]
 
-                # Create the centralized sensitive method for this target
                 def make_ctrl_method(cv, info_list):
                     def ctrl_method():
-                        # Determine if any impacting automaton is in failure state
                         should_be_failed = any(
                             a.get_state_by_name(st_name)._bkd.isActive()
                             for a, st_name in info_list
@@ -1452,12 +1472,25 @@ class ObjFM(PycComponent):
                 method = make_ctrl_method(ctrl_var, impacting_info)
                 method_name = f"ctrl_sync__{self.name()}_{target_name}"
 
-                # Register to all impacting automata
                 for aut, _ in impacting_info:
                     aut._bkd.addSensitiveMethod(method_name, method)
 
-                # Also add as start method to initialize value
                 self.addStartMethod(method_name, method)
+
+        # In external_rep_indep, the target's self-repair uses the order-1
+        # repair law. If that law is inactive (mu_1 = 0 / ttr_1 unset) the
+        # targets would never repair — which is almost certainly a config
+        # mistake. Raise a clear error rather than silently produce a
+        # one-shot model.
+        if self.behaviour == "external_rep_indep":
+            if self.repair_var_params_order1 is None or not self.is_occ_law_repair_active(
+                self.repair_var_params_order1
+            ):
+                raise ValueError(
+                    f"behaviour='external_rep_indep' requires the order-1 "
+                    f"repair law to be active for FM '{self.fm_name}'. "
+                    f"Provide a non-zero repair_param for order 1."
+                )
 
         # Create automata in target components for external behaviours
         if self.behaviour in ("external", "external_rep_indep"):
@@ -1513,9 +1546,14 @@ class ObjFM(PycComponent):
                 return ctrl_var.value() is False
 
         else:  # external_rep_indep
-            # TODO: No ! not always ready, in fact we have to use the initial repair_cond be applied the component
-            def rep_condition():
-                return True
+            # Reuse the user's original repair_cond on this target alone.
+            # We pass repair_var_params_order1 because the target's repair
+            # law is the order-1 law (mu_1 / ttr_1) — keeps the cond and the
+            # law referring to the same parameters.
+            rep_condition = self.get_repair_cond(
+                target_comps=[target_comp],
+                param=self.repair_var_params_order1,
+            )
 
         # Resolve and Prepare failure effects
         final_failure_effects = []
@@ -1539,12 +1577,7 @@ class ObjFM(PycComponent):
                 continue
             final_repair_effects.append({"var": comp_var, "value": value})
 
-        # Effects when repairing (for external_rep_indep)
-        if self.behaviour == "external_rep_indep":
-            # Reset ctrl to False to allow new failure
-            final_repair_effects.append({"var": ctrl_var, "value": False})
-
-        target_comp.add_aut2st(
+        target_aut = target_comp.add_aut2st(
             name=self.fm_name,
             st1=self.repair_state,
             st2=self.failure_state,
@@ -1563,6 +1596,25 @@ class ObjFM(PycComponent):
             effects_st1_format="records",
             step=self.step,
         )
+
+        # In external_rep_indep, the ObjFM does NOT reset ctrl_var on its own
+        # repair (pulse model). The target clears ctrl_var when its automaton
+        # transitions back to the repair state. We use a sensitive method on
+        # the target's automaton (NOT on the variable) to avoid the cascading
+        # re-evaluation that would happen if ctrl_var=False was placed in
+        # effects_st1 (which registers the effect on the variable itself,
+        # creating a conflict with the ObjFM.occ effect at simulation start).
+        if self.behaviour == "external_rep_indep":
+            rep_state_bkd = target_aut.get_state_by_name(self.repair_state)._bkd
+
+            def reset_ctrl_on_target_repair():
+                if rep_state_bkd.isActive() and ctrl_var.value() is True:
+                    ctrl_var.setValue(False)
+
+            target_aut._bkd.addSensitiveMethod(
+                f"reset_ctrl__{self.fm_name}__{target_name}",
+                reset_ctrl_on_target_repair,
+            )
 
     def get_failure_cond(self, target_comps, **kwrds):
 

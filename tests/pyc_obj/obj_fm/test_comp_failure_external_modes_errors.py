@@ -46,6 +46,8 @@ def test_external_name_conflict_raises():
         st1="rep",
         st2="occ",
         init_st2=False,
+        occ_law_12={"cls": "delay", "time": 0},
+        occ_law_21={"cls": "delay", "time": 0},
     )
 
     with pytest.raises(ValueError, match="frun"):
@@ -70,6 +72,8 @@ def test_external_rep_indep_name_conflict_raises():
         st1="rep",
         st2="occ",
         init_st2=False,
+        occ_law_12={"cls": "delay", "time": 0},
+        occ_law_21={"cls": "delay", "time": 0},
     )
 
     with pytest.raises(ValueError, match="frun"):

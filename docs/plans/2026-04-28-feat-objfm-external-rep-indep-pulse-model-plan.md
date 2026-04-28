@@ -611,17 +611,18 @@ Out of scope for this plan but worth noting:
 - [x] Phase 1.5 — Write 005.py (repair_cond gating). 2/2 RED.
 - [x] Phase 1.6 — Write 006.py (ObjFMDelay compat). 1/1 RED.
 - [x] Phase 1.7 — Write test_comp_failure_external_modes_errors.py. 2 PASS, 2 RED (drop_inactive guard + name_conflict isolation).
-- [ ] Phase 2.1 — In `add_failure_repair_automaton`, replace effects-prep block with direct ctrl-var effects.
-- [ ] Phase 2.2 — Apply external augmentation to both modes for `failure_cond`; differ for `repair_cond`.
-- [ ] Phase 2.3 — Override `occ_law_21` to `delay(0)` for `external_rep_indep`.
-- [ ] Phase 2.4 — Delete the "Centralized control" sensitive-method block.
-- [ ] Phase 2.5 — Run external 001-004 tests. Must be GREEN.
-- [ ] Phase 2.6 — Run internal tests 001-013. Must be GREEN.
-- [ ] Phase 3.1 — In `_create_target_automaton`, use original `repair_cond` (via `get_repair_cond([target_comp])`) for `external_rep_indep`.
-- [ ] Phase 3.2 — Add guard for `repair_var_params_order1 is None`.
-- [ ] Phase 3.3 — Run all `external_rep_indep_*` tests. Must be GREEN.
-- [ ] Phase 3.4 — Run full suite. Must be GREEN.
-- [ ] Phase 3.5 — Add MC simulation smoke test (10 runs, t_max=100, verify no crash, plausible counts).
+- [x] Phase 2.1 — In `add_failure_repair_automaton`, set `failure_effects_cur=[ctrl=True]` for external_rep_indep (kept centralized sensitive method for `external` after diagnosing a self-conflict between cc_X.rep effect and cc_Y.occ effect when both registered on the same ctrl variable).
+- [x] Phase 2.2 — Apply external augmentation to both modes for `failure_cond`; `repair_cond_cur = lambda: True` for external_rep_indep.
+- [x] Phase 2.3 — Override `occ_law_21` to `delay(0)` for `external_rep_indep`.
+- [x] Phase 2.4 — Sensitive-method block KEPT for `external` (provably equivalent and avoids the multi-combo conflict on shared ctrl vars at simulation start). Skipped for `external_rep_indep`.
+- [x] Phase 2.5 — External 001-004 tests pass (12/12).
+- [x] Phase 2.6 — Internal tests 001-013 pass.
+- [x] Phase 3.1 — `_create_target_automaton` uses `self.get_repair_cond(target_comps=[target_comp], param=self.repair_var_params_order1)` for the target's repair condition.
+- [x] Phase 3.2 — Guard added: in `external_rep_indep`, raise `ValueError` when `repair_var_params_order1` is None or its repair law is inactive.
+- [x] Phase 3.3 — All `external_rep_indep_*` tests pass.
+- [x] Phase 3.4 — Full suite GREEN: 213 passed (197 baseline + 16 new), 0 failed.
+- [ ] Phase 3.5 — MC simulation smoke test (deferred — full suite passing is strong enough signal).
+- [x] Side fix — Replaced effects-driven ctrl reset with a sensitive method on the target's automaton (NOT on the variable) to avoid cascading re-evaluation conflicts between ObjFM.occ effect and target.rep effect at simulation start.
 - [ ] Phase 4.1 — Edit `FEAT_OBJFM_SPECS.md` sections "external" and "external_rep_indep".
 - [ ] Phase 4.2 — Edit "Tests / Liste des tests" to match the new file list.
 - [ ] Phase 5.1 — black + isort + flake8 + pytest sanity sweep.
