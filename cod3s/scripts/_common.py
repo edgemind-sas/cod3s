@@ -99,7 +99,7 @@ def build_system_from_model(
     model_path: Path,
     namespace: Optional[dict] = None,
     logger: Any = None,
-):
+) -> Any:
     """Build and populate a system from a YAML model file.
 
     The YAML must follow the same layout as the one consumed by

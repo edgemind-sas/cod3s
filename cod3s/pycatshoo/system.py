@@ -869,18 +869,16 @@ class PycSystem(pyc.CSystem):
         self.isimu_sequence = PycSequence()
 
     def isimu_start_cli(self):
-        """Start an interactive CLI simulation session"""
-        from .isimu_cli import COD3SISimuCLI
+        """Open the interactive Textual TUI on this system.
 
-        # Start interactive simulation
-        self.isimu_start()
+        Equivalent to running ``cod3s-isimu`` with this system as input.
+        Requires the optional ``[isimu]`` extra (``pip install cod3s[isimu]``).
+        """
+        from cod3s.pycatshoo.isimu.app import run_isimu
 
-        # Start CLI
-        cli = COD3SISimuCLI(self)
         try:
-            cli.cmdloop()
+            run_isimu(self)
         except KeyboardInterrupt:
-            print("\nReceived keyboard interrupt")
             self.isimu_stop()
 
     def isimu_active_transitions(self, **kwargs):
