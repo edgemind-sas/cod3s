@@ -64,7 +64,8 @@ async def test_fireable_panel_has_data_table() -> None:
         table = app.query_one("#fireable-table", DataTable)
         # Table is empty when no engine is attached, but the columns are set.
         assert table.row_count == 0
-        assert len(table.columns) == 5
+        # 6 columns: idx, comp, transition, src→tgt, end_time, ★
+        assert len(table.columns) == 6
 
 
 async def test_panels_render_synthetic_state_without_crashing() -> None:

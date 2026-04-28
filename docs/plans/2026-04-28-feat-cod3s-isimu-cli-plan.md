@@ -654,11 +654,11 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - [x] 4.5 — Validation gate Phase 4 : `pytest tests/` 251 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean.
 
 ### Phase 5 — Highlights, filtre, coloration
-- [ ] 5.1 — Highlight ★ "fires together" sur navigation curseur fireable.
-- [ ] 5.2 — Filtre live `Input.Changed` sur `ComponentsPanel`.
-- [ ] 5.3 — Coloration conditionnelle des cellules variables (3 classes).
-- [ ] 5.4 — Tests `tests/isimu/test_highlights.py`.
-- [ ] 5.5 — Validation gate Phase 5.
+- [x] 5.1 — Marqueur ★ "fires together" : 6e colonne `★` du DataTable, mise à jour via `on_data_table_row_highlighted` qui appelle `group_fires_together` sur le cache `state.fireable` (avec mapping `display_row → original_idx` pour gérer les slots `None`).
+- [x] 5.2 — Filtre live `ComponentsPanel.on_input_changed` : re-render du Tree à chaque keystroke. State cached dans le panel pour re-render sans réinterroger l'engine.
+- [x] 5.3 — Coloration `_format_var` : `dim` si égal à initial, `orange3` + `(init: …)` si ≠ initial mais inchangé au dernier pas, `bold red` avec `previous → current` si changé au dernier pas. Implémentée en Phase 3, validée par 3 tests dédiés en Phase 5.4.
+- [x] 5.4 — Tests `tests/isimu/test_highlights.py` (8 tests) : ★ sur peers, ★ suit le curseur, gestion des slots `None`, filtre live "pump", filtre vidé restaure tout, 3 états de coloration validés sur `_format_var`.
+- [x] 5.5 — Validation gate Phase 5 : `pytest tests/` 259 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean (utilisation de `textual.coordinate.Coordinate` au lieu de tuples pour `update_cell_at`).
 
 ### Phase 6 — Actions avancées
 - [ ] 6.1 — `ExportModal`, `action_open_export_modal`, écriture CSV+JSON.
