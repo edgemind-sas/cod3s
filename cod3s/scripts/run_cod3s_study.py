@@ -8,45 +8,20 @@ des simulations COD3S basées sur des fichiers de configuration YAML.
 
 import Pycatshoo as Pyc
 import cod3s
-import sys
 from pathlib import Path
 import os
 import datetime
-import yaml
 import argparse
-import logging
-import importlib.util
 
+from cod3s.scripts._common import (
+    build_system_from_model,
+    import_module_from_path,
+    load_study_specs,
+)
 
-def import_module_from_path(import_path, logger=None):
-    """
-    Import a module from a given file path.
-    
-    Args:
-        import_path (Path): Path to the module file
-        logger: Optional logger for info messages
-    
-    Returns:
-        str: Success message with the imported file path
-    """
-    # Add the directory to Python path if not already there
-    import_dir = import_path.parent
-    if str(import_dir) not in sys.path:
-        sys.path.insert(0, str(import_dir))
-
-    # Import the module
-    module_name = import_path.stem
-    spec = importlib.util.spec_from_file_location(module_name, import_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-
-    # Import all public names from the module into global namespace
-    for name in dir(module):
-        if not name.startswith("_"):
-            globals()[name] = getattr(module, name)
-
-    return f"Dynamically imported: {import_path}"
+# Re-export for backward compatibility: existing tests / scripts may import
+# this symbol from ``cod3s.scripts.run_cod3s_study``.
+__all__ = ["import_module_from_path", "main"]
 
 
 def main():
@@ -120,71 +95,16 @@ Examples:
             "COD3SRunStudy", level_name=args_cli.log_level.upper()
         )
 
-    # Load model specs YAML file
     MODEL_SPECS_FILENAME = Path(args_cli.model)
-    if not MODEL_SPECS_FILENAME.exists():
-        raise FileNotFoundError(
-            f"Model specification file '{MODEL_SPECS_FILENAME}' not found!"
-        )
-
-    with open(MODEL_SPECS_FILENAME, "r") as file:
-        model_specs = yaml.safe_load(file)
-
-    if logger:
-        logger.info2(f"Loaded model specifications from '{MODEL_SPECS_FILENAME}'")
-
-    # Dynamically import files specified in model specs
-    import_files = model_specs.get("imports", [])
-    if import_files:
-        for import_file in import_files:
-            import_path = Path(import_file).resolve()
-
-            if import_path.exists():
-                success_msg = import_module_from_path(import_path, logger)
-                if logger:
-                    logger.info(success_msg)
-            else:
-                # Try to import from the directory where the MODEL_SPECS_FILENAME stands
-                model_dir_import_path = MODEL_SPECS_FILENAME.parent / import_file
-                if model_dir_import_path.exists():
-                    success_msg = import_module_from_path(model_dir_import_path, logger)
-                    if logger:
-                        logger.info(f"Dynamically imported from model directory: {import_file}")
-                else:
-                    # File not found in both locations, stop the script with error
-                    error_msg = f"Import file not found: {import_file} (searched in current directory and model directory)"
-                    if logger:
-                        logger.error(error_msg)
-                    else:
-                        print(f"Error: {error_msg}")
-                    sys.exit(1)
-
-    system_specs = model_specs.get("system", {})
-    # Get system class from model specs or use default
-    system_cls_name = system_specs.pop("python_class", "PycSystem")
-
-    # Try to get the system class from globals (loaded via dynamic imports)
-    if system_cls_name in globals():
-        system_cls_bkd = globals()[system_cls_name]
-    else:
-        raise NameError(
-            f"System class '{system_cls_name}' not found. Make sure to import the file containing this class using imports key in the YAML model file."
-        )
-
-    # Use user-specified filename
     STUDY_SPECS_FILENAME = Path(args_cli.study_specs)
-    # Check if file exists and read failure modes from YAML file
-    study_specs_data = {}
-    if not STUDY_SPECS_FILENAME.exists():
-        if logger:
-            logger.warning(
-                f"Study specifications file '{STUDY_SPECS_FILENAME}' not found!"
-            )
-    else:
-        with open(STUDY_SPECS_FILENAME, "r") as file:
-            study_specs_data = yaml.safe_load(file)
-        if logger:
-            logger.info2(f"Loaded study specifications from '{STUDY_SPECS_FILENAME}'")
+
+    # Load + populate system from the YAML model. ``namespace=globals()`` keeps
+    # backward compatibility: any class brought in by the model's ``imports:``
+    # remains accessible from this module's globals after loading.
+    system = build_system_from_model(
+        MODEL_SPECS_FILENAME, namespace=globals(), logger=logger
+    )
+    study_specs_data = load_study_specs(STUDY_SPECS_FILENAME, logger=logger)
 
     # Determine study result directory
     if args_cli.results_dir:
@@ -200,21 +120,7 @@ Examples:
 
     if logger:
         logger.info2(f"Using {RESULTS_DIR} to store results")
-
-    if logger:
         logger.info1(f"PyCATSHOO Version: {Pyc.ILogManager.glLogManager().version()}")
-
-    system = system_cls_bkd(**system_specs)
-    if logger:
-        logger.info1(f"{system.__class__.__name__} {system.name()} created")
-
-    if logger:
-        logger.info1("Add components")
-    system.add_components(model_specs.get("components", []), logger=logger)
-    if logger:
-        logger.info1("Add connections")
-    system.add_connections(model_specs.get("connections", []), logger=logger)
-    if logger:
         logger.info1("Add failure modes")
     system.add_failure_modes(study_specs_data.get("failure_modes", []), logger=logger)
     if logger:
