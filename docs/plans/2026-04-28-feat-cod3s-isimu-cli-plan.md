@@ -638,13 +638,13 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - [x] 2.6 — Validation gate Phase 2 : full pytest 238 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean (les 100+ erreurs résiduelles sont pré-existantes dans `cod3s/pycatshoo/system.py` et `sequence.py`).
 
 ### Phase 3 — Squelette Textual
-- [ ] 3.1 — Créer `app.py`, `panels.py`, `state.py`, `styles.tcss`.
-- [ ] 3.2 — `compose()` rend les 4 panels statiques avec données initiales.
-- [ ] 3.3 — `BINDINGS` minimal (`q`, `?`).
-- [ ] 3.4 — `on_unmount()` cleanup PyCATSHOO.
-- [ ] 3.5 — Test `tests/isimu/test_app_layout.py` avec `App.run_test()`.
-- [ ] 3.6 — Smoke test manuel `textual run --dev`.
-- [ ] 3.7 — Validation gate Phase 3.
+- [x] 3.1 — Créer `app.py`, `panels.py`, `state.py`, `styles.tcss` + extras Textual installés via `uv sync --extra isimu` (Textual 8.2.4, pytest-asyncio 1.3.0).
+- [x] 3.2 — `compose()` rend les 4 panels (FireablePanel, ComponentsPanel, LastDeltaPanel, HistoryPanel) avec layout grid 2×2 ; `refresh_from_state(ISimuState)` pousse les données.
+- [x] 3.3 — `BINDINGS` minimal : `q`/`ctrl+c` quit, `?` help (placeholder vers command palette).
+- [x] 3.4 — `on_unmount()` appelle `engine.stop()` (terminate_session délégué au caller pour ne pas bloquer les tests).
+- [x] 3.5 — Tests `tests/isimu/test_app_layout.py` (6 tests `Pilot` async) + ajustement `tests/pytest.ini` avec `asyncio_mode = auto`.
+- [x] 3.6 — Smoke test manuel via `App.run_test()` confirme les 4 panels mountés avec leur `BORDER_TITLE`.
+- [x] 3.7 — Validation gate Phase 3 : `pytest tests/` 244 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean.
 
 ### Phase 4 — Wiring engine ↔ TUI
 - [ ] 4.1 — `action_fire_selected` + worker thread.
