@@ -647,11 +647,11 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - [x] 3.7 — Validation gate Phase 3 : `pytest tests/` 244 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean.
 
 ### Phase 4 — Wiring engine ↔ TUI
-- [ ] 4.1 — `action_fire_selected` + worker thread.
-- [ ] 4.2 — `action_step_backward`, `action_reset` (modale confirm).
-- [ ] 4.3 — Reactive watchers déclenchent `panel.refresh_from_state()`.
-- [ ] 4.4 — Tests `tests/isimu/test_app_interaction.py`.
-- [ ] 4.5 — Validation gate Phase 4.
+- [x] 4.1 — Fire via `on_data_table_row_selected` + `@work(thread=True, exclusive=True, group="engine")` worker `_fire_worker(idx)`. Lit l'index original depuis la colonne 0 du DataTable (préserve les slots `None` de `isimu_fireable_transitions`).
+- [x] 4.2 — `action_step_backward` (`b`) et `action_reset` (`r`) avec workers dédiés. Pas de modale de confirmation pour le MVP — peut être ajoutée dans une itération de polissage.
+- [x] 4.3 — `refresh_panels()` rappelé depuis le worker via `call_from_thread`. Pattern explicite (pas de `reactive` Textual) : suffisant et plus testable.
+- [x] 4.4 — Tests `tests/isimu/test_app_interaction.py` (7 tests) avec un `FakeEngine` enregistrant tous les appels — fast, déterministe, sans PyCATSHOO. Couvre : on_mount→start, on_unmount→stop, Enter→replan+step_forward, navigation curseur (down→Enter passe l'index 1), `b`→step_backward, `r`→reset, no-op si engine=None.
+- [x] 4.5 — Validation gate Phase 4 : `pytest tests/` 251 passed + 26 skipped ; `black --check` clean ; `flake8` clean ; `mypy cod3s/pycatshoo/isimu/` clean.
 
 ### Phase 5 — Highlights, filtre, coloration
 - [ ] 5.1 — Highlight ★ "fires together" sur navigation curseur fireable.

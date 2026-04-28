@@ -16,9 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Footer, Header
+from textual.widgets import DataTable, Footer, Header
 
 from cod3s.pycatshoo.isimu.engine import ISimuEngine
 from cod3s.pycatshoo.isimu.panels import (
@@ -45,12 +46,12 @@ class ISimuApp(App[None]):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("ctrl+c", "quit", "Quit", show=False),
+        Binding("b", "step_backward", "Back"),
+        Binding("r", "reset", "Reset"),
         Binding("?", "help", "Help"),
     ]
 
-    def __init__(
-        self, engine: Optional[ISimuEngine] = None, **kwargs: Any
-    ) -> None:
+    def __init__(self, engine: Optional[ISimuEngine] = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._engine = engine
 
@@ -86,6 +87,75 @@ class ISimuApp(App[None]):
         # Until the help screen lands, surface the bindings list via the
         # built-in command palette.
         self.action_command_palette()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Fire the highlighted transition when the user presses Enter on a
+        row of the fireable transitions table."""
+        if self._engine is None:
+            return
+        if getattr(event.control, "id", None) != "fireable-table":
+            return
+        table = event.control
+        if table.row_count == 0:
+            return
+        cursor_row = event.cursor_row
+        if cursor_row < 0 or cursor_row >= table.row_count:
+            return
+        idx_str = table.get_row_at(cursor_row)[0]
+        try:
+            idx = int(idx_str)
+        except (TypeError, ValueError):
+            return
+        self._fire_worker(idx)
+
+    def action_step_backward(self) -> None:
+        if self._engine is None:
+            return
+        self._back_worker()
+
+    def action_reset(self) -> None:
+        if self._engine is None:
+            return
+        self._reset_worker()
+
+    # ------------------------------------------------------------------
+    # Workers
+    # ------------------------------------------------------------------
+    @work(thread=True, exclusive=True, group="engine")
+    def _fire_worker(self, idx: int) -> None:
+        """Force-fire the transition at ``idx`` in the active list.
+
+        The engine is invoked from a worker thread so a slow PyCATSHOO
+        ``stepForward`` does not freeze the UI. Panel refresh is scheduled
+        back on the main thread via ``call_from_thread``.
+        """
+        engine = self._engine
+        if engine is None:
+            return
+        try:
+            engine.replan(trans_id=idx)
+        except Exception:
+            # Re-planning may fail (e.g. transition no longer active);
+            # fall through to a plain step_forward.
+            pass
+        engine.step_forward()
+        self.call_from_thread(self.refresh_panels)
+
+    @work(thread=True, exclusive=True, group="engine")
+    def _back_worker(self) -> None:
+        engine = self._engine
+        if engine is None:
+            return
+        engine.step_backward()
+        self.call_from_thread(self.refresh_panels)
+
+    @work(thread=True, exclusive=True, group="engine")
+    def _reset_worker(self) -> None:
+        engine = self._engine
+        if engine is None:
+            return
+        engine.reset()
+        self.call_from_thread(self.refresh_panels)
 
     # ------------------------------------------------------------------
     # Rendering
