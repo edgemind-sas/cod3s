@@ -2,12 +2,14 @@
 
 Two ObjFMs cohabit a single ``PycSystem``:
 
-* an ``ObjFMExp`` over **three** components (C1, C2, C3) producing three
-  individual exponential failure transitions (``cc_1``, ``cc_2``,
-  ``cc_3``);
-* an ``ObjFMDelay`` over **two** components (D1, D2) producing a single
-  deterministic common-cause failure transition (``cc_12`` with
-  ``ttf = 10``).
+* an ``ObjFMExp`` over **three** components (C1, C2, C3) in ``internal``
+  mode, producing three independent exponential failure transitions
+  (``cc_1``, ``cc_2``, ``cc_3``) — one per component;
+* an ``ObjFMDelay`` over **two** components (D1, D2) in **``external``**
+  mode, producing one deterministic common-cause failure transition
+  (``cc_12`` with ``ttf = 10``). Two extra individual orders ``cc_1``
+  and ``cc_2`` exist but their ``ttf`` is parked at 99999 so they never
+  fall inside ``end_time_bound`` in the demo window.
 
 The intent is to exercise the way ``cod3s-isimu`` surfaces fireable
 transitions when **non-deterministic** (exp) and **deterministic** (delay)
@@ -15,6 +17,17 @@ laws coexist. ``isimu_fireable_transitions``
 (``cod3s/pycatshoo/system.py:899``) handles this correctly; this demo is
 the playground to verify the TUI faithfully reflects what that function
 returns.
+
+Why ``external`` for the delay ObjFM? In ``internal`` mode, **multiple
+overlapping orders** (``cc_1`` / ``cc_2`` / ``cc_12``) would each register
+a sensitive method on ``D1.working`` / ``D2.working`` enforcing their
+own ``failure_effects`` / ``repair_effects`` whenever those variables
+change. As soon as ``cc_12.occ`` flips ``D1=False``, ``cc_1.rep`` (still
+active in its rep state) immediately flips it back to ``True``, which
+re-triggers ``cc_12.occ``'s effect, which… loops forever inside
+``stepForward``. ``external`` mode delegates the actual variable update
+to a per-target automaton mediated by a ``ctrl_var``, so the multiple
+ObjFM combos cooperate via an ``OR`` instead of fighting.
 
 How to run
 ----------
@@ -52,9 +65,13 @@ System layout
 Component     ObjFM               Transitions
 ============  ==================  =====================================
 C1, C2, C3    CX__fm_exp          cc_1, cc_2, cc_3 (each individual,
-                                  exp, λ = 0.05)
-D1, D2        DX__fm_dly          cc_12 only (delay, ttf = 10).
-                                  cc_1 and cc_2 individual orders are
+                                  exp, λ = 0.05). Behaviour: internal.
+D1, D2        DX__fm_dly          cc_12 (delay, ttf = 10) on the ObjFM
+                                  side, plus a target automaton on D1
+                                  and on D2 (delay(0) gated by
+                                  ``ctrl_fm_dly_D1`` / ``…_D2``).
+                                  Behaviour: external. cc_1 and cc_2
+                                  individual orders exist but are
                                   parked at ttf = 99999 so they stay
                                   ``end_time = 99999`` and never fall
                                   inside ``end_time_bound``.
@@ -90,9 +107,16 @@ when the backend ``endTime`` is ``inf``. The component flips
 
 **Pressing Enter on the delay(10) at t = 0**
 
-The simulator advances to t = 10 and fires ``cc_12``. Both D1 and D2
-flip ``working=False``. The delay's repair transition becomes active
-(``ttr = 5``, end_time = 15).
+The simulator advances to t = 10 and fires the ObjFM's ``cc_12.occ``.
+Because the behaviour is ``external``, this **does not** flip
+``D1.working`` / ``D2.working`` directly — it sets ``ctrl_fm_dly_D1``
+and ``ctrl_fm_dly_D2`` to ``True``. The fireable panel then shows two
+new chained transitions (``D1.fm_dly.occ`` and ``D2.fm_dly.occ``) at
+``end_time = 10`` (delay(0) from when ``ctrl_var`` flipped). They share
+the ★ "fires together" marker. Press Enter on either to chain the two
+target ``occ`` transitions in the same step — only then does
+``D1.working`` / ``D2.working`` flip to ``False``. ObjFM ``cc_12.rep``
+is now active at ``end_time = 10 + 5 = 15``.
 
 **Replanning an exp to t = 12, then stepping**
 
@@ -202,6 +226,13 @@ def build_system() -> cod3s.PycSystem:
     # ttf is 0 (in fact ttf=0 means "fire immediately"), so individual
     # cc_1/cc_2 are parked at ttf = 99999 to keep their end_time outside
     # ``end_time_bound`` until something explicitly plans them.
+    #
+    # ``behaviour="external"`` is mandatory here. In ``internal`` mode,
+    # the cc_1, cc_2, cc_12 sensitive methods would all register on
+    # D1.working / D2.working and fight each other (cc_1.rep flips
+    # D1=True ↔ cc_12.occ flips D1=False ↔ infinite loop in stepForward).
+    # ``external`` mode mediates the variable update through a per-target
+    # automaton + ctrl_var, so the three combos cooperate via an OR.
     # ------------------------------------------------------------------
     for comp_name in ("D1", "D2"):
         system.add_component(name=comp_name, cls="Equipment")
@@ -209,7 +240,7 @@ def build_system() -> cod3s.PycSystem:
         cls="ObjFMDelay",
         fm_name="fm_dly",
         targets=["D1", "D2"],
-        behaviour="internal",
+        behaviour="external",
         failure_effects={"working": False},
         repair_effects={"working": True},
         # failure_param[0] = order-1 ttf (cc_1 and cc_2 individually)
