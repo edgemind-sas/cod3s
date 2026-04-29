@@ -1,0 +1,50 @@
+/* cod3s-isimu — Textual CSS layout
+ *
+ * 2×2 grid: fireable transitions (top-left) and components/variables
+ * (top-right) get the larger top row; last-Δ (bottom-left) and history
+ * (bottom-right) share the shorter bottom row.
+ */
+
+Screen {
+    layout: grid;
+    grid-size: 2 2;
+    grid-columns: 1fr 1fr;
+    grid-rows: 2fr 1fr;
+    grid-gutter: 0 0;
+}
+
+#panel-fireable {
+    border: round $accent;
+    padding: 0 1;
+}
+
+#panel-components {
+    border: round $secondary;
+    padding: 0 1;
+}
+
+#panel-last-delta {
+    border: round $warning;
+    padding: 0 1;
+}
+
+#panel-history {
+    border: round $primary;
+    padding: 0 1;
+}
+
+#components-filter {
+    margin-bottom: 1;
+}
+
+DataTable {
+    height: 1fr;
+}
+
+Tree {
+    height: 1fr;
+}
+
+RichLog {
+    height: 1fr;
+}

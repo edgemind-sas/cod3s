@@ -52,6 +52,7 @@ nav:
     - Components: user-guide/components.md
     - Systems: user-guide/systems.md
     - Simulation: user-guide/simulation.md
+    - Interactive Simulation: user-guide/interactive-simulation.md
     - Indicators: user-guide/indicators.md
     - PyCATSHOO Integration: user-guide/pycatshoo-integration.md
   - Tutorials:

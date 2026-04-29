@@ -44,6 +44,15 @@ Issues = "https://github.com/edgemind-sas/cod3s/issues"
 
 [project.scripts]
 run-cod3s-study = "cod3s.scripts.run_cod3s_study:main"
+cod3s-isimu = "cod3s.scripts.run_cod3s_isimu:main"
+
+[project.optional-dependencies]
+# Interactive simulator (cod3s-isimu) — Textual TUI dependencies.
+# Install with: pip install -e ".[isimu]"
+isimu = [
+    "textual>=8.2,<9",
+    "pytest-asyncio>=0.23",
+]
 
 [tool.uv]
 dev-dependencies = [
@@ -112,6 +121,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --strict-markers"
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
