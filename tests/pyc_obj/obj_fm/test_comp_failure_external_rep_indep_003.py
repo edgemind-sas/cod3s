@@ -7,7 +7,7 @@ failed target, while combos limited to repaired targets remain available.
 
 Note: in isimu mode, firing one delay(0) transition chains all other fireable
 delay(0) transitions at the same time. So firing the ObjFM combo at date=t
-followed by ANY of its target transitions causes the full pulse (all targets
+followed by ANY of its target transitions causes the full trigger (all targets
 + ObjFM repair) to complete in a single step_forward.
 """
 import pytest
@@ -40,7 +40,7 @@ def fire(system, name, date=None):
 
 
 def test_rep_indep_combo_order2_independent_repair():
-    """cc_12 triggers C1 and C2 (and ObjFM auto-pulses); C1 self-repairs alone;
+    """cc_12 triggers C1 and C2 (and ObjFM auto-triggers); C1 self-repairs alone;
     ObjFM combos that include C2 are still blocked until C2 also repairs."""
     system = PycSystem(name="SysRepIndepO2Indep")
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
@@ -78,24 +78,24 @@ def test_rep_indep_combo_order2_independent_repair():
 
     # Fire any of the chained delay(0) transitions: the simulator processes
     # all fireable delay(0) at this date. After this single step:
-    # - C1.frun.occ done, C2.frun.occ done, ObjFM.cc_12.rep done (auto-pulse).
+    # - C1.frun.occ done, C2.frun.occ done, ObjFM.cc_12.rep done (auto-trigger).
     fire(system, "C1.occ")
     assert is_state_active(c1_aut, "occ")
     assert is_state_active(c2_aut, "occ")
-    # ObjFM has pulsed back to rep.
+    # ObjFM has triggered back to rep.
     assert is_state_active(fm_aut, "rep__cc_12")
     # ctrl_vars stay True (target owns reset).
     assert fm.ctrl_vars["C1"].value() is True
     assert fm.ctrl_vars["C2"].value() is True
 
     # No combo can fire again while any target is still in occ.
-    after_pulse = fireable_names(system)
-    assert f"{fm_comp_name}.occ__cc_1" not in after_pulse
-    assert f"{fm_comp_name}.occ__cc_2" not in after_pulse
-    assert f"{fm_comp_name}.occ__cc_12" not in after_pulse
+    after_trigger = fireable_names(system)
+    assert f"{fm_comp_name}.occ__cc_1" not in after_trigger
+    assert f"{fm_comp_name}.occ__cc_2" not in after_trigger
+    assert f"{fm_comp_name}.occ__cc_12" not in after_trigger
     # Target self-repairs are fireable (their own mu_1 law).
-    assert "C1.rep" in after_pulse
-    assert "C2.rep" in after_pulse
+    assert "C1.rep" in after_trigger
+    assert "C2.rep" in after_trigger
 
     # C1 self-repairs alone (with explicit date to avoid chaining C2.rep).
     fire(system, "C1.rep", date=20)
@@ -145,7 +145,7 @@ def test_rep_indep_partial_state_blocks_higher_order_combo():
 
     system.isimu_start()
 
-    # Trigger cc_2 (C2 only) — pulse chains C2.occ + ObjFM.cc_2.rep.
+    # Trigger cc_2 (C2 only) — trigger chains C2.occ + ObjFM.cc_2.rep.
     fire(system, f"{fm_comp_name}.occ__cc_2", date=10)
     fire(system, "C2.occ")
 

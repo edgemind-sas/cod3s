@@ -1,15 +1,15 @@
 ---
-title: feat — Finalize ObjFM external_rep_indep pulse model and refactor ctrl_var management
+title: feat — Finalize ObjFM external_rep_indep trigger model and refactor ctrl_var management
 type: feat
 date: 2026-04-28
 brainstorm: docs/brainstorms/2026-04-28-objfm-external-modes-brainstorm.md
 ---
 
-# feat: Finalize ObjFM `external_rep_indep` pulse model and refactor `ctrl_var` management
+# feat: Finalize ObjFM `external_rep_indep` trigger model and refactor `ctrl_var` management
 
 ## Overview
 
-Finalize the implementation of the `behaviour="external_rep_indep"` mode of `ObjFM` based on the **pulse model** decided during the 2026-04-28 brainstorm. As a side effect, refactor the `ctrl_var` management mechanism (currently sensitive method) into **direct effects on transitions**, unifying the implementation of both `external` and `external_rep_indep` modes. Add the test coverage that is missing today (the `external_rep_indep` mode currently has zero tests, and the `external` mode is missing error-case tests). Update the `FEAT_OBJFM_SPECS.md` specification to match the actual decisions, particularly that `failure_effects` and `repair_effects` are applied through the target's automaton (and not ignored as the original spec stated).
+Finalize the implementation of the `behaviour="external_rep_indep"` mode of `ObjFM` based on the **trigger model** decided during the 2026-04-28 brainstorm. As a side effect, refactor the `ctrl_var` management mechanism (currently sensitive method) into **direct effects on transitions**, unifying the implementation of both `external` and `external_rep_indep` modes. Add the test coverage that is missing today (the `external_rep_indep` mode currently has zero tests, and the `external` mode is missing error-case tests). Update the `FEAT_OBJFM_SPECS.md` specification to match the actual decisions, particularly that `failure_effects` and `repair_effects` are applied through the target's automaton (and not ignored as the original spec stated).
 
 This work concludes a partially-implemented feature that has been on hold for ~3 months and unblocks downstream use cases relying on independent-repair semantics for shared-cause failures.
 
@@ -22,7 +22,7 @@ This work concludes a partially-implemented feature that has been on hold for ~3
 1. **`external_rep_indep` is implemented but unspecified and untested.**
    - The code at `cod3s/pycatshoo/component.py:1515-1518` carries an explicit `# TODO: No ! not always ready, in fact we have to use the initial repair_cond be applied the component`. The current `rep_condition = lambda: True` ignores the user's `repair_cond` parameter.
    - There is **no test file** validating any aspect of `external_rep_indep`, so we cannot evolve it confidently.
-   - The semantics of "what does the ObjFM do once it has triggered targets in this mode?" was never written down. Brainstorm `2026-04-28` resolves this with the **pulse model**.
+   - The semantics of "what does the ObjFM do once it has triggered targets in this mode?" was never written down. Brainstorm `2026-04-28` resolves this with the **trigger model**.
 
 2. **Spec ↔ code divergence on effects in `external` modes.**
    - `FEAT_OBJFM_SPECS.md` lines 89-91 say `failure_effects` and `repair_effects` are "ignored (warning emitted)" for `external` modes.
@@ -31,14 +31,14 @@ This work concludes a partially-implemented feature that has been on hold for ~3
    - Tests `test_comp_failure_external_002.py` and `_003.py` verify that effects propagate to the target — confirming the current code is the desired behavior.
    - The spec is therefore obsolete on this point and confuses anyone reading it.
 
-3. **`ctrl_var` management is brittle for the pulse model.**
-   - `component.py:1431-1460` maintains `ctrl_var = OR(impacting_automata in occ)` via a sensitive method registered on every impacting automaton. This works for `external` (mutual lock) but **breaks the pulse model**: as soon as the ObjFM transitions back to `rep` (delay 0 in `external_rep_indep`), the OR drops to False, the `ctrl_var` collapses, and the target never gets a chance to propagate its own state change. The pulse fails silently.
+3. **`ctrl_var` management is brittle for the trigger model.**
+   - `component.py:1431-1460` maintains `ctrl_var = OR(impacting_automata in occ)` via a sensitive method registered on every impacting automaton. This works for `external` (mutual lock) but **breaks the trigger model**: as soon as the ObjFM transitions back to `rep` (delay 0 in `external_rep_indep`), the OR drops to False, the `ctrl_var` collapses, and the target never gets a chance to propagate its own state change. The trigger fails silently.
 
 4. **Missing error-case tests for the existing `external` mode.**
    - Spec lists `test_behaviour_invalid`, `test_behaviour_name_conflict`, `test_behaviour_effects_warning` (now obsolete: no warning), `test_external_with_objfmdelay`, `test_internal_no_target_automaton`, `test_internal_effects_applied`. None exist in the repo.
 
 5. **`drop_inactive_automata` interaction with `external_rep_indep` is unverified.**
-   - The brainstorm relies on `repair_var_params_order1` being defined for the order-1 law to use as the target repair law. If `drop_inactive_automata=True` causes order 1 to be skipped (e.g., user provides `failure_param=[0, 0.1]`), then `repair_var_params_order1` would be None and the pulse model would crash with no clear error.
+   - The brainstorm relies on `repair_var_params_order1` being defined for the order-1 law to use as the target repair law. If `drop_inactive_automata=True` causes order 1 to be skipped (e.g., user provides `failure_param=[0, 0.1]`), then `repair_var_params_order1` would be None and the trigger model would crash with no clear error.
 
 ### Why it matters now
 
@@ -54,8 +54,8 @@ This work concludes a partially-implemented feature that has been on hold for ~3
 
 A single PR that:
 
-1. **Refactors `ctrl_var` management** — remove the sensitive method, replace by direct effects on the ObjFM and target transitions. This is a prerequisite for the pulse model to work without race conditions and unifies the two `external` flavors.
-2. **Implements the pulse model** for `external_rep_indep` — ObjFM `occ → rep` transition uses `delay(0)` law and unconditional cond. Target's `repair_cond` is the user's original `repair_cond` evaluated on the target.
+1. **Refactors `ctrl_var` management** — remove the sensitive method, replace by direct effects on the ObjFM and target transitions. This is a prerequisite for the trigger model to work without race conditions and unifies the two `external` flavors.
+2. **Implements the trigger model** for `external_rep_indep` — ObjFM `occ → rep` transition uses `delay(0)` law and unconditional cond. Target's `repair_cond` is the user's original `repair_cond` evaluated on the target.
 3. **Wraps the spec/test gap** — adds a complete TDD test file for `external_rep_indep`, plus a small set of error-case tests; updates `FEAT_OBJFM_SPECS.md` to reflect actual decisions.
 
 The refactor of `ctrl_var` is the riskiest move because it touches the working `external` mode. We validate non-regression by running the existing 4 external tests at every step.
@@ -86,7 +86,7 @@ For each target's `{fm_name}` automaton (`external` and `external_rep_indep` onl
 #### Why direct effects beat sensitive methods
 
 - **Fewer moving parts**: no per-target callback, no list of impacting automata to maintain, no start-method to initialize. Init defaults of `ctrl_var=False` from `addVariable` are sufficient.
-- **Deterministic timing**: an effect on a transition fires *with* the transition; a sensitive method fires *after* a state change is committed. With multiple delay(0) transitions chained (the pulse), the latter introduces ordering ambiguity.
+- **Deterministic timing**: an effect on a transition fires *with* the transition; a sensitive method fires *after* a state change is committed. With multiple delay(0) transitions chained (the trigger), the latter introduces ordering ambiguity.
 - **Identical pattern in both modes**: the only delta between `external` and `external_rep_indep` is what the ObjFM's repair transition does (set ctrl=False vs nothing) and how the target's repair transition is configured.
 - **Provably equivalent** for `external`: the failure_cond augmentation guarantees that at most one combo per target is ever in `occ` simultaneously, so `OR(impacting in occ)` reduces to "the single active impacting automaton (if any)". A pair of `set ctrl=True on occ` / `set ctrl=False on rep` reproduces this exactly.
 
@@ -119,8 +119,8 @@ tests/pyc_obj/obj_fm/test_comp_failure_external_modes_errors.py
 # - test_rep_indep_no_warning_on_effects
 #     Add failure_effects + repair_effects, capture warnings, assert empty
 
-# test_comp_failure_external_rep_indep_002.py — Pulse dynamics single target
-# - test_rep_indep_pulse_single_target
+# test_comp_failure_external_rep_indep_002.py — Trigger dynamics single target
+# - test_rep_indep_trigger_single_target
 #     ObjFM.occ fireable -> fire it -> ctrl_var becomes True
 #     Both target.occ AND ObjFM.rep fireable (delay 0 race)
 #     Fire target.occ -> failure_effects applied
@@ -147,7 +147,7 @@ tests/pyc_obj/obj_fm/test_comp_failure_external_modes_errors.py
 # test_comp_failure_external_rep_indep_004.py — Effects propagation
 # - test_rep_indep_failure_effects_applied
 #     ObjFlow with flow_in_max=10. failure_effects={"flow_in_max": 0.0}
-#     After full pulse: target.flow_in_max == 0.0
+#     After full trigger: target.flow_in_max == 0.0
 # - test_rep_indep_repair_effects_applied
 #     repair_effects={"flow_in_max": 10.0}
 #     After target self-repairs: target.flow_in_max == 10.0
@@ -155,7 +155,7 @@ tests/pyc_obj/obj_fm/test_comp_failure_external_modes_errors.py
 # test_comp_failure_external_rep_indep_005.py — repair_cond original used
 # - test_rep_indep_repair_cond_callable_blocks_repair
 #     repair_cond=lambda: target.some_var.value() > 0
-#     Set target.some_var = 0 -> target stays in occ even after pulse + delay
+#     Set target.some_var = 0 -> target stays in occ even after trigger + delay
 #     Set target.some_var = 1 -> target.rep becomes fireable
 #     (Use isimu_set_transition by name with a date to verify timing)
 # - test_rep_indep_repair_cond_default_true
@@ -164,7 +164,7 @@ tests/pyc_obj/obj_fm/test_comp_failure_external_modes_errors.py
 # test_comp_failure_external_rep_indep_006.py — ObjFMDelay compatibility
 # - test_rep_indep_objfmdelay_uses_delay_law
 #     ObjFMDelay with repair_param=[5.0]  # ttr_1=5
-#     After pulse, target.rep fires after exactly 5 time units
+#     After trigger, target.rep fires after exactly 5 time units
 #     (use isimu_step_forward and check transition date)
 
 # test_comp_failure_external_modes_errors.py — Error cases (covers external too)
@@ -208,7 +208,7 @@ if self.behaviour in ("external", "external_rep_indep"):
             for idx in target_set_idx
         ]
     else:  # external_rep_indep
-        # Pulse model: ObjFM.rep does NOT touch ctrl_var; target manages it.
+        # Trigger model: ObjFM.rep does NOT touch ctrl_var; target manages it.
         repair_effects_cur = []
 else:  # internal — unchanged
     failure_effects_cur = []
@@ -256,7 +256,7 @@ if self.behaviour == "external":
         repair_cond_cur, target_comps_cur, self.fm_name, self.failure_state,
     )
 elif self.behaviour == "external_rep_indep":
-    # Pulse: ObjFM.rep is unconditional and instantaneous.
+    # Trigger: ObjFM.rep is unconditional and instantaneous.
     repair_cond_cur = lambda: True
     # NOTE: occ_law_21 below must also be overridden to delay(0) for this mode.
 ```
@@ -295,7 +295,7 @@ aut = self.add_aut2st(
 
 ---
 
-#### Phase 3 — Implement pulse model on the target side
+#### Phase 3 — Implement trigger model on the target side
 
 **Files to modify:** `cod3s/pycatshoo/component.py` — method `_create_target_automaton` (lines ~1480-1565).
 
@@ -379,7 +379,7 @@ Concrete updates:
   - Replace "**failure_effects**: Ignorés (warning émis)" → "Appliqués via l'automate du target lors de la transition vers le failure_state."
   - Same for repair_effects.
 - Section "3. `behaviour=\"external_rep_indep\"`":
-  - Rewrite "Flux d'exécution" to match the pulse model:
+  - Rewrite "Flux d'exécution" to match the trigger model:
     ```
     DÉFAILLANCE:
     1. ObjFM.frun__cc_1 occ — effet: ctrl_frun_C1 := True
@@ -419,12 +419,12 @@ Concrete updates:
   ```
 - Single commit (or coherent series) with message:
   ```
-  feat(objfm): finalize external_rep_indep pulse model and refactor ctrl_var
+  feat(objfm): finalize external_rep_indep trigger model and refactor ctrl_var
   
   - external_rep_indep: ObjFM transitions occ→rep instantly (delay 0) after triggering
   - external_rep_indep: target uses original repair_cond and order-1 repair law
   - Both external modes: ctrl_var maintained via direct transition effects
-    (sensitive method removed for clarity and pulse-model correctness)
+    (sensitive method removed for clarity and trigger-model correctness)
   - Adds 7 new test files covering external_rep_indep + error cases
   - FEAT_OBJFM_SPECS.md updated to match actual decisions on effects
   ```
@@ -441,7 +441,7 @@ Instead of replacing the sensitive method with direct effects, conditionalize it
 
 ### Alternative B — Introduce an intermediate `occ_pending` state on the ObjFM
 
-Have the ObjFM go `rep → occ_pending → occ → rep` where `occ_pending` waits for all targets to confirm propagation before transitioning to `occ` (which then transitions back to `rep` in pulse mode). Provides deterministic temporal trace.
+Have the ObjFM go `rep → occ_pending → occ → rep` where `occ_pending` waits for all targets to confirm propagation before transitioning to `occ` (which then transitions back to `rep` in trigger mode). Provides deterministic temporal trace.
 
 **Why rejected:** extra states pollute sequence analysis, transition naming becomes ambiguous, no concrete benefit over direct effects given that the failure_cond augmentation already prevents re-firing during the propagation window.
 
@@ -491,7 +491,7 @@ Land just the `ctrl_var` refactor first, then implement `external_rep_indep` on 
 ## Success Metrics
 
 - **Before**: `external_rep_indep` has 0 tests, 1 explicit `TODO`, conflicting spec; `external` mode has 4 tests, 197 total tests pass.
-- **After**: `external_rep_indep` has 7+ tests covering creation, pulse, multi-target, effects, repair_cond, ObjFMDelay, error cases; `TODO` resolved; spec aligned with code; total tests ≥ 215, all pass; version bumped to 1.1.0.
+- **After**: `external_rep_indep` has 7+ tests covering creation, trigger, multi-target, effects, repair_cond, ObjFMDelay, error cases; `TODO` resolved; spec aligned with code; total tests ≥ 215, all pass; version bumped to 1.1.0.
 - **Qualitative**: a new contributor (or future Roland) reading the spec can predict and validate behavior without reading the implementation.
 
 ---
@@ -521,7 +521,7 @@ Land just the `ctrl_var` refactor first, then implement `external_rep_indep` on 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | Refactor of `ctrl_var` breaks the existing `external` tests | Medium | High | Run external tests after every edit in Phase 2; if they fail, revert and use Alternative A (sensitive method conditionalized) as fallback. |
-| PyCATSHOO order of multiple `delay(0)` transitions is non-deterministic and breaks the pulse | Medium | High | Test in **isimu** (manual fire) first to prove logic, then run a Monte Carlo loop (`PycMCSimulationParam`, e.g., 1000 runs) and verify the count of failure events matches the analytical expectation within a tolerance. If non-determinism appears, fall back to Alternative B (`occ_pending` state). |
+| PyCATSHOO order of multiple `delay(0)` transitions is non-deterministic and breaks the trigger | Medium | High | Test in **isimu** (manual fire) first to prove logic, then run a Monte Carlo loop (`PycMCSimulationParam`, e.g., 1000 runs) and verify the count of failure events matches the analytical expectation within a tolerance. If non-determinism appears, fall back to Alternative B (`occ_pending` state). |
 | `repair_var_params_order1 is None` when order 1 is dropped by `drop_inactive_automata` | Low | Medium | Explicit `ValueError` with actionable message added in Phase 3. Test in `test_comp_failure_external_modes_errors.py`. |
 | Hidden consumer of `target_impacting_automata` outside `add_failure_repair_automaton` | Low | Low | `grep -rn target_impacting_automata cod3s/ tests/` before deletion. If found, keep the field but stop populating it from the new code path. |
 | Spec drift in `FEAT_OBJFM_SPECS.md` not caught | Medium | Low | Phase 4 is its own gate; review side-by-side against the test file as ground truth. |
@@ -549,7 +549,7 @@ Out of scope for this plan but worth noting:
 
 1. **`external_fail_indep`** symmetric mode — a target could also have an independent failure law (currently external both directions are tied to ObjFM occ). Probably rare, easy to add later by mirroring `external_rep_indep`.
 2. **Per-target `repair_param`** — let the user provide `repair_param_target=[μ_C1, μ_C2]` instead of using the order-1 law for all. Adds expressivity but complicates the API; defer until a real use case appears.
-3. **Integration with `SequenceAnalyser`** — the pulse pattern means each combo emits an `occ` and `rep` event back-to-back on the ObjFM, which may pollute sequences. A sequence post-processing helper to filter / merge these "pulse events" might be useful.
+3. **Integration with `SequenceAnalyser`** — the trigger pattern means each combo emits an `occ` and `rep` event back-to-back on the ObjFM, which may pollute sequences. A sequence post-processing helper to filter / merge these "trigger events" might be useful.
 4. **Performance** — for very wide combos (order ≥ 5), the number of automata grows as 2^N. Already true today; not introduced by this change. Could be capped via a `max_order` parameter in a future iteration.
 5. **CLAUDE.md update** — once `behaviour` is firmly in place, add a paragraph to `CLAUDE.md` describing the three modes for future AI assistants. Do not couple this with the current PR (deferred to a docs PR).
 
@@ -605,7 +605,7 @@ Out of scope for this plan but worth noting:
 ## Implementation Checklist (in order)
 
 - [x] Phase 1.1 — Write test_comp_failure_external_rep_indep_001.py (creation/structure). 3/3 PASS coincidentally (creation already works in current code).
-- [x] Phase 1.2 — Write 002.py (pulse single target). 2/2 RED.
+- [x] Phase 1.2 — Write 002.py (trigger single target). 2/2 RED.
 - [x] Phase 1.3 — Write 003.py (multi-target combos). 2/2 RED.
 - [x] Phase 1.4 — Write 004.py (effects propagation). 2/2 RED.
 - [x] Phase 1.5 — Write 005.py (repair_cond gating). 2/2 RED.
@@ -623,7 +623,7 @@ Out of scope for this plan but worth noting:
 - [x] Phase 3.4 — Full suite GREEN: 213 passed (197 baseline + 16 new), 0 failed.
 - [ ] Phase 3.5 — MC simulation smoke test (deferred — full suite passing is strong enough signal).
 - [x] Side fix — Replaced effects-driven ctrl reset with a sensitive method on the target's automaton (NOT on the variable) to avoid cascading re-evaluation conflicts between ObjFM.occ effect and target.rep effect at simulation start.
-- [x] Phase 4.1 — Edit `FEAT_OBJFM_SPECS.md` sections "external" and "external_rep_indep" : pulse model documented, effects clarified (applied via target), errors table updated, migration section refreshed, versioning table aligned.
+- [x] Phase 4.1 — Edit `FEAT_OBJFM_SPECS.md` sections "external" and "external_rep_indep" : trigger model documented, effects clarified (applied via target), errors table updated, migration section refreshed, versioning table aligned.
 - [x] Phase 4.2 — Edit "Tests / Liste des tests" to match the new file list (7 files, 28 tests).
 - [ ] Phase 5.1 — black + isort + flake8 + pytest sanity sweep.
 - [ ] Phase 5.2 — Bump `cod3s/version.py` to 1.1.0.

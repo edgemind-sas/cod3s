@@ -1284,7 +1284,7 @@ class ObjFM(PycComponent):
                 # Prepare effects based on behaviour.
                 # external: centralized management via the sensitive method below;
                 #   ObjFM transitions carry no direct effects on ctrl_vars.
-                # external_rep_indep: pulse model — ObjFM.occ sets ctrl=True
+                # external_rep_indep: trigger model — ObjFM.occ sets ctrl=True
                 #   directly on the transition; ObjFM.rep does NOT touch ctrl
                 #   (target owns the reset on its own repair transition).
                 if self.behaviour == "external":
@@ -1310,7 +1310,9 @@ class ObjFM(PycComponent):
                                 raise ValueError(
                                     f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
                                 )
-                            failure_effects_cur.append({"var": comp_var, "value": value})
+                            failure_effects_cur.append(
+                                {"var": comp_var, "value": value}
+                            )
 
                     repair_effects_cur = []
                     for var, value in self.repair_effects.items():
@@ -1406,12 +1408,14 @@ class ObjFM(PycComponent):
                             self.fm_name,
                             self.failure_state,
                         )
-                    # external_rep_indep: ObjFM repair is unconditional (pulse,
-                    # delay(0), see occ_law_21 override below).
+                    # external_rep_indep: ObjFM repair is unconditional
+                    # (trigger model — instantaneous delay(0), see
+                    # occ_law_21 override below).
                     else:
                         repair_cond_cur = lambda: True
 
-                # ObjFM repair law: instantaneous in external_rep_indep (pulse).
+                # ObjFM repair law: instantaneous in external_rep_indep
+                # (trigger — the ObjFM emits a one-shot signal then resets).
                 if self.behaviour == "external_rep_indep":
                     objfm_repair_law = {"cls": "delay", "time": 0}
                 else:
@@ -1447,10 +1451,10 @@ class ObjFM(PycComponent):
 
         # Centralized ctrl_var management for `external` only.
         # `external_rep_indep` does NOT use this: ObjFM.occ sets ctrl=True via
-        # a direct effect on the transition (pulse model), and target.rep clears
-        # it via the target automaton's own repair effect. Re-introducing the
-        # OR-based sensitive method here would reset ctrl_var as soon as the
-        # ObjFM pulses back to rep, breaking the model.
+        # a direct effect on the transition (trigger model), and target.rep
+        # clears it via the target automaton's own repair effect. Re-introducing
+        # the OR-based sensitive method here would reset ctrl_var as soon as
+        # the ObjFM triggers back to rep, breaking the model.
         if self.behaviour == "external":
             for (
                 target_name,
@@ -1483,8 +1487,9 @@ class ObjFM(PycComponent):
         # mistake. Raise a clear error rather than silently produce a
         # one-shot model.
         if self.behaviour == "external_rep_indep":
-            if self.repair_var_params_order1 is None or not self.is_occ_law_repair_active(
-                self.repair_var_params_order1
+            if (
+                self.repair_var_params_order1 is None
+                or not self.is_occ_law_repair_active(self.repair_var_params_order1)
             ):
                 raise ValueError(
                     f"behaviour='external_rep_indep' requires the order-1 "
@@ -1598,7 +1603,7 @@ class ObjFM(PycComponent):
         )
 
         # In external_rep_indep, the ObjFM does NOT reset ctrl_var on its own
-        # repair (pulse model). The target clears ctrl_var when its automaton
+        # repair (trigger model). The target clears ctrl_var when its automaton
         # transitions back to the repair state. We use a sensitive method on
         # the target's automaton (NOT on the variable) to avoid the cascading
         # re-evaluation that would happen if ctrl_var=False was placed in

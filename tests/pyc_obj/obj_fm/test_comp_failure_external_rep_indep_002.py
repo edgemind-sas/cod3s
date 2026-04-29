@@ -1,13 +1,13 @@
-"""Tests for ObjFM behaviour='external_rep_indep' — pulse dynamics, single target.
+"""Tests for ObjFM behaviour='external_rep_indep' — trigger dynamics, single target.
 
-Validates the pulse model: ObjFM transitions occ -> rep instantly (delay 0,
+Validates the trigger model: ObjFM transitions occ -> rep instantly (delay 0,
 no condition) after triggering. The target then evolves independently with
 its own repair law (order-1 of the ObjFM).
 
 Note: in isimu mode, firing a transition without a date advances the simulator
 to the next event time and processes ALL delay(0) transitions at that time.
 This means firing one delay(0) typically chains other fireable delay(0)
-transitions in the same step. The pulse model relies on this chaining: after
+transitions in the same step. The trigger model relies on this chaining: after
 firing ObjFM.occ, the next step naturally fires both target.occ AND ObjFM.rep
 (both delay(0)).
 """
@@ -40,11 +40,11 @@ def fire(system, name, date=None):
     system.isimu_step_forward()
 
 
-def test_rep_indep_pulse_single_target():
+def test_rep_indep_trigger_single_target():
     """ObjFM occ fires, then target.occ + ObjFM.rep chain (delay 0) in the
     next step. After the chain, ObjFM is back in rep, target in occ, ctrl_var
-    stays True (no reset on ObjFM.rep in pulse mode)."""
-    system = PycSystem(name="SysRepIndepPulse1")
+    stays True (no reset on ObjFM.rep in trigger mode)."""
+    system = PycSystem(name="SysRepIndepTrigger1")
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
     system.add_component(name="C1", cls="ObjFlow", flow_in_max=10.0)
@@ -89,19 +89,19 @@ def test_rep_indep_pulse_single_target():
     # Target reached occ, failure_effects applied.
     assert is_state_active(target_aut, "occ")
     assert system.comp["C1"].flow_in_max.value() == 0.0
-    # ObjFM auto-pulsed back to rep.
+    # ObjFM auto-triggerd back to rep.
     assert is_state_active(fm_aut, "rep")
-    # ctrl_var STAYS True (no effect on it from ObjFM.rep — pulse model).
+    # ctrl_var STAYS True (no effect on it from ObjFM.rep — trigger model).
     assert ctrl.value() is True, (
         "In external_rep_indep, ObjFM.rep must NOT touch ctrl_var "
         "(target owns its repair lifecycle)."
     )
 
     # Now ObjFM.occ is NOT fireable (target still in occ — augmented failure_cond).
-    after_pulse = fireable_names(system)
-    assert f"{fm_comp_name}.occ" not in after_pulse
+    after_trigger = fireable_names(system)
+    assert f"{fm_comp_name}.occ" not in after_trigger
     # Target.rep IS fireable (its own mu_1 law).
-    assert "C1.rep" in after_pulse
+    assert "C1.rep" in after_trigger
 
     system.isimu_stop()
 
@@ -110,7 +110,7 @@ def test_rep_indep_target_repair_resets_ctrl():
     """When the target self-repairs, it resets its ctrl_var via the dedicated
     sensitive method on the target's automaton, and the ObjFM becomes ready
     to fire a new failure cycle."""
-    system = PycSystem(name="SysRepIndepPulse2")
+    system = PycSystem(name="SysRepIndepTrigger2")
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
     system.add_component(name="C1", cls="ObjFlow", flow_in_max=10.0)
@@ -131,7 +131,7 @@ def test_rep_indep_target_repair_resets_ctrl():
     target_aut = system.comp["C1"].automata_d["frun"]
     ctrl = system.comp[fm_comp_name].ctrl_vars["C1"]
 
-    # Drive a full pulse: ObjFM.occ -> chain to C1.occ + ObjFM.rep.
+    # Drive a full trigger: ObjFM.occ -> chain to C1.occ + ObjFM.rep.
     fire(system, f"{fm_comp_name}.occ", date=10)
     fire(system, "C1.occ")
     assert is_state_active(target_aut, "occ")

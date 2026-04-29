@@ -7,7 +7,7 @@
 
 > **Révision 1.1 (2026-04-28)** — Aligne la spec sur les décisions du brainstorm `docs/brainstorms/2026-04-28-objfm-external-modes-brainstorm.md` et l'implémentation effective :
 > - Les `failure_effects` / `repair_effects` sont **appliqués** (et non plus ignorés) en mode `external` et `external_rep_indep`. Ils s'exécutent via l'automate du target. Aucun warning n'est émis.
-> - Le mode `external_rep_indep` adopte un **modèle pulse** : ObjFM transite occ→rep en `delay(0)` sans condition après avoir déclenché les targets. Loi de réparation target = ordre 1 ; condition = `repair_cond` originale évaluée sur le target.
+> - Le mode `external_rep_indep` adopte un **modèle trigger** : ObjFM transite occ→rep en `delay(0)` sans condition après avoir déclenché les targets. Loi de réparation target = ordre 1 ; condition = `repair_cond` originale évaluée sur le target.
 > - Le mécanisme de `ctrl_var` est **différencié** : méthode sensible centralisée pour `external`, effets directs sur transitions pour `external_rep_indep` (avec une méthode sensible dédiée sur l'automate du target pour le reset de `ctrl`, afin d'éviter une cascade d'effets contradictoires).
 > - Garde explicite (`ValueError`) sur la loi de réparation d'ordre 1 inactive en `external_rep_indep`.
 
@@ -140,7 +140,7 @@ RÉPARATION:
 
 ### 3. `behaviour="external_rep_indep"`
 
-**Description** : Modèle **pulse** — l'ObjFM agit comme un **déclencheur transitoire**. Il pulse en occ juste le temps de propager la défaillance aux targets, puis se réinitialise instantanément. Chaque target gère ensuite son cycle de réparation indépendamment, selon la loi d'ordre 1 de l'ObjFM.
+**Description** : Modèle **trigger** — l'ObjFM agit comme un **trigger transitoire**. Il trigger sur occ juste le temps de propager la défaillance aux targets, puis se réinitialise instantanément. Chaque target gère ensuite son cycle de réparation indépendamment, selon la loi d'ordre 1 de l'ObjFM.
 
 | Aspect | Comportement |
 |--------|-------------|
@@ -152,11 +152,11 @@ RÉPARATION:
 | **Condition de réparation target** | `repair_cond` originale de l'ObjFM, **évaluée sur le target courant** |
 | **failure_effects** | **Appliqués sur l'automate du target** lors de sa transition vers `failure_state` |
 | **repair_effects** | **Appliqués sur l'automate du target** lors de sa transition vers `repair_state` |
-| **ObjFM repair** | Loi `delay(0)` sans condition — pulse instantané, **n'affecte pas les ctrl_vars** |
+| **ObjFM repair** | Loi `delay(0)` sans condition — trigger instantané, **n'affecte pas les ctrl_vars** |
 
 **Flux d'exécution** :
 ```
-DÉFAILLANCE (pulse) — toutes ces transitions se chaînent en un seul step à la
+DÉFAILLANCE (trigger) — toutes ces transitions se chaînent en un seul step à la
 même date, en ordre garanti par les conditions et les delay(0):
 
 1. ObjFM.frun__cc_12 transite rep → occ (loi exp(λ_12) ou delay), conditionné
@@ -195,7 +195,7 @@ fireable dès que C1 a réparé, même si C2 est encore en occ.
 - **Condition de réparation target** : `self.get_repair_cond(target_comps=[target_comp], param=self.repair_var_params_order1)`. Pour ObjFMExp cela donne `μ_1 > 0 AND repair_cond_user(C1)`.
 - **Reset ctrl_var** : effectué par une méthode sensible enregistrée sur l'automate du target (et NON sur la variable). Lorsque le target entre en `repair_state`, la méthode positionne `ctrl = False`. Cette indirection évite la cascade d'effets contradictoires entre la transition `ObjFM.occ` (qui veut `ctrl = True`) et le `effects_st1` du target (qui voudrait `ctrl = False`) lors de l'initialisation et au fil de la simulation.
 - **Augmentation de failure_cond** : identique à `external` (`failure_cond_user AND tous_targets_en_repair_state`).
-- **Repair_cond ObjFM** : remplacée par `lambda: True` (pas de condition, pulse).
+- **Repair_cond ObjFM** : remplacée par `lambda: True` (pas de condition, trigger).
 - **Garde** : `ValueError` à la construction si la loi de réparation d'ordre 1 est inactive (μ_1 = 0 ou ttr_1 = 0). Sans cette garde, les targets ne pourraient jamais se réparer.
 
 **Cas d'usage** :
@@ -271,7 +271,7 @@ for order in range(1, order_max + 1):
 
 #### 6. Effets sur les transitions ObjFM selon le behaviour
 
-> **Note d'implémentation (2026-04-28)** : la stratégie de gestion des `ctrl_vars` diffère entre `external` et `external_rep_indep` parce qu'un effet enregistré sur une variable est ré-évalué à chaque changement de cette variable, ce qui crée des conflits en mode synchrone (cc_X.rep est en état initial actif → veut `ctrl=False`, en conflit avec cc_Y.occ qui veut `ctrl=True`). Le mode pulse de `external_rep_indep` n'a pas ce conflit car les effets `effects_st1` sont vides côté ObjFM.
+> **Note d'implémentation (2026-04-28)** : la stratégie de gestion des `ctrl_vars` diffère entre `external` et `external_rep_indep` parce qu'un effet enregistré sur une variable est ré-évalué à chaque changement de cette variable, ce qui crée des conflits en mode synchrone (cc_X.rep est en état initial actif → veut `ctrl=False`, en conflit avec cc_Y.occ qui veut `ctrl=True`). Le mode trigger de `external_rep_indep` n'a pas ce conflit car les effets `effects_st1` sont vides côté ObjFM.
 
 ```python
 for target_set_idx in itertools.combinations(range(order_max), order):
@@ -283,7 +283,7 @@ for target_set_idx in itertools.combinations(range(order_max), order):
         repair_effects_cur = []
 
     elif self.behaviour == "external_rep_indep":
-        # Pulse model: ObjFM.occ sets ctrl=True directly on the transition.
+        # Trigger model: ObjFM.occ sets ctrl=True directly on the transition.
         # ObjFM.rep does NOT touch ctrl (target owns reset, see #8).
         failure_effects_cur = [
             {"var": self.ctrl_vars[self.targets[idx]], "value": True}
@@ -310,18 +310,18 @@ if self.behaviour in ("external", "external_rep_indep"):
             repair_cond_cur, target_comps_cur, self.fm_name, self.failure_state,
         )
     else:  # external_rep_indep
-        # Pulse: ObjFM.rep is unconditional (delay 0, see law below).
+        # Trigger: ObjFM.rep is unconditional (delay 0, see law below).
         repair_cond_cur = lambda: True
 
 if self.behaviour == "external_rep_indep":
-    objfm_repair_law = {"cls": "delay", "time": 0}  # pulse
+    objfm_repair_law = {"cls": "delay", "time": 0}  # trigger
 else:
     objfm_repair_law = self.set_occ_law_repair(repair_var_params_cur)
 ```
 
 #### 6ter. Méthode sensible centralisée (external uniquement)
 
-Pour le mode `external`, une méthode sensible enregistrée sur les automates ObjFM impactant chaque target maintient `ctrl_var = OR(combos_impactant en failure_state)`. Cela évite que des combos concurrents s'écrasent mutuellement. **Cette méthode n'est pas enregistrée pour `external_rep_indep`** (incompatible avec le pulse — l'ObjFM repassant en rep réinitialiserait ctrl=False trop tôt).
+Pour le mode `external`, une méthode sensible enregistrée sur les automates ObjFM impactant chaque target maintient `ctrl_var = OR(combos_impactant en failure_state)`. Cela évite que des combos concurrents s'écrasent mutuellement. **Cette méthode n'est pas enregistrée pour `external_rep_indep`** (incompatible avec le trigger — l'ObjFM repassant en rep réinitialiserait ctrl=False trop tôt).
 
 ```python
 if self.behaviour == "external":
@@ -416,7 +416,7 @@ def _create_target_automaton(
     )
 
     # In external_rep_indep, the ObjFM doesn't reset ctrl_var on its own
-    # repair (pulse model). The target clears ctrl_var when its automaton
+    # repair (trigger model). The target clears ctrl_var when its automaton
     # returns to the repair state. We use a sensitive method on the target
     # automaton (NOT on the ctrl variable) to avoid the cascading
     # re-evaluation that would happen if `ctrl=False` were placed in
@@ -437,7 +437,7 @@ def _create_target_automaton(
 
 #### 9. Garde `external_rep_indep` : loi d'ordre 1 active
 
-Le mode pulse repose sur la loi de réparation d'ordre 1 pour la dynamique d'auto-réparation du target. Si cette loi est inactive (`μ_1 = 0` ou `ttr_1 = 0`), les targets ne pourraient jamais réparer — c'est presque toujours une erreur de configuration. Une `ValueError` est levée à la construction :
+Le mode trigger repose sur la loi de réparation d'ordre 1 pour la dynamique d'auto-réparation du target. Si cette loi est inactive (`μ_1 = 0` ou `ttr_1 = 0`), les targets ne pourraient jamais réparer — c'est presque toujours une erreur de configuration. Une `ValueError` est levée à la construction :
 
 ```python
 if self.behaviour == "external_rep_indep":
@@ -747,7 +747,7 @@ test_comp_failure_external_002.py        # external — propagation des effects
 test_comp_failure_external_003.py        # external — 7 combos paramétrés (3 targets)
 test_comp_failure_external_004.py        # external — système réel multi-FM avec dépendances
 test_comp_failure_external_rep_indep_001.py  # rep_indep — création + structure
-test_comp_failure_external_rep_indep_002.py  # rep_indep — pulse 1 target
+test_comp_failure_external_rep_indep_002.py  # rep_indep — trigger 1 target
 test_comp_failure_external_rep_indep_003.py  # rep_indep — multi-target combos
 test_comp_failure_external_rep_indep_004.py  # rep_indep — propagation des effects
 test_comp_failure_external_rep_indep_005.py  # rep_indep — repair_cond gating
@@ -770,11 +770,11 @@ Les tests `internal` (mode par défaut) sont dans `test_comp_failure_001..013.py
 | `test_rep_indep_creates_target_automaton` | Automate `frun` créé dans le target | external_rep_indep |
 | `test_rep_indep_creates_ctrl_vars` | `ctrl_{fm}_{tgt}` créés, init `False` | external_rep_indep |
 | `test_rep_indep_no_warning_on_effects` | Aucun warning sur effects | external_rep_indep |
-| `test_rep_indep_pulse_single_target` | Cycle pulse complet (1 target) | external_rep_indep |
+| `test_rep_indep_trigger_single_target` | Cycle trigger complet (1 target) | external_rep_indep |
 | `test_rep_indep_target_repair_resets_ctrl` | Reset ctrl par target.rep | external_rep_indep |
 | `test_rep_indep_combo_order2_independent_repair` | cc_12 puis réparations désynchronisées | external_rep_indep |
 | `test_rep_indep_partial_state_blocks_higher_order_combo` | cc_X bloqué tant qu'un target reste failed | external_rep_indep |
-| `test_rep_indep_failure_effects_applied` | failure_effects appliqués (pulse + target.occ) | external_rep_indep |
+| `test_rep_indep_failure_effects_applied` | failure_effects appliqués (trigger + target.occ) | external_rep_indep |
 | `test_rep_indep_repair_effects_applied` | repair_effects appliqués (target.rep) | external_rep_indep |
 | `test_rep_indep_repair_cond_default_true` | Cond par défaut `True` | external_rep_indep |
 | `test_rep_indep_repair_cond_callable_evaluated_on_target` | Cond callable réutilisée et évaluée localement | external_rep_indep |
@@ -795,7 +795,7 @@ pytest tests/pyc_obj/obj_fm/test_comp_failure_external_*.py \
 pytest tests/pyc_obj/obj_fm/test_comp_failure_external_rep_indep_*.py -v
 
 # Test spécifique
-pytest tests/pyc_obj/obj_fm/test_comp_failure_external_rep_indep_002.py::test_rep_indep_pulse_single_target -v
+pytest tests/pyc_obj/obj_fm/test_comp_failure_external_rep_indep_002.py::test_rep_indep_trigger_single_target -v
 
 # Suite complète (régression incluse)
 pytest -v
@@ -970,7 +970,7 @@ system.add_component(
 # system.comp["Pump1"].automata_d["pump_failure"].get_state_by_name("occ")._bkd.isActive()
 ```
 
-**Après (mode external_rep_indep)** — pulse + réparations indépendantes :
+**Après (mode external_rep_indep)** — trigger + réparations indépendantes :
 ```python
 system.add_component(
     cls="ObjFMExp",
@@ -990,7 +990,7 @@ system.add_component(
 |---------------|--------|
 | ≤ 1.0.32 | Pas de paramètre `behaviour`, comportement « internal » implicite |
 | 1.0.33 | Paramètre `behaviour` introduit (mode `external` opérationnel ; `external_rep_indep` partiellement implémenté avec un TODO sur la `repair_cond` et aucun test) |
-| 1.1.0 (à publier) | `external_rep_indep` finalisé en modèle pulse, refactor du mécanisme `ctrl_var` (méthode sensible toujours utilisée pour `external` ; effets directs sur transitions pour `external_rep_indep`), spec et tests alignés (28 tests sur le périmètre `behaviour`, 213 tests verts au total) |
+| 1.1.0 (à publier) | `external_rep_indep` finalisé en modèle trigger, refactor du mécanisme `ctrl_var` (méthode sensible toujours utilisée pour `external` ; effets directs sur transitions pour `external_rep_indep`), spec et tests alignés (28 tests sur le périmètre `behaviour`, 213 tests verts au total) |
 
 ---
 

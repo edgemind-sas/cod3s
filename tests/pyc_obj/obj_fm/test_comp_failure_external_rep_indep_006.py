@@ -1,6 +1,6 @@
 """Tests for ObjFM behaviour='external_rep_indep' — ObjFMDelay compatibility.
 
-Validates that the pulse model also works for ObjFMDelay, where the target's
+Validates that the trigger model also works for ObjFMDelay, where the target's
 self-repair law is delay(ttr_1) instead of exp(mu_1).
 """
 import pytest
@@ -49,7 +49,7 @@ def test_rep_indep_objfmdelay_uses_delay_law():
     system.isimu_start()
     target_aut = system.comp["C1"].automata_d["frun"]
 
-    # Drive the pulse at date 10.
+    # Drive the trigger at date 10.
     fire(system, f"{fm_comp_name}.occ", date=10)
     fire(system, "C1.occ")
     assert is_state_active(target_aut, "occ")

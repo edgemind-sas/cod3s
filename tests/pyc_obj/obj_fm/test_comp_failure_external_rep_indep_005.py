@@ -35,7 +35,7 @@ def fire(system, name, date=None):
 
 def test_rep_indep_repair_cond_default_true():
     """With default repair_cond=True, target.rep must be fireable as soon as
-    the target is in occ (after the pulse)."""
+    the target is in occ (after the trigger)."""
     system = PycSystem(name="SysRepIndepCondDefault")
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
@@ -93,7 +93,7 @@ def test_rep_indep_repair_cond_callable_evaluated_on_target():
 
     system.isimu_start()
 
-    # Drive the pulse cycle.
+    # Drive the trigger cycle.
     fire(system, f"{fm_comp_name}.occ", date=10)
     fire(system, "C1.occ")
 

@@ -21,7 +21,7 @@ Comportement historique. Les automates de défaillance vivent dans l'`ObjFM`, qu
 - **`failure_effects` / `repair_effects` appliqués sur l'automate du target** (et non plus sur l'ObjFM). Validé par les tests 002/003/004.
 
 ### 3. `external_rep_indep` (sémantique nouvellement clarifiée)
-- Mêmes automates ObjFM et target qu'en `external`, mais le couplage est **transitoire** : l'ObjFM agit comme un **déclencheur impulsionnel**.
+- Mêmes automates ObjFM et target qu'en `external`, mais le couplage est **transitoire** : l'ObjFM agit comme un **trigger** — il déclenche les targets puis se réinitialise instantanément, plutôt que de rester verrouillé en `occ` jusqu'à la réparation.
 - **Cycle ObjFM** :
   - `rep → occ` : selon la loi normale (ex: `exp(λ)`), conditionnée par `failure_cond` originale + "tous targets de la combo en rep". Effet : `ctrl_var := True` pour les targets concernés.
   - `occ → rep` : `delay(0)` **sans condition**. Pas d'effet sur les ctrl_vars. L'ObjFM se "réinitialise" instantanément après avoir transmis la défaillance.
@@ -43,10 +43,10 @@ Comportement historique. Les automates de défaillance vivent dans l'`ObjFM`, qu
 - **Réalisme des analyses de disponibilité** : permet une réparation stochastique distincte de l'évènement déclencheur.
 - **Causes communes asymétriques** : un évènement initial peut faire tomber plusieurs équipements, mais leur réparation suit chacune sa propre dynamique.
 
-### Pourquoi le modèle "pulse" pour `external_rep_indep` ?
+### Pourquoi le modèle "trigger" pour `external_rep_indep` ?
 - L'ObjFM en `external` reste verrouillé en `occ` tant que les targets ne sont pas réparés ensemble. Avec des réparations indépendantes, ce verrouillage n'a plus de sens.
-- En faisant l'ObjFM "pulser" (occ → rep instantané), on libère sa dynamique : il peut tirer un nouveau combo dès que les targets concernés sont à nouveau dispos.
-- Sémantique épurée : ObjFM = générateur d'évènements, target = porteur d'état persistant.
+- En faisant l'ObjFM "trigger" (occ → rep instantané), on libère sa dynamique : il peut tirer un nouveau combo dès que les targets concernés sont à nouveau dispos.
+- Sémantique épurée : ObjFM = générateur d'évènements (trigger), target = porteur d'état persistant.
 
 ---
 
@@ -55,7 +55,7 @@ Comportement historique. Les automates de défaillance vivent dans l'`ObjFM`, qu
 | # | Décision | Rationale |
 |---|----------|-----------|
 | 1 | `external` garde un verrouillage mutuel ObjFM/target. | Permet une analyse séquentielle propre (chaque transition visible). |
-| 2 | `external_rep_indep` adopte un **modèle pulse** : ObjFM transite occ→rep en `delay(0)` sans condition après avoir déclenché. | Découple proprement les dynamiques de défaillance et de réparation. |
+| 2 | `external_rep_indep` adopte un **modèle trigger** : ObjFM transite occ→rep en `delay(0)` sans condition après avoir déclenché. | Découple proprement les dynamiques de défaillance et de réparation. |
 | 3 | `failure_cond` étendue identique aux deux modes : `failure_cond_originale AND tous_targets_de_la_combo_en_rep`. | Empêche les déclenchements redondants. |
 | 4 | **`failure_effects` et `repair_effects` toujours appliqués via l'automate du target** (pas l'ObjFM). | Comportement actuel du code, déjà testé (002/003/004). La spec d'origine ("ignorés avec warning") est obsolète. |
 | 5 | En `external_rep_indep`, la **loi de réparation du target = loi d'ordre 1** (μ_1 ou ttr_1) quelle que soit la combo qui a déclenché. | Loi de réparation locale intrinsèque au composant, indépendante de la cause. |
@@ -71,13 +71,13 @@ Comportement historique. Les automates de défaillance vivent dans l'`ObjFM`, qu
 
 1. **Mécanisme de mise à jour des `ctrl_vars`** :
    - Le code actuel utilise une **sensitive method** qui calcule `ctrl_var = OR(automates_impactants en occ)`. Cela fonctionne pour `external`.
-   - Pour `external_rep_indep` (modèle pulse), ce mécanisme tombe en défaut : l'ObjFM repasse en rep instantanément, la sensitive method recalcule, ctrl_var redescend à False avant que le target ait propagé.
+   - Pour `external_rep_indep` (modèle trigger), ce mécanisme tombe en défaut : l'ObjFM repasse en rep instantanément, la sensitive method recalcule, ctrl_var redescend à False avant que le target ait propagé.
    - **Approche pressentie (A)** : remplacer la sensitive method par des **effets directs sur les transitions** (cohérent dans les deux modes external et external_rep_indep). Risque de régression sur `external` à valider.
 
 2. **Périmètre de tests `external_rep_indep`** (à définir avant implémentation, TDD-first) :
    - Création des automates target + ctrl_vars.
-   - Cycle pulse sur un target unique.
-   - Cycle pulse avec combo d'ordre 2 (cc_12).
+   - Cycle trigger sur un target unique.
+   - Cycle trigger avec combo d'ordre 2 (cc_12).
    - Réparation indépendante : C1 répare avant C2, vérifier que la combo cc_12 ne se redéclenche pas tant que C2 n'est pas en rep.
    - Vérification de la loi μ_1 utilisée pour tous les ordres.
    - Vérification de la `repair_cond` originale appliquée localement.
@@ -86,7 +86,7 @@ Comportement historique. Les automates de défaillance vivent dans l'`ObjFM`, qu
 
 3. **Mise à jour de la spec `FEAT_OBJFM_SPECS.md`** :
    - Section "external" : retirer la mention "failure_effects ignorés avec warning", remplacer par "appliqués via l'automate du target".
-   - Section "external_rep_indep" : préciser le modèle pulse et les conditions/lois exactes pour les transitions ObjFM et target.
+   - Section "external_rep_indep" : préciser le modèle trigger et les conditions/lois exactes pour les transitions ObjFM et target.
    - Tableau récapitulatif à ajuster.
 
 4. **Backward compatibility** :
