@@ -177,14 +177,23 @@ class SimpleEquipment(cod3s.PycComponent):
     """Component with a single boolean ``working`` variable.
 
     Kept intentionally minimal: no message boxes, no PDMP, no continuous
-    variables. The only mutable state is ``working`` (initialised to
-    ``True``), which is what every ObjFM in the demo flips on failure
-    and restores on repair.
+    variables. The only mutable state is ``working``.
+
+    ``working`` is **reinitialised** (``setReinitialized(True)``): when no
+    sensitive method actively forces it to ``False`` (i.e. no ObjFM
+    automaton is in its failure state), PyCATSHOO restores it to its
+    declared initial value (``True``). This is the convention used in
+    every ObjFM demo: ObjFMs only set ``failure_effects={"working": False}``
+    and leave ``repair_effects`` empty — the variable returns to ``True``
+    automatically when the failure state is left, and there is no
+    ``repair_effect`` sensitive method that could fight a concurrent
+    failure on a multi-target ObjFM.
     """
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name, **kwargs)
         self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
+        self.working.setReinitialized(True)
 
 
 def build_system() -> cod3s.PycSystem:
@@ -208,7 +217,8 @@ def build_system() -> cod3s.PycSystem:
         targets=["C1"],
         behaviour="internal",
         failure_effects={"working": False},
-        repair_effects={"working": True},
+        # No repair_effects: ``working`` is reinitialised, so it returns
+        # to True automatically when the ObjFM leaves its occ state.
         failure_param=10,
         repair_param=5,
     )
@@ -227,7 +237,7 @@ def build_system() -> cod3s.PycSystem:
         targets=["C2"],
         behaviour="external",
         failure_effects={"working": False},
-        repair_effects={"working": True},
+        # No repair_effects (reinitialised pattern, see C1 above).
         failure_param=20,
         repair_param=8,
     )
@@ -253,7 +263,7 @@ def build_system() -> cod3s.PycSystem:
     #     targets=["C3", "C4"],
     #     behaviour="external_rep_indep",
     #     failure_effects={"working": False},
-    #     repair_effects={"working": True},
+    #     # No repair_effects (reinitialised pattern).
     #     # Order 1 (cc_1, cc_2 individually) parked at +inf — only the
     #     # common cause (cc_12, order 2) ever fires in the demo window.
     #     failure_param=[(1000,), (15,)],

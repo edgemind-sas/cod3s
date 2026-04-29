@@ -2,14 +2,25 @@
 
 Two ObjFMs cohabit a single ``PycSystem``:
 
-* an ``ObjFMExp`` over **three** components (C1, C2, C3) in ``internal``
-  mode, producing three independent exponential failure transitions
-  (``cc_1``, ``cc_2``, ``cc_3``) — one per component;
-* an ``ObjFMDelay`` over **two** components (D1, D2) in **``external``**
-  mode, producing one deterministic common-cause failure transition
-  (``cc_12`` with ``ttf = 10``). Two extra individual orders ``cc_1``
-  and ``cc_2`` exist but their ``ttf`` is parked at 99999 so they never
-  fall inside ``end_time_bound`` in the demo window.
+* an ``ObjFMExp`` over **three** components (C1, C2, C3) producing three
+  independent exponential failure transitions (``cc_1``, ``cc_2``,
+  ``cc_3``) — one per component;
+* an ``ObjFMDelay`` over **two** components (D1, D2) producing one
+  deterministic common-cause failure transition (``cc_12`` with
+  ``ttf = 10``). Two extra individual orders ``cc_1`` and ``cc_2``
+  exist but their ``ttf`` is parked at 99999 so they never fall inside
+  ``end_time_bound`` in the demo window.
+
+Both ObjFMs run in ``behaviour="internal"`` mode — the simplest /
+cleanest UX in the TUI: each ObjFM transition fires in a single step
+without target-side ``delay(0)`` chains. This works because every
+component's ``working`` variable is **``setReinitialized(True)``** and
+the ObjFMs only declare ``failure_effects`` (no ``repair_effects``).
+PyCATSHOO restores ``working`` to its initial ``True`` whenever no
+ObjFM automaton is actively in its failure state, so the multiple
+overlapping combos (``cc_1`` / ``cc_2`` / ``cc_12``) cannot fight over
+the variable's value — they just *contribute* a "False" while in occ,
+and stop contributing when they leave it.
 
 The intent is to exercise the way ``cod3s-isimu`` surfaces fireable
 transitions when **non-deterministic** (exp) and **deterministic** (delay)
@@ -17,17 +28,6 @@ laws coexist. ``isimu_fireable_transitions``
 (``cod3s/pycatshoo/system.py:899``) handles this correctly; this demo is
 the playground to verify the TUI faithfully reflects what that function
 returns.
-
-Why ``external`` for the delay ObjFM? In ``internal`` mode, **multiple
-overlapping orders** (``cc_1`` / ``cc_2`` / ``cc_12``) would each register
-a sensitive method on ``D1.working`` / ``D2.working`` enforcing their
-own ``failure_effects`` / ``repair_effects`` whenever those variables
-change. As soon as ``cc_12.occ`` flips ``D1=False``, ``cc_1.rep`` (still
-active in its rep state) immediately flips it back to ``True``, which
-re-triggers ``cc_12.occ``'s effect, which… loops forever inside
-``stepForward``. ``external`` mode delegates the actual variable update
-to a per-target automaton mediated by a ``ctrl_var``, so the multiple
-ObjFM combos cooperate via an ``OR`` instead of fighting.
 
 How to run
 ----------
@@ -66,13 +66,10 @@ Component     ObjFM               Transitions
 ============  ==================  =====================================
 C1, C2, C3    CX__fm_exp          cc_1, cc_2, cc_3 (each individual,
                                   exp, λ = 0.05). Behaviour: internal.
-D1, D2        DX__fm_dly          cc_12 (delay, ttf = 10) on the ObjFM
-                                  side, plus a target automaton on D1
-                                  and on D2 (delay(0) gated by
-                                  ``ctrl_fm_dly_D1`` / ``…_D2``).
-                                  Behaviour: external. cc_1 and cc_2
-                                  individual orders exist but are
-                                  parked at ttf = 99999 so they stay
+D1, D2        DX__fm_dly          cc_12 (delay, ttf = 10). Behaviour:
+                                  internal. cc_1 and cc_2 individual
+                                  orders exist but are parked at
+                                  ttf = 99999 so they stay
                                   ``end_time = 99999`` and never fall
                                   inside ``end_time_bound``.
 ============  ==================  =====================================
@@ -107,16 +104,15 @@ when the backend ``endTime`` is ``inf``. The component flips
 
 **Pressing Enter on the delay(10) at t = 0**
 
-The simulator advances to t = 10 and fires the ObjFM's ``cc_12.occ``.
-Because the behaviour is ``external``, this **does not** flip
-``D1.working`` / ``D2.working`` directly — it sets ``ctrl_fm_dly_D1``
-and ``ctrl_fm_dly_D2`` to ``True``. The fireable panel then shows two
-new chained transitions (``D1.fm_dly.occ`` and ``D2.fm_dly.occ``) at
-``end_time = 10`` (delay(0) from when ``ctrl_var`` flipped). They share
-the ★ "fires together" marker. Press Enter on either to chain the two
-target ``occ`` transitions in the same step — only then does
-``D1.working`` / ``D2.working`` flip to ``False``. ObjFM ``cc_12.rep``
-is now active at ``end_time = 10 + 5 = 15``.
+The simulator advances to t = 10 and fires ``cc_12.occ``. ``D1.working``
+and ``D2.working`` flip to ``False`` in the same step (the ObjFM's
+``failure_effects`` are applied directly because the behaviour is
+``internal``). ``cc_12.rep`` is now active at ``end_time = 10 + 5 = 15``;
+the next press of Enter on it advances to t = 15 and ``D1`` / ``D2``
+return to ``True`` automatically thanks to the
+``setReinitialized(True)`` mechanism (no ``repair_effects`` needed —
+the variable's reinitialised default takes over once no automaton is
+in occ).
 
 **Replanning an exp to t = 12, then stepping**
 
@@ -182,16 +178,22 @@ import cod3s
 
 
 class Equipment(cod3s.PycComponent):
-    """Component with a single boolean ``working`` variable, init True.
+    """Component with a single reinitialised boolean ``working`` variable.
 
-    Same minimal shape as in ``examples/objfm_demo`` and
-    ``examples/objfm_exp_demo``: the focus is on the failure-mode
-    dynamics, not flow propagation.
+    ``working`` is declared with ``setReinitialized(True)`` so PyCATSHOO
+    restores it to ``True`` whenever no ObjFM automaton is in a failure
+    state. The ObjFMs below only set ``failure_effects={"working": False}``
+    and leave ``repair_effects`` empty — this is the project-wide
+    convention for example components and avoids the "rep-state
+    sensitive method fights occ-state sensitive method" hang that hits
+    multi-target ObjFMs in ``internal`` mode when ``repair_effects`` is
+    non-empty.
     """
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name, **kwargs)
         self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
+        self.working.setReinitialized(True)
 
 
 def build_system() -> cod3s.PycSystem:
@@ -212,7 +214,8 @@ def build_system() -> cod3s.PycSystem:
         targets=["C1", "C2", "C3"],
         behaviour="internal",
         failure_effects={"working": False},
-        repair_effects={"working": True},
+        # No repair_effects: ``working`` is reinitialised, returns to
+        # True automatically when no ObjFM automaton is in occ.
         # failure_param[i] / repair_param[i] target order i+1 (1-indexed).
         # Only the order-1 (individual) entries are non-zero, so only
         # cc_1 / cc_2 / cc_3 get an automaton.
@@ -227,12 +230,12 @@ def build_system() -> cod3s.PycSystem:
     # cc_1/cc_2 are parked at ttf = 99999 to keep their end_time outside
     # ``end_time_bound`` until something explicitly plans them.
     #
-    # ``behaviour="external"`` is mandatory here. In ``internal`` mode,
-    # the cc_1, cc_2, cc_12 sensitive methods would all register on
-    # D1.working / D2.working and fight each other (cc_1.rep flips
-    # D1=True ↔ cc_12.occ flips D1=False ↔ infinite loop in stepForward).
-    # ``external`` mode mediates the variable update through a per-target
-    # automaton + ctrl_var, so the three combos cooperate via an OR.
+    # ``behaviour="internal"`` is OK here precisely because we use the
+    # reinitialised-variable + no-repair_effects convention (see
+    # ``Equipment`` docstring). With ``repair_effects`` left empty,
+    # there is no rep-state sensitive method enforcing
+    # ``working = True`` while ``cc_12.occ``'s sensitive method
+    # enforces ``working = False`` — no fight, no infinite loop.
     # ------------------------------------------------------------------
     for comp_name in ("D1", "D2"):
         system.add_component(name=comp_name, cls="Equipment")
@@ -240,9 +243,9 @@ def build_system() -> cod3s.PycSystem:
         cls="ObjFMDelay",
         fm_name="fm_dly",
         targets=["D1", "D2"],
-        behaviour="external",
+        behaviour="internal",
         failure_effects={"working": False},
-        repair_effects={"working": True},
+        # No repair_effects (reinitialised pattern).
         # failure_param[0] = order-1 ttf (cc_1 and cc_2 individually)
         # failure_param[1] = order-2 ttf (cc_12, common cause)
         failure_param=[(99999.0,), (10.0,)],

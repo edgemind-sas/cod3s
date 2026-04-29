@@ -151,15 +151,19 @@ import cod3s
 
 
 class Equipment(cod3s.PycComponent):
-    """Component with a single boolean ``working`` variable.
+    """Component with a single reinitialised boolean ``working`` variable.
 
-    Same shape as ``examples/objfm_demo/SimpleEquipment``, intentionally
-    minimal: the demo is about the failure-mode dynamics, not the flow.
+    Same shape as ``examples/objfm_demo/SimpleEquipment`` — intentionally
+    minimal. ``working`` is ``setReinitialized(True)`` so PyCATSHOO restores
+    it to its initial ``True`` value when no ObjFM automaton actively
+    forces it to ``False``. The ObjFMs below only set ``failure_effects``
+    and leave ``repair_effects`` empty (project-wide convention).
     """
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name, **kwargs)
         self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
+        self.working.setReinitialized(True)
 
 
 def build_system() -> cod3s.PycSystem:
@@ -185,7 +189,7 @@ def build_system() -> cod3s.PycSystem:
             targets=[comp_name],
             behaviour="internal",
             failure_effects={"working": False},
-            repair_effects={"working": True},
+            # No repair_effects (reinitialised ``working`` returns to True).
             failure_param=lam,
             repair_param=mu,
         )

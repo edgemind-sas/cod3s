@@ -289,6 +289,20 @@ Always update `__version__` and the test that asserts it (`tests/scripts/test_ru
 
 ## Examples
 
+### ObjFM convention for example components
+
+Whenever an example wires an ``ObjFM`` to a component variable, follow this rule:
+
+1. **Declare the variable as reinitialised**, e.g.
+   ``self.working = self.addVariable("working", Pyc.TVarType.t_bool, True); self.working.setReinitialized(True)``.
+   Pick the initial value freely (``True`` or ``False``) — it is the resting / "no failure" value.
+2. **Declare only ``failure_effects`** on the ObjFM (set the variable to the opposite of its initial value, e.g. ``failure_effects={"working": False}``).
+3. **Leave ``repair_effects`` empty.** PyCATSHOO's reinitialised-variable mechanism restores the resting value automatically when no ObjFM automaton is in its failure state.
+
+**Why:** A ``repair_effects`` clause registers a sensitive method on the variable that re-applies the repair value on every change. With multi-target ObjFMs, several combo automata (e.g. ``cc_1``, ``cc_12``) overlap on the same variable: the rep-state sensitive method of one fights the occ-state sensitive method of the other and ``stepForward`` loops forever. The reinitialised pattern sidesteps this by removing the rep-side enforcement entirely — no two automata ever try to write the variable simultaneously.
+
+This convention applies to *examples*. Domain components in user code that genuinely need symmetric `failure_effects` / `repair_effects` (e.g. counter increments, state machines that go beyond a single boolean) can keep the explicit pattern, but they must use disjoint combos to avoid the same fight.
+
 - `examples/basic_example.py` — full study (components, automata, system, indicators, Monte Carlo, results).
 - `examples/objfm_demo/objfm_demo.py` — minimal showcase of the `internal` and `external` `ObjFM` behaviours with deterministic delays. Expected timeline and per-transition state are documented inline. Designed to be loaded in `cod3s-isimu` for hands-on exploration. Run with: `PYTHONPATH="examples/objfm_demo:$PYTHONPATH" uv run cod3s-isimu --factory objfm_demo:build_system`. (`external_rep_indep` is sketched in commented-out code; it will be activated when the planned pulse model from the ObjFM brainstorm lands.)
 - `examples/objfm_exp_demo/objfm_exp_demo.py` — three independent equipments (pump1, pump2, valve), each with its own `ObjFMExp` (`behaviour="internal"`) using **exponential** failure / repair laws with different rates. Designed to drive the manual-planning workflow: every exp transition is fireable "now" (`end_time = currentTime()`), the user explicitly re-plans via `p` to make time advance. Run with: `PYTHONPATH="examples/objfm_exp_demo:$PYTHONPATH" uv run cod3s-isimu --factory objfm_exp_demo:build_system`.
