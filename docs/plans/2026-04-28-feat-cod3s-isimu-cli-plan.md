@@ -32,7 +32,7 @@ Cible MVP : 4 panels (`fireable transitions`, `components/variables` filtrables,
 ### Pourquoi maintenant
 
 - Les hooks `isimu_start_cli` et le code commenté `# system.isimu_start(...)` (`cod3s/scripts/run_cod3s_study.py:226-234`) prouvent que le besoin est connu de longue date mais n'a jamais abouti.
-- Les modes `objfm` `external_rep_indep` qui viennent d'être livrés produisent des comportements non-triviaux (cycles pulse, plusieurs `delay(0)` chaînés) qu'il est devenu **très difficile à debugger sans un pas-à-pas** observable.
+- Les modes `objfm` `external_rep_indep` qui viennent d'être livrés produisent des comportements non-triviaux (cycles trigger, plusieurs `delay(0)` chaînés) qu'il est devenu **très difficile à debugger sans un pas-à-pas** observable.
 - Reprise de projet après ~3 mois d'inactivité ; un outil interactif raccourcira drastiquement la boucle de validation.
 
 ---
@@ -497,7 +497,7 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - Pas-à-pas interactif inaccessible côté CLI ; les utilisateurs reproduisent à la main `system.isimu_start(); system.isimu_show_fireable_transitions(); system.isimu_set_transition(...)` dans un REPL Python — friction élevée, pas de visualisation, pas d'historique horodaté.
 
 ### Après
-- Une commande : `cod3s-isimu --model x.yaml` ouvre l'écran complet ; debug d'un scénario `external_rep_indep` (cycle pulse) passe de ~30 minutes à ~5 minutes.
+- Une commande : `cod3s-isimu --model x.yaml` ouvre l'écran complet ; debug d'un scénario `external_rep_indep` (cycle trigger) passe de ~30 minutes à ~5 minutes.
 - L'historique est horodaté et exportable → reproductibilité d'un scénario observé.
 
 ### Qualitatif
@@ -598,7 +598,7 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - Code mort à supprimer : `cod3s/pycatshoo/interactive_session.py`.
 - Pattern fixture pyc tests : `tests/pyc_obj/test_pyc_iter_simu_001.py:1-74`.
 - Pattern subprocess test E2E : `tests/usecases/indus_4_0_Electrolyseur/utils.py:32-44`.
-- Plan de référence (style/structure) : `docs/plans/2026-04-28-feat-objfm-external-rep-indep-pulse-model-plan.md`.
+- Plan de référence (style/structure) : `docs/plans/2026-04-28-feat-objfm-external-rep-indep-trigger-model-plan.md`.
 - Brainstorm associé : `docs/brainstorms/2026-04-28-cod3s-isimu-brainstorm.md`.
 
 ### External references
@@ -612,7 +612,7 @@ Ajouter un drapeau `--interactive` au binaire existant.
 - Textual `Input.Changed` : https://textual.textualize.io/widgets/input/
 
 ### Related work
-- Plan ObjFM external_rep_indep (gabarit suivi) : `docs/plans/2026-04-28-feat-objfm-external-rep-indep-pulse-model-plan.md`.
+- Plan ObjFM external_rep_indep (gabarit suivi) : `docs/plans/2026-04-28-feat-objfm-external-rep-indep-trigger-model-plan.md`.
 - Mémoire projet `project_python_version` (Python 3.10.18 only).
 - Mémoire projet `project_cod3s_isimu` (résumé de cette initiative).
 
