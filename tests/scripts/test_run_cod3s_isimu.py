@@ -77,15 +77,6 @@ def test_parser_accepts_factory_with_study_specs() -> None:
     assert ns.study_specs == "s.yaml"
 
 
-def test_parser_accepts_rng_seed() -> None:
-    parser = _build_parser()
-    ns = parser.parse_args(["--model", "m.yaml", "--rng-seed", "42"])
-    assert ns.rng_seed == 42
-
-    ns_default = parser.parse_args(["--model", "m.yaml"])
-    assert ns_default.rng_seed is None
-
-
 # ---------------------------------------------------------------------------
 # Factory resolution
 # ---------------------------------------------------------------------------

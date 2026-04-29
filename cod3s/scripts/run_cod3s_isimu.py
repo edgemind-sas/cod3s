@@ -97,17 +97,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--rng-seed",
-        type=int,
-        default=None,
-        help=(
-            "Seed for the engine RNG that pre-samples non-deterministic "
-            "occurrence laws (exp / uniform / ...). Same seed → same trace, "
-            "useful for reproducible debugging. Defaults to a fresh random "
-            "state on every run."
-        ),
-    )
-    parser.add_argument(
         "--log-level",
         type=str,
         default="DISABLED",
@@ -157,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     # even if the optional ``[isimu]`` extra (Textual) is not installed.
     from cod3s.pycatshoo.isimu.app import run_isimu
 
-    run_isimu(system, rng_seed=args.rng_seed)
+    run_isimu(system)
     return 0
 
 

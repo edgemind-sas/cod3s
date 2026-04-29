@@ -2,10 +2,39 @@
 
 Three independent equipments — pump1, pump2, valve — each carry their own
 ``ObjFMExp`` failure mode (``behaviour="internal"``) with different rates.
-Failures and repairs are sampled live by the ``cod3s-isimu`` engine
-(``ISimuEngine._autoplan_nondeterministic`` since version 0.2.0), so every
-``stepForward`` advances the simulator clock by an exp-distributed delay
-without you having to plan transitions manually.
+Failures and repairs are **exp-distributed**, but ``cod3s-isimu`` does not
+auto-sample those laws — that is by design (see the engine docstring).
+This file is the canonical demo for the **manual-planning workflow** that
+exp-based models require in interactive mode.
+
+How interactive mode handles non-deterministic transitions
+----------------------------------------------------------
+
+``PycSystem.isimu_fireable_transitions`` (``cod3s/pycatshoo/system.py:899``)
+treats ``exp`` / ``uniform`` / … laws specially:
+
+  - they are **always** in the fireable list,
+  - their displayed ``end_time`` is the underlying PyCATSHOO planned
+    end-time, which is ``inf`` until the user explicitly plans them.
+
+Translated to the cod3s-isimu UX, every unplanned exp transition shows
+up in the fireable panel with ``end_time = ∞``. Pressing ``Enter`` on
+it fires it **right now** at the current simulator time — the
+``isimu_set_transition`` default (when no date is given) falls back to
+``system.currentTime()`` for an unplanned transition. The simulator
+clock does not advance.
+
+To make time pass through an exponentially-distributed delay, **re-plan
+the transition** with the ``p`` modal (or call
+``ISimuEngine.replan(trans_id, date=...)`` programmatically) to a
+chosen future date. This keeps the operator in full control of the
+trace; it is the same workflow PyCATSHOO's interactive mode supports
+natively.
+
+The ★ "fires together" marker does **not** light up across multiple
+unplanned exp transitions — the comparison ``abs(∞ - ∞) ≤ ε`` is NaN,
+so each unplanned exp row appears alone in its group. Once you re-plan
+two of them to the same finite date, they share the marker as expected.
 
 How to run
 ----------
@@ -15,23 +44,8 @@ How to run
     PYTHONPATH="examples/objfm_exp_demo:$PYTHONPATH" \\
         uv run cod3s-isimu --factory objfm_exp_demo:build_system
 
-Pass ``--rng-seed N`` to make the run reproducible::
-
-    PYTHONPATH="examples/objfm_exp_demo:$PYTHONPATH" \\
-        uv run cod3s-isimu --factory objfm_exp_demo:build_system --rng-seed 42
-
-Pinning a seed is useful when a particular interleaving of events surfaces
-a bug — share the seed in the report and anyone re-running with that
-``--rng-seed`` will see the same trace.
-
 Layout of the system
 --------------------
-
-Three equipments live in the same ``PycSystem`` and never interact. Each
-gets its **own** ObjFMExp (``behaviour="internal"``) with independent
-failure (λ) and repair (μ) rates. There is **no** common-cause failure in
-this demo — that would require ``external_rep_indep``, which is still
-work-in-progress on master (see the ObjFM brainstorm).
 
 ============  ================  ====================================
 Equipment     ObjFM             Rates (per unit time)
@@ -47,72 +61,86 @@ valve         valve__fm_v       λ = 0.02  (mean ttf = 50)
 Each equipment exposes a single boolean ``working`` variable initialised
 to ``True``. On failure → ``False``, on repair → ``True``.
 
-Independence claim
-------------------
-
-* Each ObjFM owns one failure automaton on a single target → no coupling
-  between the three components.
-* The engine samples each non-deterministic transition with a private
-  ``random.Random(rng_seed)``, so the three components see uncorrelated
-  exp draws.
-* Pressing ``b`` (step backward) reverts only the **last** event,
-  affecting **only** the component that just transitioned. The others
-  stay where they are.
-* Pressing ``r`` (reset) re-seeds the RNG and replays from t=0; with the
-  same ``--rng-seed`` you get the same trace.
+There is **no** common-cause failure here — that would require
+``external_rep_indep`` whose target propagation is still WIP on master.
+What this demo shows clearly is **per-component independence**: each
+ObjFM lives on its own automaton, drives its own target, and has its
+own λ / μ.
 
 What you should observe in cod3s-isimu
 --------------------------------------
 
-* The **fireable panel** lists the *next* event only (smallest sampled
-  ``end_time``) — typically just one row at a time. Different runs (no
-  seed) give different orderings.
-* The **★ "fires together"** marker rarely lights up here: with
-  continuous exp distributions, two transitions sharing the *exact* same
-  end-time is a probability-zero event. Run with ``--rng-seed`` and a
-  carefully chosen seed if you want to deliberately reproduce a
-  near-collision.
-* The **components panel** colors variables in:
+**At t=0** — three transitions fireable (the three ``occ`` of the three
+ObjFMs), each displayed with ``end_time = ∞`` (unplanned). Each row
+appears in its own group (no ★) because all three have the same ``∞``
+marker — the engine treats those as not-comparable.
+
+**Pressing Enter on one row at t=0** — fires it instantaneously. The
+component flips ``working`` to ``False`` and the simulator clock stays
+at t=0. The fireable panel now shows that ObjFM's ``rep`` (also exp,
+``end_time = ∞``) plus the other two ``occ`` transitions still
+pending, all unplanned.
+
+**Pressing ``p`` on a row** — opens the re-plan modal. Type a future
+date (e.g. ``5.0``) and press Enter. The transition is now planned at
+t=5; PyCATSHOO will keep the others at currentTime so the ★ no longer
+groups everything. Press Enter on the re-planned row → simulator
+advances to t=5 and the transition fires.
+
+**Variable coloring** in the components panel (right):
 
   - dim grey — value matches its declared initial (``True``).
   - **bold red** — value just changed (``True → False`` at the failure
     step, then ``False → True`` at the repair step).
-  - orange (``differs from initial``) — value differs from initial but
-    didn't change at the last step. With this exp model, the orange
-    state corresponds exactly to "currently failed" (and not just
-    repaired).
+  - orange — value differs from initial (typically: currently failed)
+    but the last step did not change it.
 
-* The **history panel** grows as you press ``Enter``; floating-point
-  ``fired_at`` values reflect the actual exp draws.
+A typical exploration session
+-----------------------------
 
-A reference run with ``--rng-seed 42`` produces (rounded)::
+A way to drive a meaningful trace from the TUI::
 
-    step1: t=0.51   pump2.fail        | pump1=T pump2=F valve=T
-    step2: t=1.35   pump2.repair      | pump1=T pump2=T valve=T
-    step3: t=10.20  pump1.fail        | pump1=F pump2=T valve=T
-    step4: t=12.46  pump1.repair      | pump1=T pump2=T valve=T
-    step5: t=16.08  valve.fail        | pump1=T pump2=T valve=F
-    step6: t=16.99  valve.repair      | pump1=T pump2=T valve=T
-    step7: t=28.02  pump2.fail        | pump1=T pump2=F valve=T
-    step8: t=28.12  pump2.repair      | pump1=T pump2=T valve=T
+    1. Press p on ``pump1__fm_pump1.occ``. Set date to 8.0 (sample
+       below the mean ttf of 10, easy "first failure"). Press Enter.
+       Press Enter again on the row → simulator jumps to t=8, pump1
+       working=False, pump1.rep + pump2.occ + valve.occ fireable at
+       end_time=8.
 
-Use this trace as a sanity check after touching the engine: the same
-seed must reproduce these timings to within float precision.
+    2. Press p on ``pump1__fm_pump1.rep``. Date 9.5 (just over a unit
+       past, μ=0.5 means mean ttr=2 — tight repair). Fire it →
+       simulator at t=9.5, pump1 back to working=True.
+
+    3. Press p on ``pump2__fm_pump2.occ`` to date 25, fire. Etc.
+
+This gives you an **operator-driven scenario** where every clock
+advance is your decision. To run a "natural" exp simulation with
+sampled clocks, use ``run-cod3s-study`` in Monte-Carlo mode — that's
+what it's there for.
 
 Things to try
 -------------
 
-- **Different seeds**: ``--rng-seed 7``, ``--rng-seed 99``, … each gives
-  a different ordering of the three components' cycles.
-- **Re-plan**: pin a transition to a specific date with the ``p``
-  modal. The engine's auto-sampling does **not** override an
-  already-planned date, so ``p`` lets you "force" an early failure.
-- **Step backward**: press ``b`` repeatedly to walk back through the
-  history; the engine pops the matching ``FiredEvent`` and reschedules
-  the now-active transition with a fresh sample (so the next
-  ``stepForward`` will likely give a different time than before).
-- **Export**: press ``e`` to dump the timeline to CSV+JSON for offline
-  comparison between seeds.
+- **Independence**: re-plan two ObjFMs to the same future date (e.g.
+  pump1.occ at t=10, valve.occ at t=10). They will fire together at
+  step t=10 and the ★ will mark them — that's the only way to get a
+  ★ across exp transitions, since the engine does not pick the date
+  for you.
+- **Step backward** (``b``): rolls back the last step *and* resets the
+  planning of any non-deterministic transition that was fired (see
+  ``PycSystem.isimu_step_backward``). Useful to retry a re-plan.
+- **Reset** (``r``): everything back to t=0 with all ``working`` =
+  ``True`` and all ObjFM ``occ`` transitions fireable at
+  ``end_time = ∞`` (unplanned).
+- **Export** (``e``): the CSV ``fired_at`` column captures the actual
+  firing time you chose by re-planning.
+
+Limitations
+-----------
+
+* Common-cause failures with truly independent repairs require the
+  ``external_rep_indep`` "pulse" semantic; it is sketched as commented
+  code in ``examples/objfm_demo/objfm_demo.py`` and will be enabled
+  when the ObjFM brainstorm's pulse model is implemented.
 """
 
 from __future__ import annotations
@@ -167,7 +195,7 @@ def build_system() -> cod3s.PycSystem:
 
 if __name__ == "__main__":
     # Convenience: ``python examples/objfm_exp_demo/objfm_exp_demo.py`` opens
-    # the TUI with a fresh RNG state. Pass a seed via the CLI for repro.
+    # the TUI ready for the manual-planning workflow described in the docstring.
     from cod3s.pycatshoo.isimu.app import run_isimu
 
     run_isimu(build_system())

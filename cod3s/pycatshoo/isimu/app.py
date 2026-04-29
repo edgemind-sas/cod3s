@@ -247,19 +247,14 @@ class ISimuApp(App[None]):
         self.query_one("#panel-history", HistoryPanel).refresh_from_state(state)
 
 
-def run_isimu(system: Any, rng_seed: Optional[int] = None) -> None:
+def run_isimu(system: Any) -> None:
     """Entry-point used by ``cod3s-isimu`` and by ``PycSystem.isimu_start_cli``.
 
     Wraps ``system`` in an :class:`ISimuEngine`, runs the TUI, and stops the
     engine on exit. Does *not* call ``terminate_session()``; the binary that
     invoked us decides whether the PyCATSHOO singleton outlives the TUI
     (e.g. for a follow-up ``isimu_start_cli`` call).
-
-    Args:
-        system: A populated ``PycSystem``.
-        rng_seed: Forwarded to :class:`ISimuEngine` for reproducible sampling
-            of non-deterministic occurrence laws.
     """
-    engine = ISimuEngine(system, rng_seed=rng_seed)
+    engine = ISimuEngine(system)
     app = ISimuApp(engine=engine)
     app.run()
