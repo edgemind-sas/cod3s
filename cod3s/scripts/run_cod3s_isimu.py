@@ -27,6 +27,7 @@ from typing import Any
 
 import cod3s
 
+from cod3s.pycatshoo.isimu import __version__ as ISIMU_VERSION
 from cod3s.scripts._common import build_system_from_model, load_study_specs
 
 
@@ -65,6 +66,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "  cod3s-isimu --model model.yaml --study-specs study.yaml\n"
         ),
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"cod3s-isimu {ISIMU_VERSION}",
+    )
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument(
         "--model",
@@ -88,6 +94,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Optional YAML with 'failure_modes' / 'events' keys to apply on "
             "top of the loaded model (indicators and targets are skipped in "
             "interactive mode)."
+        ),
+    )
+    parser.add_argument(
+        "--rng-seed",
+        type=int,
+        default=None,
+        help=(
+            "Seed for the engine RNG that pre-samples non-deterministic "
+            "occurrence laws (exp / uniform / ...). Same seed → same trace, "
+            "useful for reproducible debugging. Defaults to a fresh random "
+            "state on every run."
         ),
     )
     parser.add_argument(
@@ -140,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     # even if the optional ``[isimu]`` extra (Textual) is not installed.
     from cod3s.pycatshoo.isimu.app import run_isimu
 
-    run_isimu(system)
+    run_isimu(system, rng_seed=args.rng_seed)
     return 0
 
 

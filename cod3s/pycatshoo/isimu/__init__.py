@@ -4,7 +4,18 @@ The TUI layer (``app``, ``panels``) is loaded lazily because it depends on the
 optional ``textual`` package. The non-TUI helpers below — the engine wrapping
 ``PycSystem.isimu_*`` plus utilities for grouping, diffing and exporting — are
 plain Python and importable without the ``[isimu]`` extra installed.
+
+Versioning policy (see ``CLAUDE.md`` for the full rule):
+
+* bump ``__version__`` by ``+0.0.1`` for a minor fix or doc-only change
+* bump ``__version__`` by ``+0.1.0`` for a feature evolution (new bindings,
+  new panel, new modal, breaking change in the engine API, etc.)
+
+The version is independent from the parent ``cod3s`` package version; the
+TUI lives under the ``[isimu]`` extra and ships its own cadence.
 """
+
+__version__ = "0.2.0"
 
 from cod3s.pycatshoo.isimu.engine import FiredEvent, ISimuEngine
 from cod3s.pycatshoo.isimu.grouping import group_fires_together
@@ -12,5 +23,6 @@ from cod3s.pycatshoo.isimu.grouping import group_fires_together
 __all__ = [
     "FiredEvent",
     "ISimuEngine",
+    "__version__",
     "group_fires_together",
 ]

@@ -268,7 +268,27 @@ results = pyc_system.simulate(sim_params)
 - **run-cod3s-study**: CLI for batch Monte-Carlo studies (`cod3s/scripts/run_cod3s_study.py`).
 - **cod3s-isimu**: CLI for the interactive Textual TUI simulator (`cod3s/scripts/run_cod3s_isimu.py`). Requires the optional `[isimu]` extra: `uv sync --extra isimu`. See `docs/user-guide/interactive-simulation.md`.
 
+## Versioning
+
+### Parent `cod3s` package
+
+Version lives in `cod3s/version.py` (read by `pyproject.toml` via `[tool.setuptools.dynamic]`). Bumped by Roland at release time.
+
+### `cod3s-isimu` (independent of the parent package)
+
+The interactive simulator ships its own version in `cod3s/pycatshoo/isimu/__init__.py` (`__version__`). It is **independent** of the parent `cod3s` package version because the TUI is an opt-in extra with its own cadence. The version is exposed by `cod3s-isimu --version` and shown in the TUI header.
+
+Bumping rule whenever you commit a change touching `cod3s/pycatshoo/isimu/` or `cod3s/scripts/run_cod3s_isimu.py`:
+
+| Change kind                                         | Bump        |
+|-----------------------------------------------------|-------------|
+| Bug fix, doc-only, refactor with no behaviour delta | `+0.0.1`    |
+| Feature evolution (new bindings, new panel/modal, new engine API, breaking change) | `+0.1.0` |
+
+Always update `__version__` and the test that asserts it (`tests/scripts/test_run_cod3s_isimu.py::test_version_runs_via_subprocess`) in the same commit. Mention the new version in the commit body.
+
 ## Examples
 
 - `examples/basic_example.py` — full study (components, automata, system, indicators, Monte Carlo, results).
 - `examples/objfm_demo/objfm_demo.py` — minimal showcase of the `internal` and `external` `ObjFM` behaviours with deterministic delays. Expected timeline and per-transition state are documented inline. Designed to be loaded in `cod3s-isimu` for hands-on exploration. Run with: `PYTHONPATH="examples/objfm_demo:$PYTHONPATH" uv run cod3s-isimu --factory objfm_demo:build_system`. (`external_rep_indep` is sketched in commented-out code; it will be activated when the planned pulse model from the ObjFM brainstorm lands.)
+- `examples/objfm_exp_demo/objfm_exp_demo.py` — three independent equipments (pump1, pump2, valve), each with its own `ObjFMExp` (`behaviour="internal"`) using **exponential** failure / repair laws with different rates. Demonstrates per-component independence and the engine's automatic exp-law sampling (since cod3s-isimu 0.2.0). Run with: `PYTHONPATH="examples/objfm_exp_demo:$PYTHONPATH" uv run cod3s-isimu --factory objfm_exp_demo:build_system [--rng-seed N]`.

@@ -9,7 +9,7 @@ The engine is the single source of truth the TUI watches:
   ``PycTransition.end_time`` is the planned end-time, not the actual firing
   time (it is even mutated during ``isimu_fireable_transitions``).
 
-Two notable workarounds compared to calling ``PycSystem.isimu_*`` directly:
+Three notable workarounds compared to calling ``PycSystem.isimu_*`` directly:
 
 #. ``isimu_start`` (``cod3s/pycatshoo/system.py:846``) calls ``startInteractive`` /
    ``stepForward`` *before* re-creating ``isimu_sequence``, so any transition
@@ -20,12 +20,20 @@ Two notable workarounds compared to calling ``PycSystem.isimu_*`` directly:
    ``isimu_sequence`` and returns the actually fired transitions. The engine
    uses ``isimu_step_forward`` everywhere — including the bootstrap step at
    start — so the timeline is always complete.
+#. PyCATSHOO does **not** auto-sample non-deterministic occurrence laws
+   (``exp``, ``uniform``, ...) in interactive mode — their ``endTime``
+   stays ``inf`` and ``stepForward`` cannot advance the clock through
+   them. The engine pre-samples each non-planned non-deterministic
+   transition (``_autoplan_nondeterministic``) before every step, using
+   its own ``random.Random`` instance so a ``rng_seed`` constructor
+   argument fully reproduces a run.
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from cod3s.pycatshoo.isimu.diff import snapshot_initials, snapshot_vars
 from cod3s.pycatshoo.sequence import PycSequence
@@ -59,10 +67,15 @@ class ISimuEngine:
     the event loop responsive.
     """
 
-    def __init__(self, system: Any) -> None:
+    def __init__(self, system: Any, rng_seed: Optional[int] = None) -> None:
         self.system = system
         self.history: List[FiredEvent] = []
         self.var_initial: Dict[str, Any] = {}
+        # Engine-local RNG for sampling non-deterministic occurrence laws so
+        # a given ``rng_seed`` deterministically reproduces a run independent
+        # from the global ``random`` state and from PyCATSHOO's own RNG.
+        self._rng = random.Random(rng_seed)
+        self._rng_seed = rng_seed
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -101,8 +114,14 @@ class ISimuEngine:
             pass
 
     def reset(self) -> FiredEvent:
-        """Restart the simulation from t=0."""
+        """Restart the simulation from t=0.
+
+        Re-seeds the engine RNG so two consecutive ``reset()`` calls (or a
+        ``reset`` after some steps) reproduce the same sequence of sampled
+        non-deterministic transitions when ``rng_seed`` was provided.
+        """
         self.stop()
+        self._rng = random.Random(self._rng_seed)
         return self.start()
 
     # ------------------------------------------------------------------
@@ -171,6 +190,10 @@ class ISimuEngine:
             # First step: the snapshot taken right before stepForward is the
             # post-startInteractive state, not the declared initials.
             vars_before = snapshot_vars(self.system)
+        # Sample non-deterministic transitions before stepping; otherwise
+        # PyCATSHOO leaves their ``endTime`` at ``inf`` and ``stepForward``
+        # cannot advance the clock.
+        self._autoplan_nondeterministic()
         fired = list(self.system.isimu_step_forward() or [])
         vars_after = snapshot_vars(self.system)
         evt = FiredEvent(
@@ -181,3 +204,51 @@ class ISimuEngine:
         )
         self.history.append(evt)
         return evt
+
+    def _autoplan_nondeterministic(self) -> None:
+        """Pre-sample every active non-deterministic transition.
+
+        PyCATSHOO's interactive ``stepForward`` does not sample exponential
+        / uniform laws — their ``_bkd.endTime()`` stays ``inf`` until the
+        user explicitly calls ``setTransPlanning``. For each such transition
+        whose planned end-time is still ``inf``, sample a delay from its
+        occurrence law and plan it at ``current_time + delay``.
+
+        Currently supports ``ExpOccDistribution`` (``exp(rate)``). Other
+        non-deterministic laws are skipped silently — the user can still
+        plan them manually via the ``p`` re-plan modal.
+        """
+        active = self.system.isimu_active_transitions()
+        if not active:
+            return
+        now = float(self.system.currentTime())
+        any_planned = False
+        for trans in active:
+            if trans.occ_law.is_occ_time_deterministic:
+                continue
+            try:
+                end_time = float(trans._bkd.endTime())
+            except Exception:
+                continue
+            if end_time != float("inf"):
+                # Already planned (or sampled in a previous step); leave it.
+                continue
+            sample = self._sample_delay(trans.occ_law)
+            if sample is None:
+                continue
+            self.system.setTransPlanning(trans._bkd, now + sample, 0)
+            any_planned = True
+        if any_planned:
+            self.system.updatePlanningInt()
+
+    def _sample_delay(self, occ_law: Any) -> Optional[float]:
+        """Sample a positive delay for ``occ_law``. Returns ``None`` for
+        unsupported laws."""
+        cls_name = type(occ_law).__name__
+        if cls_name == "ExpOccDistribution":
+            rate = float(occ_law.rate)
+            if rate <= 0.0:
+                return None
+            return self._rng.expovariate(rate)
+        # Future: UniformOccDistribution, etc.
+        return None

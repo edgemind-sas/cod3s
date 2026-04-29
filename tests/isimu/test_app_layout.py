@@ -21,7 +21,9 @@ async def test_app_mounts_with_no_engine() -> None:
     app = ISimuApp(engine=None)
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert app.title == "cod3s-isimu"
+        # Title carries the cod3s-isimu version (see cod3s.pycatshoo.isimu.__version__).
+        assert app.title.startswith("cod3s-isimu")
+        assert "v" in app.title
 
 
 async def test_app_renders_four_named_panels() -> None:

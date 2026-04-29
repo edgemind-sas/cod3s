@@ -21,6 +21,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header
 
+from cod3s.pycatshoo.isimu import __version__ as ISIMU_VERSION
 from cod3s.pycatshoo.isimu.engine import ISimuEngine
 from cod3s.pycatshoo.isimu.export import export_csv, export_json
 from cod3s.pycatshoo.isimu.modals import ExportModal, ReplanModal
@@ -43,7 +44,7 @@ class ISimuApp(App[None]):
     """
 
     CSS_PATH = str(Path(__file__).parent / "styles.tcss")
-    TITLE = "cod3s-isimu"
+    TITLE = f"cod3s-isimu v{ISIMU_VERSION}"
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
@@ -246,14 +247,19 @@ class ISimuApp(App[None]):
         self.query_one("#panel-history", HistoryPanel).refresh_from_state(state)
 
 
-def run_isimu(system: Any) -> None:
+def run_isimu(system: Any, rng_seed: Optional[int] = None) -> None:
     """Entry-point used by ``cod3s-isimu`` and by ``PycSystem.isimu_start_cli``.
 
     Wraps ``system`` in an :class:`ISimuEngine`, runs the TUI, and stops the
     engine on exit. Does *not* call ``terminate_session()``; the binary that
     invoked us decides whether the PyCATSHOO singleton outlives the TUI
     (e.g. for a follow-up ``isimu_start_cli`` call).
+
+    Args:
+        system: A populated ``PycSystem``.
+        rng_seed: Forwarded to :class:`ISimuEngine` for reproducible sampling
+            of non-deterministic occurrence laws.
     """
-    engine = ISimuEngine(system)
+    engine = ISimuEngine(system, rng_seed=rng_seed)
     app = ISimuApp(engine=engine)
     app.run()

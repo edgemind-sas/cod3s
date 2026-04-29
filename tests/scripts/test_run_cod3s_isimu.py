@@ -35,6 +35,20 @@ def test_help_runs_via_subprocess() -> None:
     assert "Textual TUI" in result.stdout
 
 
+def test_version_runs_via_subprocess() -> None:
+    """``cod3s-isimu --version`` prints the package version and exits 0."""
+    from cod3s.pycatshoo.isimu import __version__
+
+    result = subprocess.run(
+        ["cod3s-isimu", "--version"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert __version__ in result.stdout
+
+
 def test_parser_requires_model_or_factory() -> None:
     parser = _build_parser()
     with pytest.raises(SystemExit):
@@ -61,6 +75,15 @@ def test_parser_accepts_factory_with_study_specs() -> None:
     ns = parser.parse_args(["--factory", "mod.path:fn", "--study-specs", "s.yaml"])
     assert ns.factory == "mod.path:fn"
     assert ns.study_specs == "s.yaml"
+
+
+def test_parser_accepts_rng_seed() -> None:
+    parser = _build_parser()
+    ns = parser.parse_args(["--model", "m.yaml", "--rng-seed", "42"])
+    assert ns.rng_seed == 42
+
+    ns_default = parser.parse_args(["--model", "m.yaml"])
+    assert ns_default.rng_seed is None
 
 
 # ---------------------------------------------------------------------------
