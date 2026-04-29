@@ -271,4 +271,4 @@ results = pyc_system.simulate(sim_params)
 ## Examples
 
 - `examples/basic_example.py` — full study (components, automata, system, indicators, Monte Carlo, results).
-- `examples/objfm_demo/objfm_demo.py` — minimal showcase of the `internal` and `external` `ObjFM` behaviours with deterministic delays. Expected timeline and per-transition state are documented inline. Designed to be loaded in `cod3s-isimu` for hands-on exploration. (`external_rep_indep` is sketched in commented-out code; it will be activated when the planned pulse model from the ObjFM brainstorm lands.)
+- `examples/objfm_demo/objfm_demo.py` — minimal showcase of the `internal` and `external` `ObjFM` behaviours with deterministic delays. Expected timeline and per-transition state are documented inline. Designed to be loaded in `cod3s-isimu` for hands-on exploration. Run with: `PYTHONPATH="examples/objfm_demo:$PYTHONPATH" uv run cod3s-isimu --factory objfm_demo:build_system`. (`external_rep_indep` is sketched in commented-out code; it will be activated when the planned pulse model from the ObjFM brainstorm lands.)

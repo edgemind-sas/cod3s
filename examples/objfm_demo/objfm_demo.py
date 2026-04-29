@@ -8,14 +8,25 @@ and see the structural difference between the two behaviours live.
 How to run
 ----------
 
-::
+With ``uv`` (recommended — no manual venv activation)::
+
+    PYTHONPATH="examples/objfm_demo:$PYTHONPATH" \
+        uv run cod3s-isimu --factory objfm_demo:build_system
+
+The ``$PYTHONPATH`` carry-over is intentional: PyCATSHOO is exposed via the
+shell's existing ``PYTHONPATH`` (``$HOME/Work/EdgeMind/Dev/pycatshoo/Core/lib``),
+and we want to *prepend* the example's directory rather than replace the
+whole path.
+
+Or run the file directly via uv (it has a ``__main__`` shortcut)::
+
+    PYTHONPATH="examples/objfm_demo:$PYTHONPATH" \
+        uv run python examples/objfm_demo/objfm_demo.py
+
+If you prefer activating the venv yourself::
 
     source .venv/bin/activate
-    PYTHONPATH=examples/objfm_demo cod3s-isimu --factory objfm_demo:build_system
-
-Or run the file directly (it has a `__main__` shortcut)::
-
-    PYTHONPATH=examples/objfm_demo python examples/objfm_demo/objfm_demo.py
+    PYTHONPATH="examples/objfm_demo:$PYTHONPATH" cod3s-isimu --factory objfm_demo:build_system
 
 You should see the four panels populate. Press ``Enter`` on the highlighted
 fireable row to advance the simulator one step, repeatedly.
