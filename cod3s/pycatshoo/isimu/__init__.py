@@ -15,7 +15,7 @@ The version is independent from the parent ``cod3s`` package version; the
 TUI lives under the ``[isimu]`` extra and ships its own cadence.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 from cod3s.pycatshoo.isimu.engine import FiredEvent, ISimuEngine
 from cod3s.pycatshoo.isimu.grouping import group_fires_together

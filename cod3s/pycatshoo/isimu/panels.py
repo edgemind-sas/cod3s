@@ -22,8 +22,10 @@ from typing import Any, List, Optional
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Container
 from textual.coordinate import Coordinate
+from textual.message import Message
 from textual.widgets import DataTable, Input, RichLog, Tree
 
 from cod3s.pycatshoo.isimu.grouping import group_fires_together
@@ -40,11 +42,33 @@ class FireablePanel(Container):
     The trailing ★ column lights up on the rows that share ``end_time`` with
     the currently highlighted row — those are the transitions PyCATSHOO will
     fire together at the next ``stepForward``.
+
+    Bindings local to this panel (active only when the inner :class:`DataTable`
+    has focus): ``p`` posts a :class:`ReplanRequested` message to the App for
+    the cursor's transition.
     """
 
     BORDER_TITLE = "Fireable transitions"
 
     STAR_CHAR = "★"
+
+    BINDINGS = [
+        Binding("p", "replan_cursor", "Re-plan"),
+    ]
+
+    class ReplanRequested(Message):
+        """Posted to the App when the user presses ``p`` on a fireable row.
+
+        Carries the original index in ``isimu_active_transitions`` (so
+        ``isimu_set_transition`` can be called by the App) and the
+        ``PycTransition`` itself (so the App can compose a modal title from
+        ``comp_name`` and ``name``).
+        """
+
+        def __init__(self, idx: int, trans: Any) -> None:
+            super().__init__()
+            self.idx = idx
+            self.trans = trans
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -53,6 +77,28 @@ class FireablePanel(Container):
         # the ★ marker from ``on_data_table_row_highlighted``.
         self._fireable_cache: List[Optional[Any]] = []
         self._visible_idx: List[int] = []
+
+    def action_replan_cursor(self) -> None:
+        """Post a :class:`ReplanRequested` for the transition at the cursor.
+
+        No-op when the table is empty or the cursor sits on a non-fireable
+        slot. Validation that the engine actually exists is the App's job.
+        """
+        table = self.query_one("#fireable-table", DataTable)
+        if table.row_count == 0:
+            return
+        cursor_row = table.cursor_row
+        if cursor_row is None or cursor_row < 0:
+            return
+        if cursor_row >= len(self._visible_idx):
+            return
+        original_idx = self._visible_idx[cursor_row]
+        if original_idx >= len(self._fireable_cache):
+            return
+        trans = self._fireable_cache[original_idx]
+        if trans is None:
+            return
+        self.post_message(self.ReplanRequested(idx=original_idx, trans=trans))
 
     def compose(self) -> ComposeResult:
         table: DataTable[str] = DataTable(

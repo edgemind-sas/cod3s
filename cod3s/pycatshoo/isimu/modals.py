@@ -5,8 +5,10 @@ Two modals at the moment:
 * :class:`ExportModal` — collects a destination path (without extension) and
   returns a :class:`pathlib.Path`. The App is responsible for writing the
   CSV and JSON files via :func:`export_csv` / :func:`export_json`.
-* :class:`ReplanModal` — collects a transition index and a planned date for
-  ``PycSystem.isimu_set_transition``; returns a ``(idx, date)`` tuple.
+* :class:`ReplanModal` — collects a planned date for an already-identified
+  transition. The transition is chosen by the caller (``p`` is bound to the
+  ``FireablePanel`` and uses the cursor row), so the modal asks **only**
+  for the date and returns it as ``Optional[float]``.
 
 Both modals dismiss with ``None`` when the user cancels so the App can
 short-circuit the action.
@@ -15,7 +17,7 @@ short-circuit the action.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -74,8 +76,14 @@ class ExportModal(ModalScreen[Optional[Path]]):
             self.dismiss(Path(value) if value else None)
 
 
-class ReplanModal(ModalScreen[Optional[Tuple[int, float]]]):
-    """Ask for ``(trans_id, date)`` and dismiss with the parsed tuple."""
+class ReplanModal(ModalScreen[Optional[float]]):
+    """Ask for the new planned date of a transition the caller already knows.
+
+    The caller (typically :class:`FireablePanel.action_replan_cursor`) passes
+    a ``title`` string (typically ``"Replan transition {comp}.{trans_name}"``)
+    so the modal can display *which* transition is being replanned without
+    asking the user to re-enter its index.
+    """
 
     DEFAULT_CSS = """
     ReplanModal {
@@ -99,25 +107,20 @@ class ReplanModal(ModalScreen[Optional[Tuple[int, float]]]):
 
     def __init__(
         self,
-        default_idx: int = 0,
+        title: str = "Replan transition",
         default_date: float = 0.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self._default_idx = default_idx
+        self._title = title
         self._default_date = default_date
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Re-plan transition (advanced)", classes="modal-title")
+            yield Static(self._title, classes="modal-title")
             yield Static(
-                "Set the planned firing date of an active transition.",
+                "Set the planned firing date.",
                 classes="modal-help",
-            )
-            yield Input(
-                placeholder="transition index",
-                value=str(self._default_idx),
-                id="replan-idx",
             )
             yield Input(
                 placeholder="planned date (float)",
@@ -135,15 +138,13 @@ class ReplanModal(ModalScreen[Optional[Tuple[int, float]]]):
             self.dismiss(None)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        # Pressing Enter on the date input is the natural confirmation.
         if event.input.id == "replan-date":
             self._submit()
 
     def _submit(self) -> None:
         try:
-            idx = int(self.query_one("#replan-idx", Input).value)
             date = float(self.query_one("#replan-date", Input).value)
         except (TypeError, ValueError):
             self.dismiss(None)
             return
-        self.dismiss((idx, date))
+        self.dismiss(date)

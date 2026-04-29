@@ -52,9 +52,11 @@ class ISimuApp(App[None]):
         Binding("b", "step_backward", "Back"),
         Binding("r", "reset", "Reset"),
         Binding("e", "export", "Export"),
-        Binding("p", "replan", "Re-plan"),
         Binding("?", "help", "Help"),
     ]
+    # NOTE: ``p`` (re-plan) is bound at the FireablePanel level so it is
+    # only active when the inner DataTable has focus. The panel posts a
+    # FireablePanel.ReplanRequested message that this App handles below.
 
     def __init__(self, engine: Optional[ISimuEngine] = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -128,24 +130,31 @@ class ISimuApp(App[None]):
             return
         self.push_screen(ExportModal(), self._on_export_path)
 
-    def action_replan(self) -> None:
+    def on_fireable_panel_replan_requested(
+        self, message: FireablePanel.ReplanRequested
+    ) -> None:
+        """Handle ``p`` pressed on a fireable row.
+
+        The :class:`FireablePanel` already resolved the cursor's transition,
+        so we just open the date-only :class:`ReplanModal` with a title that
+        identifies the transition, then forward the chosen date to the engine
+        via ``_replan_worker``.
+        """
         if self._engine is None:
             return
-        # Pre-fill the modal with the currently highlighted transition (if any)
-        # and the simulator's current time as the default planned date.
-        try:
-            table = self.query_one("#fireable-table", DataTable)
-            cursor_row = table.cursor_row
-            if cursor_row is not None and 0 <= cursor_row < table.row_count:
-                idx = int(table.get_row_at(cursor_row)[0])
-            else:
-                idx = 0
-        except Exception:
-            idx = 0
-        date = float(self._engine.current_time)
+        idx = message.idx
+        trans = message.trans
+        title = f"Replan transition {trans.comp_name}.{trans.name}"
+        default_date = float(self._engine.current_time)
+
+        def _on_date(date: Optional[float]) -> None:
+            if date is None or self._engine is None:
+                return
+            self._replan_worker(int(idx), float(date))
+
         self.push_screen(
-            ReplanModal(default_idx=idx, default_date=date),
-            self._on_replan_result,
+            ReplanModal(title=title, default_date=default_date),
+            _on_date,
         )
 
     # ------------------------------------------------------------------
@@ -155,12 +164,6 @@ class ISimuApp(App[None]):
         if path is None or self._engine is None:
             return
         self._export_worker(path)
-
-    def _on_replan_result(self, result: Optional[tuple]) -> None:
-        if result is None or self._engine is None:
-            return
-        idx, date = result
-        self._replan_worker(int(idx), float(date))
 
     # ------------------------------------------------------------------
     # Workers

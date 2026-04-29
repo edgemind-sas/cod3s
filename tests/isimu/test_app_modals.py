@@ -187,13 +187,46 @@ async def test_export_cancelled_writes_nothing(
 # ---------------------------------------------------------------------------
 
 
+async def _focus_fireable(app, pilot):
+    """Helper: ensure the fireable DataTable has focus before pressing ``p``.
+
+    ``p`` is bound at the FireablePanel scope, so it only fires when that
+    panel's DataTable has keyboard focus. The default focus may land on a
+    different widget depending on the App layout, so we always focus
+    explicitly in tests.
+    """
+    from textual.widgets import DataTable
+
+    table = app.query_one("#fireable-table", DataTable)
+    table.focus()
+    await pilot.pause()
+
+
 async def test_p_binding_pushes_replan_modal(fake_engine: FakeEngine) -> None:
     app = ISimuApp(engine=fake_engine)
     async with app.run_test() as pilot:
         await pilot.pause()
+        await _focus_fireable(app, pilot)
         await pilot.press("p")
         await pilot.pause()
         assert isinstance(app.screen, ReplanModal)
+
+
+async def test_replan_modal_title_carries_transition_name(
+    fake_engine: FakeEngine,
+) -> None:
+    """The modal title encodes ``Replan transition {comp}.{trans_name}``."""
+    app = ISimuApp(engine=fake_engine)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await _focus_fireable(app, pilot)
+        # Cursor is on row 0 = first fireable transition (A.fail).
+        await pilot.press("p")
+        await pilot.pause()
+        modal = app.screen
+        assert isinstance(modal, ReplanModal)
+        # The title is set by the App from message.trans.{comp_name,name}.
+        assert modal._title == "Replan transition A.fail"
 
 
 async def test_replan_modal_dismiss_calls_engine_replan(
@@ -202,13 +235,18 @@ async def test_replan_modal_dismiss_calls_engine_replan(
     app = ISimuApp(engine=fake_engine)
     async with app.run_test() as pilot:
         await pilot.pause()
+        await _focus_fireable(app, pilot)
+        # Move cursor to row 1 (second fireable: B.fail) so the message
+        # carries idx=1.
+        await pilot.press("down")
+        await pilot.pause()
         await pilot.press("p")
         await pilot.pause()
 
         modal = app.screen
         assert isinstance(modal, ReplanModal)
-        # Dismiss with idx=1, date=12.5
-        modal.dismiss((1, 12.5))
+        # The simplified modal returns just a date (Optional[float]).
+        modal.dismiss(12.5)
 
         for _ in range(30):
             await pilot.pause()
@@ -226,6 +264,7 @@ async def test_replan_cancelled_does_not_call_engine(
     app = ISimuApp(engine=fake_engine)
     async with app.run_test() as pilot:
         await pilot.pause()
+        await _focus_fireable(app, pilot)
         await pilot.press("p")
         await pilot.pause()
         modal = app.screen
