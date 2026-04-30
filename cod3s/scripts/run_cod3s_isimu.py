@@ -142,8 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         if study.get("events"):
             system.add_events(study["events"], logger=logger)
 
-    # Lazy-import so ``cod3s-isimu --help`` and argument validation work
-    # even if the optional ``[isimu]`` extra (Textual) is not installed.
+    # Lazy-import so ``cod3s-isimu --help`` and argument validation stay
+    # responsive even on environments where Textual fails to import.
     from cod3s.pycatshoo.isimu.app import run_isimu
 
     run_isimu(system)
