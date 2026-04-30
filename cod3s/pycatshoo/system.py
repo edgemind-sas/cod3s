@@ -871,7 +871,8 @@ class PycSystem(pyc.CSystem):
         """Open the interactive Textual TUI on this system.
 
         Equivalent to running ``cod3s-isimu`` with this system as input.
-        Requires the optional ``[isimu]`` extra (``pip install cod3s[isimu]``).
+        Textual ships as a default ``cod3s`` runtime dependency, so no extra
+        install step is needed.
         """
         from cod3s.pycatshoo.isimu.app import run_isimu
 

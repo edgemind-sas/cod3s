@@ -3,8 +3,8 @@
 The ``ISimuApp`` orchestrates the four panels (see :mod:`panels`) and forwards
 key bindings to the underlying :class:`ISimuEngine`. This module is loaded
 lazily by the entry-point script so that ``cod3s.pycatshoo.isimu`` stays
-importable when the optional ``[isimu]`` extra (which pulls in Textual) has
-not been installed.
+importable in environments where Textual itself fails to import (e.g.
+embedded Python builds without a TTY backend).
 
 Phase 3 deliverable: the app mounts, renders the initial state of every
 panel, and supports the basic ``[q]`` quit binding. Wiring the fire / step

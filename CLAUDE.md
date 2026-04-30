@@ -266,7 +266,7 @@ results = pyc_system.simulate(sim_params)
 ## Entry Points
 
 - **run-cod3s-study**: CLI for batch Monte-Carlo studies (`cod3s/scripts/run_cod3s_study.py`).
-- **cod3s-isimu**: CLI for the interactive Textual TUI simulator (`cod3s/scripts/run_cod3s_isimu.py`). Requires the optional `[isimu]` extra: `uv sync --extra isimu`. See `docs/user-guide/interactive-simulation.md`.
+- **cod3s-isimu**: CLI for the interactive Textual TUI simulator (`cod3s/scripts/run_cod3s_isimu.py`). Textual ships as a default runtime dependency; no extra install step. See `docs/user-guide/interactive-simulation.md`.
 
 ## Versioning
 

@@ -35,6 +35,7 @@ dependencies = [
     "semver==3.0.4",
     "kaleido==1.1.0",
     "tqdm==4.67.1",
+    "textual>=8.2,<9",
 ]
 
 [project.urls]
@@ -45,14 +46,6 @@ Issues = "https://github.com/edgemind-sas/cod3s/issues"
 [project.scripts]
 run-cod3s-study = "cod3s.scripts.run_cod3s_study:main"
 cod3s-isimu = "cod3s.scripts.run_cod3s_isimu:main"
-
-[project.optional-dependencies]
-# Interactive simulator (cod3s-isimu) — Textual TUI dependencies.
-# Install with: pip install -e ".[isimu]"
-isimu = [
-    "textual>=8.2,<9",
-    "pytest-asyncio>=0.23",
-]
 
 [tool.uv]
 dev-dependencies = [
@@ -66,6 +59,7 @@ dev-dependencies = [
     "pydantic",
     "pyflakes",
     "pytest",
+    "pytest-asyncio>=0.23",
     "pytest-pythonpath",
     "pyyaml",
     "rope",

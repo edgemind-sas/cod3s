@@ -7,17 +7,17 @@ together at each instant, and replay or reset the trace at will.
 
 ## Installation
 
-The TUI is shipped as an optional extra so the default `cod3s` install stays
-lightweight:
+The TUI ships with `cod3s` by default — installing the package is enough:
 
 ```bash
-pip install -e ".[isimu]"
+pip install cod3s
 # or, with uv:
-uv sync --extra isimu
+uv sync
 ```
 
-This pulls in [Textual](https://textual.textualize.io/) (≥8.2,<9) and
-`pytest-asyncio` (≥0.23) for the test suite.
+This pulls in [Textual](https://textual.textualize.io/) (≥8.2,<9) as a
+runtime dependency. `pytest-asyncio` (≥0.23) is a dev-only dependency for
+the test suite.
 
 ## Quick start
 
@@ -144,8 +144,9 @@ system.isimu_start_cli()
 
 ## Troubleshooting
 
-* `ModuleNotFoundError: No module named 'textual'` — install the extra:
-  `pip install -e ".[isimu]"`.
+* `ModuleNotFoundError: No module named 'textual'` — your environment
+  predates the change that made Textual a default dependency. Reinstall
+  cod3s (`pip install --upgrade cod3s` or `uv sync`).
 * The screen flickers on a tiny terminal — Textual needs at least 80
   columns × 24 rows for the grid layout to look right.
 * `cod3s-isimu` exits immediately with a `NameError` on `python_class` —
