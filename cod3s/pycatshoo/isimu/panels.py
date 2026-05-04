@@ -32,6 +32,42 @@ from cod3s.pycatshoo.isimu.grouping import group_fires_together
 from cod3s.pycatshoo.isimu.state import ISimuState
 
 # ---------------------------------------------------------------------------
+# Shared formatting helpers — keep style strings in one place so the panels
+# render typed values and transition arrows consistently.
+# ---------------------------------------------------------------------------
+
+ARROW_STYLE = "orange3"
+
+
+def _value_style(value: Any, *, bold: bool = False, dim: bool = False) -> str:
+    """Return the Rich style string for a typed variable value.
+
+    - ``bool`` False → magenta, True → green
+    - ``int`` / ``float`` → cyan
+    - anything else → no color
+    The ``bold`` and ``dim`` flags are appended as additional tokens.
+    """
+    tokens: list[str] = []
+    if isinstance(value, bool):
+        tokens.append("green" if value else "magenta")
+    elif isinstance(value, (int, float)):
+        tokens.append("cyan")
+    if bold:
+        tokens.append("bold")
+    if dim:
+        tokens.append("dim")
+    return " ".join(tokens)
+
+
+def _render_value(value: Any, *, bold: bool = False, dim: bool = False) -> Text:
+    return Text(str(value), style=_value_style(value, bold=bold, dim=dim))
+
+
+def _arrow_text() -> Text:
+    return Text(" → ", style=ARROW_STYLE)
+
+
+# ---------------------------------------------------------------------------
 # FireablePanel
 # ---------------------------------------------------------------------------
 
@@ -120,11 +156,15 @@ class FireablePanel(Container):
             self._visible_idx.append(idx)
             target = trans.target if isinstance(trans.target, str) else "[…]"
             end_time = f"{trans.end_time:.3f}" if trans.end_time is not None else "—"
+            src_target = Text()
+            src_target.append(str(trans.source))
+            src_target.append(_arrow_text())
+            src_target.append(target)
             table.add_row(
                 str(idx),
                 str(trans.comp_name),
                 str(trans.name),
-                f"{trans.source} → {target}",
+                src_target,
                 end_time,
                 "",  # ★ column populated by _highlight_group on cursor move
             )
@@ -224,19 +264,27 @@ class ComponentsPanel(Container):
     def _format_var(name: str, current: Any, initial: Any, previous: Any) -> Text:
         """Color a variable line according to its delta state.
 
-        - Changed at last step → bold red, shows ``previous → current``.
-        - Differs from initial → orange, current value with ``(init: …)`` hint.
-        - Otherwise → dim grey, current value only.
+        Type-based colours always apply: bool ``False`` → magenta, bool
+        ``True`` → green, numeric → cyan, other types → no color. The state
+        cue is layered on top:
+
+        - Changed at last step → values rendered **bold** with an orange
+          ``previous → current`` arrow.
+        - Differs from initial → current value at full intensity, plus a
+          dim ``(init: …)`` hint.
+        - Unchanged at initial → current value rendered dim.
         """
         text = Text()
         text.append(f"{name}: ")
         if previous != current:
-            text.append(f"{previous} → {current}", style="bold red")
+            text.append(_render_value(previous, bold=True))
+            text.append(_arrow_text())
+            text.append(_render_value(current, bold=True))
         elif initial != current:
-            text.append(str(current), style="orange3")
-            text.append(f"  (init: {initial})", style="dim")
+            text.append(_render_value(current))
+            text.append(Text(f"  (init: {initial})", style="dim"))
         else:
-            text.append(str(current), style="dim")
+            text.append(_render_value(current, dim=True))
         return text
 
 
@@ -272,13 +320,13 @@ class LastDeltaPanel(Container):
         else:
             for trans in state.last_fired_transitions:
                 target = trans.target if isinstance(trans.target, str) else "[…]"
-                log.write(
-                    Text(
-                        f"• {trans.comp_name}.{trans.name}: "
-                        f"{trans.source} → {target}",
-                        style="green",
-                    )
-                )
+                line = Text()
+                line.append("• ", style="green")
+                line.append(f"{trans.comp_name}.{trans.name}: ", style="green")
+                line.append(str(trans.source), style="green")
+                line.append(_arrow_text())
+                line.append(target, style="green")
+                log.write(line)
 
         changed = state.changed_at_last_step()
         if not changed:
@@ -288,7 +336,12 @@ class LastDeltaPanel(Container):
         log.write(Text("Δ vars:", style="bold"))
         for name, value in sorted(changed.items()):
             prev = state.var_previous.get(name)
-            log.write(Text(f"  {name}: {prev} → {value}", style="bold red"))
+            line = Text()
+            line.append(f"  {name}: ")
+            line.append(_render_value(prev, bold=True))
+            line.append(_arrow_text())
+            line.append(_render_value(value, bold=True))
+            log.write(line)
 
 
 # ---------------------------------------------------------------------------
