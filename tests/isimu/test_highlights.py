@@ -23,6 +23,9 @@ from cod3s.pycatshoo.isimu.app import ISimuApp
 from cod3s.pycatshoo.isimu.panels import (
     ComponentsPanel,
     FireablePanel,
+    _arrow_text,
+    _render_value,
+    _value_style,
 )
 from cod3s.pycatshoo.isimu.state import ISimuState
 
@@ -238,28 +241,143 @@ def _styles_in(text: Text) -> set[str]:
     return styles
 
 
-def test_format_var_unchanged_uses_dim() -> None:
+def test_format_var_bool_true_unchanged_uses_dim_green() -> None:
     text = ComponentsPanel._format_var(
         "flag", current=True, initial=True, previous=True
     )
-    assert "dim" in _styles_in(text)
+    styles = _styles_in(text)
+    assert "green dim" in styles
     assert "True" in text.plain
 
 
-def test_format_var_differs_from_initial_uses_orange() -> None:
+def test_format_var_bool_false_unchanged_uses_dim_magenta() -> None:
+    text = ComponentsPanel._format_var(
+        "flag", current=False, initial=False, previous=False
+    )
+    styles = _styles_in(text)
+    assert "magenta dim" in styles
+    assert "False" in text.plain
+
+
+def test_format_var_numeric_unchanged_uses_dim_cyan() -> None:
+    text = ComponentsPanel._format_var(
+        "n", current=42, initial=42, previous=42
+    )
+    styles = _styles_in(text)
+    assert "cyan dim" in styles
+    assert "42" in text.plain
+
+
+def test_format_var_differs_from_initial_keeps_type_color_and_init_hint() -> None:
     text = ComponentsPanel._format_var(
         "flag", current=True, initial=False, previous=True
     )
     styles = _styles_in(text)
-    assert "orange3" in styles
+    # Type color applies regardless of state — bool True is green.
+    assert "green" in styles
+    # Dim hint exposes the initial value.
     assert "init: False" in text.plain
+    assert "dim" in styles
 
 
-def test_format_var_changed_at_last_step_uses_bold_red() -> None:
+def test_format_var_changed_at_last_step_bolds_values_and_uses_orange_arrow() -> None:
     text = ComponentsPanel._format_var(
         "flag", current=True, initial=False, previous=False
     )
     styles = _styles_in(text)
-    assert "bold red" in styles
-    # The before → after arrow is rendered on this row.
-    assert "False → True" in text.plain
+    # Both endpoints bold + type-colored; arrow orange.
+    assert "magenta bold" in styles  # previous False
+    assert "green bold" in styles  # current True
+    assert "orange3" in styles  # arrow
+    assert "False" in text.plain
+    assert "True" in text.plain
+    assert "→" in text.plain
+
+
+# ---------------------------------------------------------------------------
+# Shared formatting helpers — the panels rely on these for type-based colors
+# (bool False → magenta, True → green, numeric → cyan) and the orange
+# transition arrow.
+# ---------------------------------------------------------------------------
+
+
+def test_value_style_bool_false_is_magenta() -> None:
+    assert _value_style(False) == "magenta"
+
+
+def test_value_style_bool_true_is_green() -> None:
+    assert _value_style(True) == "green"
+
+
+def test_value_style_int_is_cyan() -> None:
+    assert _value_style(42) == "cyan"
+
+
+def test_value_style_float_is_cyan() -> None:
+    assert _value_style(3.14) == "cyan"
+
+
+def test_value_style_string_has_no_color() -> None:
+    assert _value_style("ok") == ""
+
+
+def test_value_style_combines_bold_and_dim_tokens() -> None:
+    assert _value_style(True, bold=True) == "green bold"
+    assert _value_style(False, dim=True) == "magenta dim"
+    assert _value_style(7, bold=True, dim=True) == "cyan bold dim"
+
+
+def test_render_value_emits_text_with_typed_style() -> None:
+    text = _render_value(False, bold=True)
+    assert text.plain == "False"
+    # Single-style Text exposes the style on the top-level attribute, not as a
+    # span (spans are added by ``Text.append`` calls).
+    assert str(text.style) == "magenta bold"
+
+
+def test_arrow_text_is_orange() -> None:
+    arrow = _arrow_text()
+    assert "→" in arrow.plain
+    # The whole arrow Text carries the orange3 style as its top-level style.
+    assert str(arrow.style) == "orange3"
+
+
+async def test_fireable_panel_renders_orange_arrow_in_source_target_cell() -> None:
+    """The ``source → target`` column of FireablePanel uses an orange arrow.
+
+    The cell is a Rich ``Text`` (so the arrow can be styled independently);
+    asserting the style on the arrow span guards against accidental
+    string-only renders.
+    """
+    from textual.coordinate import Coordinate
+    from textual.widgets import DataTable
+
+    trans = _trans("A", "fail", end_time=1.0)
+    state = ISimuState(
+        current_time=0.0,
+        fireable=[trans],
+        history=[],
+        var_initial={},
+        var_current={},
+        var_previous={},
+    )
+
+    app = ISimuApp(engine=None)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        panel = app.query_one("#panel-fireable", FireablePanel)
+        panel.refresh_from_state(state)
+        await pilot.pause()
+        table = app.query_one("#fireable-table", DataTable)
+        cell = table.get_cell_at(Coordinate(0, 3))  # "source → target" col
+        assert isinstance(cell, Text)
+        assert "ok" in cell.plain
+        assert "→" in cell.plain
+        assert "ko" in cell.plain
+        # At least one span carries orange3 and overlaps the arrow.
+        arrow_pos = cell.plain.index("→")
+        assert any(
+            str(span.style) == "orange3"
+            and span.start <= arrow_pos < span.end
+            for span in cell.spans
+        )
