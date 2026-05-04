@@ -81,6 +81,9 @@ version = {attr = "cod3s.version.__version__"}
 [tool.setuptools.packages.find]
 exclude = ["tests*", "log*", "*.tests*", "*.log*", "archive*", "docs*"]
 
+[tool.setuptools.package-data]
+"cod3s.pycatshoo.isimu" = ["*.tcss"]
+
 # Dev tools configuration
 [tool.black]
 line-length = 88
