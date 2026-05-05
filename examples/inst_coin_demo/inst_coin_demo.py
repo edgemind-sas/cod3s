@@ -4,8 +4,10 @@ A single ``coin`` component that repeatedly tosses with two equal-probability
 outcomes (``heads`` and ``tails``). Designed to be the simplest possible
 walkthrough of the inst pending UX:
 
-* No effects, no extra variables — the result is just the active state of
-  the coin's automaton.
+* One integer variable ``face`` recording the most recent outcome
+  (``0`` initially, ``1`` for heads, ``-1`` for tails). The Components panel
+  shows ``coin.face`` cycling as the user resolves successive tosses —
+  this is the per-branch effects pattern in its simplest form.
 * The toss is implemented as one inst transition with two branches; after
   landing on ``heads`` or ``tails``, a ``delay(1)`` returns to ``tossing``,
   re-arming the inst transition for the next toss.
@@ -57,7 +59,7 @@ Layout
 ==========  ==========================  ============================
 Component   Variable                    Automaton states
 ==========  ==========================  ============================
-coin        (none)                      tossing, heads, tails
+coin        face (int, initial 0)       tossing, heads, tails
 ==========  ==========================  ============================
 
 Brainstorm 2026-05-05 (key decisions #1, #2, #3): one source state, one
@@ -67,8 +69,23 @@ states; identifiers are state names — no separate "branch name".
 
 from __future__ import annotations
 
+import Pycatshoo as Pyc
+
 import cod3s
 from cod3s.pycatshoo.automaton import PycAutomaton
+
+
+class Coin(cod3s.PycComponent):
+    """Coin component with a single integer ``face`` variable.
+
+    ``face`` records the most recent toss outcome (``0`` initially,
+    ``1`` for heads, ``-1`` for tails). Updated by per-branch effects
+    on the inst transition.
+    """
+
+    def __init__(self, name: str, **kwargs) -> None:
+        super().__init__(name, **kwargs)
+        self.face = self.addVariable("face", Pyc.TVarType.t_int, 0)
 
 
 def build_system() -> cod3s.PycSystem:
@@ -80,20 +97,21 @@ def build_system() -> cod3s.PycSystem:
     """
     system = cod3s.PycSystem(name="InstCoinDemo")
 
-    coin = system.add_component(name="coin", cls="PycComponent")
+    coin = system.add_component(name="coin", cls="Coin")
 
     aut = PycAutomaton(
         name="aut_coin",
         states=["tossing", "heads", "tails"],
         init_state="tossing",
         transitions=[
-            # Inst transition: 50/50 between heads and tails.
+            # Inst transition: 50/50 between heads and tails. Each branch
+            # carries its own per-branch effect on the ``face`` variable.
             {
                 "name": "toss",
                 "source": "tossing",
                 "target": [
-                    {"state": "heads", "prob": 0.5},
-                    {"state": "tails", "prob": 0.5},
+                    {"state": "heads", "prob": 0.5, "effects": {"face": 1}},
+                    {"state": "tails", "prob": 0.5, "effects": {"face": -1}},
                 ],
             },
             # Re-arm: delay(1) returns to tossing from each landing state.
@@ -112,6 +130,8 @@ def build_system() -> cod3s.PycSystem:
         ],
     )
     aut.update_bkd(coin)
+    # Wire the per-branch effects on the target states.
+    coin.register_branch_effects(aut, "toss", aut.transitions[0].target)
 
     return system
 
