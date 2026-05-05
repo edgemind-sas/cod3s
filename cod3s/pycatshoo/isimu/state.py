@@ -18,6 +18,7 @@ class ISimuState:
 
     current_time: float = 0.0
     fireable: List[Any] = field(default_factory=list)
+    pending_inst: List[Any] = field(default_factory=list)
     history: List[Any] = field(default_factory=list)
     var_initial: Dict[str, Any] = field(default_factory=dict)
     var_current: Dict[str, Any] = field(default_factory=dict)
@@ -27,11 +28,19 @@ class ISimuState:
 
     @classmethod
     def from_engine(cls, engine: Any) -> "ISimuState":
-        """Build a snapshot from the live :class:`ISimuEngine`."""
+        """Build a snapshot from the live :class:`ISimuEngine`.
+
+        Falls back gracefully when the engine is a stripped-down test fake
+        without the ``pending_inst`` accessor — the snapshot is then
+        empty for that field, which means timed mode in the panel.
+        """
         last = engine.history[-1] if engine.history else None
+        pending_fn = getattr(engine, "pending_inst", None)
+        pending = list(pending_fn()) if callable(pending_fn) else []
         return cls(
             current_time=engine.current_time,
             fireable=list(engine.fireable()),
+            pending_inst=pending,
             history=list(engine.history),
             var_initial=dict(engine.var_initial),
             var_current=dict(engine.vars_current),

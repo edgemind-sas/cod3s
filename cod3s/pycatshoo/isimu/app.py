@@ -157,6 +157,18 @@ class ISimuApp(App[None]):
             _on_date,
         )
 
+    def on_fireable_panel_inst_resolve_requested(
+        self, message: FireablePanel.InstResolveRequested
+    ) -> None:
+        """Handle ``s`` pressed in inst pending mode.
+
+        Forwards the per-transition branch choices to
+        :meth:`ISimuEngine.resolve_inst` from a worker thread.
+        """
+        if self._engine is None:
+            return
+        self._resolve_inst_worker(dict(message.choices))
+
     # ------------------------------------------------------------------
     # Modal callbacks
     # ------------------------------------------------------------------
@@ -230,6 +242,20 @@ class ISimuApp(App[None]):
         except Exception as exc:
             self.call_from_thread(
                 self.notify, f"Replan failed: {exc}", severity="error"
+            )
+            return
+        self.call_from_thread(self.refresh_panels)
+
+    @work(thread=True, exclusive=True, group="engine")
+    def _resolve_inst_worker(self, choices: dict) -> None:
+        engine = self._engine
+        if engine is None:
+            return
+        try:
+            engine.resolve_inst(choices)
+        except Exception as exc:
+            self.call_from_thread(
+                self.notify, f"Inst resolve failed: {exc}", severity="error"
             )
             return
         self.call_from_thread(self.refresh_panels)

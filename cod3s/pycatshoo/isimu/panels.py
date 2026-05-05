@@ -73,23 +73,31 @@ def _arrow_text() -> Text:
 
 
 class FireablePanel(Container):
-    """List of fireable transitions in a navigable :class:`DataTable`.
+    """List of fireable transitions in a navigable widget.
 
-    The trailing ★ column lights up on the rows that share ``end_time`` with
-    the currently highlighted row — those are the transitions PyCATSHOO will
-    fire together at the next ``stepForward``.
+    Two display modes coexist in a single panel:
 
-    Bindings local to this panel (active only when the inner :class:`DataTable`
-    has focus): ``p`` posts a :class:`ReplanRequested` message to the App for
-    the cursor's transition.
+    * **Timed mode** — the default :class:`DataTable` listing fireable
+      transitions ranked by ``end_time``. The trailing ★ column lights up
+      on rows that share ``end_time`` with the cursor. ``p`` posts a
+      :class:`ReplanRequested` for the cursor's transition.
+    * **Inst pending mode** — when ``state.pending_inst`` is non-empty,
+      PyCATSHOO has hidden the timed transitions; the panel switches to
+      a :class:`Tree` showing each pending inst transition with its
+      branches (target state + probability). The default selection is
+      the max-probability branch per transition; a deterministic single
+      branch is marked with ``!``. ``s`` submits all selections in one
+      atomic call (:class:`InstResolveRequested` posted to the App).
     """
 
     BORDER_TITLE = "Fireable transitions"
 
     STAR_CHAR = "★"
+    DETERMINISTIC_MARKER = "!"
 
     BINDINGS = [
         Binding("p", "replan_cursor", "Re-plan"),
+        Binding("s", "submit_inst", "Submit (inst)"),
     ]
 
     class ReplanRequested(Message):
@@ -106,6 +114,18 @@ class FireablePanel(Container):
             self.idx = idx
             self.trans = trans
 
+    class InstResolveRequested(Message):
+        """Posted to the App when the user presses ``s`` in inst pending mode.
+
+        Carries ``choices: dict[trans_id_in_fireable, state_index]`` for every
+        pending inst transition. The App forwards them to
+        :meth:`ISimuEngine.resolve_inst`.
+        """
+
+        def __init__(self, choices: dict) -> None:
+            super().__init__()
+            self.choices = choices
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         # Live cache of ``state.fireable`` (with ``None`` slots) and a parallel
@@ -113,6 +133,11 @@ class FireablePanel(Container):
         # the ★ marker from ``on_data_table_row_highlighted``.
         self._fireable_cache: List[Optional[Any]] = []
         self._visible_idx: List[int] = []
+        # Inst pending mode bookkeeping:
+        # * ``_pending_inst_cache``: list of (fireable_index, transition).
+        # * ``_inst_choices``: {fireable_index: state_index} the user picked.
+        self._pending_inst_cache: List[tuple] = []
+        self._inst_choices: dict = {}
 
     def action_replan_cursor(self) -> None:
         """Post a :class:`ReplanRequested` for the transition at the cursor.
@@ -136,6 +161,20 @@ class FireablePanel(Container):
             return
         self.post_message(self.ReplanRequested(idx=original_idx, trans=trans))
 
+    def action_submit_inst(self) -> None:
+        """Post :class:`InstResolveRequested` with the current branch choices.
+
+        No-op when there is nothing pending (the user is in timed mode).
+        """
+        if not self._pending_inst_cache:
+            return
+        # Make sure every pending inst has a choice — fall back to the
+        # cached default (max-prob branch) if the user didn't override.
+        choices = dict(self._inst_choices)
+        for fireable_idx, _ in self._pending_inst_cache:
+            choices.setdefault(fireable_idx, self._default_branch(fireable_idx))
+        self.post_message(self.InstResolveRequested(choices=choices))
+
     def compose(self) -> ComposeResult:
         table: DataTable[str] = DataTable(
             id="fireable-table",
@@ -144,12 +183,34 @@ class FireablePanel(Container):
         )
         table.add_columns("#", "comp", "transition", "source → target", "end_time", "★")
         yield table
+        # Inst-mode tree, hidden by default.
+        tree: Tree[Any] = Tree(
+            "Pending inst (press s to submit)",
+            id="inst-pending-tree",
+        )
+        tree.display = False
+        yield tree
 
     def refresh_from_state(self, state: ISimuState) -> None:
         self._fireable_cache = list(state.fireable)
         self._visible_idx = []
         table = self.query_one("#fireable-table", DataTable)
+        tree = self.query_one("#inst-pending-tree", Tree)
         table.clear()
+
+        if state.pending_inst:
+            # Inst pending mode: hide the table, populate the tree.
+            self._render_pending_inst(state.pending_inst, tree)
+            table.display = False
+            tree.display = True
+            return
+
+        # Timed mode: hide the tree, populate the table.
+        tree.display = False
+        table.display = True
+        self._pending_inst_cache = []
+        self._inst_choices = {}
+
         for idx, trans in enumerate(state.fireable):
             if trans is None:
                 continue
@@ -171,6 +232,117 @@ class FireablePanel(Container):
         # Seed the ★ markers for the row the cursor will land on (row 0).
         if table.row_count > 0:
             self._highlight_group(0)
+
+    # ------------------------------------------------------------------
+    # Inst pending rendering
+    # ------------------------------------------------------------------
+    def _render_pending_inst(self, pending: List[Any], tree: Tree) -> None:
+        """Populate the inst pending tree and seed the default selections."""
+        # Find the fireable index for each pending inst (kept stable across
+        # refreshes by matching on ``(comp_name, name)`` — there cannot be
+        # two pending inst transitions with the same identity).
+        pending_pairs: List[tuple] = []
+        for trans in pending:
+            try:
+                idx = next(
+                    i
+                    for i, t in enumerate(self._fireable_cache)
+                    if t is not None
+                    and t.comp_name == trans.comp_name
+                    and t.name == trans.name
+                )
+            except StopIteration:
+                continue
+            pending_pairs.append((idx, trans))
+
+        self._pending_inst_cache = pending_pairs
+        self._inst_choices = {}
+
+        tree.clear()
+        for fireable_idx, trans in pending_pairs:
+            branches = trans.target  # list[StateProbModel]
+            deterministic = len(branches) == 1
+            label = Text()
+            label.append(f"{trans.comp_name}.{trans.name}", style="green")
+            label.append(f"  ({len(branches)} branches)", style="dim")
+            if deterministic:
+                label.append(f" {self.DETERMINISTIC_MARKER}", style="bold yellow")
+            node = tree.root.add(label, expand=True, data=fireable_idx)
+
+            # Default selection = max-prob branch (or the only branch).
+            default_state_idx = self._default_branch_from_branches(branches)
+            self._inst_choices[fireable_idx] = default_state_idx
+
+            for state_idx, branch in enumerate(branches):
+                child_label = self._format_branch(branch, selected=(state_idx == default_state_idx))
+                node.add_leaf(child_label, data=(fireable_idx, state_idx))
+        tree.root.expand_all()
+
+    @staticmethod
+    def _format_branch(branch: Any, *, selected: bool) -> Text:
+        """Render a branch as ``[●] → state_name (p=0.NN)`` or ``[ ]`` if not selected."""
+        marker = "●" if selected else " "
+        prob_str = f"p={branch.prob:.3f}" if branch.prob is not None else "p=?"
+        text = Text()
+        text.append(f"[{marker}] ", style="bold magenta" if selected else "dim")
+        text.append("→ ", style=ARROW_STYLE)
+        text.append(str(branch.state), style="green")
+        text.append(f"  ({prob_str})", style="cyan")
+        return text
+
+    @staticmethod
+    def _default_branch_from_branches(branches: List[Any]) -> int:
+        """Index of the highest-probability branch (ties broken by order)."""
+        best_idx = 0
+        best_prob = -1.0
+        for i, branch in enumerate(branches):
+            p = branch.prob if branch.prob is not None else 0.0
+            if p > best_prob:
+                best_prob = p
+                best_idx = i
+        return best_idx
+
+    def _default_branch(self, fireable_idx: int) -> int:
+        """Look up the default branch for a given fireable index from the cache."""
+        for idx, trans in self._pending_inst_cache:
+            if idx == fireable_idx:
+                return self._default_branch_from_branches(trans.target)
+        return 0
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        """User selected a branch leaf — record the choice and re-render labels."""
+        if getattr(event.control, "id", None) != "inst-pending-tree":
+            return
+        node = event.node
+        if node is None or node.data is None:
+            return
+        # Branch leaves carry a (fireable_idx, state_idx) tuple.
+        if not isinstance(node.data, tuple):
+            return
+        fireable_idx, state_idx = node.data
+        self._inst_choices[fireable_idx] = state_idx
+        self._refresh_inst_labels()
+
+    def _refresh_inst_labels(self) -> None:
+        """Rewrite branch leaf labels to reflect the current selections."""
+        tree = self.query_one("#inst-pending-tree", Tree)
+        for parent in tree.root.children:
+            for leaf in parent.children:
+                if leaf.data is None or not isinstance(leaf.data, tuple):
+                    continue
+                fireable_idx, state_idx = leaf.data
+                # Resolve the branch object from the cache.
+                branch = self._branch_at(fireable_idx, state_idx)
+                if branch is None:
+                    continue
+                selected = self._inst_choices.get(fireable_idx) == state_idx
+                leaf.label = self._format_branch(branch, selected=selected)
+
+    def _branch_at(self, fireable_idx: int, state_idx: int) -> Optional[Any]:
+        for idx, trans in self._pending_inst_cache:
+            if idx == fireable_idx and 0 <= state_idx < len(trans.target):
+                return trans.target[state_idx]
+        return None
 
     # ------------------------------------------------------------------
     # ★ "fires together" highlight

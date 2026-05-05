@@ -172,6 +172,53 @@ class ISimuEngine:
         )
 
     # ------------------------------------------------------------------
+    # Inst transitions (probabilistic branching)
+    # ------------------------------------------------------------------
+    def pending_inst(self) -> List[Any]:
+        """Return the inst transitions currently fireable at ``currentTime``.
+
+        An inst transition is identified by a list-typed ``target`` (each entry
+        is a :class:`StateProbModel`). When at least one inst transition is
+        pending, PyCATSHOO hides timed transitions from ``fireable``, so
+        callers can safely treat a non-empty ``pending_inst`` as the *only*
+        thing the user needs to resolve before time can advance.
+        """
+        return [
+            trans
+            for trans in self.fireable()
+            if trans is not None and isinstance(trans.target, list)
+        ]
+
+    def resolve_inst(self, choices: Dict[int, int]) -> FiredEvent:
+        """Resolve all pending inst transitions in a single atomic step.
+
+        Parameters
+        ----------
+        choices
+            Mapping ``{trans_id_in_fireable: state_index}``. Each entry pins
+            the target branch for a pending inst transition. ``trans_id`` is
+            the index in the engine's ``fireable()`` list.
+
+        Returns
+        -------
+        FiredEvent
+            The event recorded by the bootstrap-compatible step that drains
+            the inst transitions.
+
+        Notes
+        -----
+        PyCATSHOO drains *all* inst transitions in a single ``stepForward``;
+        the caller MUST submit one ``state_index`` per pending inst
+        transition. Submitting fewer choices will leave the un-resolved
+        transitions to be sampled by PyCATSHOO's RNG.
+        """
+        for trans_id, state_index in choices.items():
+            self.system.isimu_set_transition(
+                trans_id=trans_id, state_index=state_index
+            )
+        return self._step_and_capture()
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
     def _step_and_capture(self) -> FiredEvent:
