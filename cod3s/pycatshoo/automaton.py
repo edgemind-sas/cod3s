@@ -66,8 +66,26 @@ class OccurrenceDistributionModel(ObjCOD3S):
 
 
 class StateProbModel(pydantic.BaseModel):
-    state: str = pydantic.Field(..., description="State name")
-    prob: float = pydantic.Field(..., description="State probability")
+    state: str = pydantic.Field(..., description="Target state name")
+    prob: typing.Optional[float] = pydantic.Field(
+        None,
+        description=(
+            "Branch probability. None (or missing) means the branch shares "
+            "the residual 1 - sum(explicit_probs) with the other prob-less "
+            "branches."
+        ),
+    )
+    effects: typing.Dict[str, typing.Any] = pydantic.Field(
+        default_factory=dict,
+        description="Per-branch effects applied on target state entry.",
+    )
+    effects_format: typing.Literal["dict", "records"] = pydantic.Field(
+        "dict",
+        description=(
+            "Effects format: 'dict' for {var: value} or 'records' for "
+            "[{'var': var_obj, 'value': value}, ...]."
+        ),
+    )
 
 
 class TransitionModel(ObjCOD3S):
@@ -112,16 +130,39 @@ class TransitionModel(ObjCOD3S):
             if values.get("occ_law") is not None:
                 values["occ_law"] = cls.sanitize_occ_law(values["occ_law"])
         else:
-            # Case INST distribution
+            # Inst transition (probabilistic branching).
+            if len(target) == 0:
+                raise ValueError(
+                    "Inst transition must have at least one branch (got an empty target list)"
+                )
+
+            # Distinct target states: each branch must point to a unique state.
+            state_names = [st.get("state") for st in target]
+            if len(set(state_names)) != len(state_names):
+                duplicates = [s for s in set(state_names) if state_names.count(s) > 1]
+                raise ValueError(
+                    f"Inst transition branches must have distinct target states; duplicates: {duplicates}"
+                )
+
+            # Treat `prob: None` as a missing prob (complement-share).
+            for st in target:
+                if st.get("prob") is None:
+                    st.pop("prob", None)
+
             probs_tot_tmp = sum([st.get("prob", 0) for st in target])
+            # Allow sum to exceed 1 only by float-rounding noise.
+            if probs_tot_tmp > 1 + 1e-9:
+                raise ValueError(
+                    f"Inst transition explicit probs sum to {probs_tot_tmp} > 1"
+                )
+
             states_no_prob = [st for st in target if "prob" not in st]
             nb_states_no_prob = len(states_no_prob)
             if nb_states_no_prob > 0:
                 probs_comp = (1 - probs_tot_tmp) / nb_states_no_prob
                 [st.setdefault("prob", probs_comp) for st in target]
-            else:
-                for st in target:
-                    st["prob"] /= probs_tot_tmp
+            # else: all probs explicit — they must already sum to 1 (or close).
+            #       We don't normalize anymore: that hid user mistakes.
 
         return values
 
@@ -437,8 +478,10 @@ class PycTransition(TransitionModel):
             if self.occ_law is not None:
                 self._bkd.setDistLaw(self.occ_law.to_bkd(self._bkd.parent()))
         else:
-            # The transition is an INST transition
-            # NOT WORKING: PARAMETERS DOES NOT SEEMED TO BE ASSIGNED...
+            # INST transition: probabilities are stored as N-1 parameters
+            # (Pycatshoo computes the last as the complement). They are only
+            # observable via `law.parameter(idx)` *after* the system has been
+            # initialised (e.g. via `isimu_start`).
             probs = []
             for st in self.target:
                 state_target = automaton.get_state_by_name(st.state)

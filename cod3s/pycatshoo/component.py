@@ -340,6 +340,79 @@ class PycComponent(pyc.CComponent):
 
         return aut
 
+    def register_branch_effects(self, automaton, transition_name, branches):
+        """Wire state-entry sensitive methods for each inst-branch's effects.
+
+        Parameters
+        ----------
+        automaton : PycAutomaton
+            Automaton hosting the inst transition.
+        transition_name : str
+            Name of the inst transition (used to namespace the sensitive
+            method names; only required to be unique per (automaton, branch)).
+        branches : list[StateProbModel]
+            The transition's `target` list. Each branch with a non-empty
+            ``effects`` dict gets a sensitive method registered on its target
+            state, applying the effects whenever the state becomes active.
+
+        Notes
+        -----
+        Effects are bound to the *target state* (state-entry pattern, like
+        ``add_aut2st``). Brainstorm 2026-05-05 key decisions #3 and #4: target
+        states must be distinct within a transition, so this association is
+        unambiguous.
+        """
+        for branch in branches:
+            if not branch.effects:
+                continue
+
+            target_state_bkd = automaton.get_state_by_name(branch.state)._bkd
+            method_name = (
+                f"branch_eff__{automaton.name}__{transition_name}__{branch.state}"
+            )
+
+            if branch.effects_format == "dict":
+                effects_dict = branch.effects
+
+                def _make_callback(state_bkd, eff):
+                    def _callback():
+                        if state_bkd.isActive():
+                            for var, value in eff.items():
+                                v = self.variable(var)
+                                if v.value() != value:
+                                    v.setValue(value)
+                    return _callback
+
+                callback = _make_callback(target_state_bkd, effects_dict)
+
+                automaton._bkd.addSensitiveMethod(method_name, callback)
+                for var in effects_dict.keys():
+                    self.variable(var).addSensitiveMethod(method_name, callback)
+                self.addStartMethod(method_name, callback)
+
+            elif branch.effects_format == "records":
+                effects_records = branch.effects
+
+                def _make_callback_records(state_bkd, eff):
+                    def _callback():
+                        if state_bkd.isActive():
+                            for elt in eff:
+                                if elt["var"].value() != elt["value"]:
+                                    elt["var"].setValue(elt["value"])
+                    return _callback
+
+                callback = _make_callback_records(target_state_bkd, effects_records)
+
+                automaton._bkd.addSensitiveMethod(method_name, callback)
+                for elt in effects_records:
+                    elt["var"].addSensitiveMethod(method_name, callback)
+                self.addStartMethod(method_name, callback)
+
+            else:
+                raise ValueError(
+                    f"Unsupported effects_format {branch.effects_format!r} for branch {branch.state}"
+                )
+
     def add_aut2st(
         self,
         name,

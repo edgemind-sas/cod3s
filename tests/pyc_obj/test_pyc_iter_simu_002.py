@@ -75,7 +75,20 @@ def test_system(the_system):
         "cls": "PycTransition",
         "name": "toss",
         "source": "toss",
-        "target": [{"state": "even", "prob": 0.6}, {"state": "odd", "prob": 0.4}],
+        "target": [
+            {
+                "state": "even",
+                "prob": 0.6,
+                "effects": {},
+                "effects_format": "dict",
+            },
+            {
+                "state": "odd",
+                "prob": 0.4,
+                "effects": {},
+                "effects_format": "dict",
+            },
+        ],
         "occ_law": {"cls": "InstOccDistribution", "probs": [0.6]},
         "end_time": 0.0,
         "condition": None,

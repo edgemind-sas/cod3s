@@ -87,8 +87,18 @@ def test_component_withAutom():
                         "name": "state3",
                         "source": "state3",
                         "target": [
-                            {"state": "state2", "prob": 0.5},
-                            {"state": "state1", "prob": 0.5},
+                            {
+                                "state": "state2",
+                                "prob": 0.5,
+                                "effects": {},
+                                "effects_format": "dict",
+                            },
+                            {
+                                "state": "state1",
+                                "prob": 0.5,
+                                "effects": {},
+                                "effects_format": "dict",
+                            },
                         ],
                         "occ_law": None,
                         "end_time": None,
