@@ -427,7 +427,18 @@ def run_study(
             f"Starting simulation [nb_runs={study_obj.simulation.nb_runs}]"
         )
     start = datetime.datetime.now()
-    system.simulate(study_obj.simulation.model_dump(exclude_none=True))
+    # Normalise the schedule for ``PycMCSimulationParam``: that runtime
+    # accepts plain floats (single instant) or ``InstantLinearRange`` dicts
+    # ``{start, end, nvalues}`` — but NOT our ``{instant: <float>}`` form,
+    # which is wire-format only. Project ``ScheduleEntry(instant=t)`` back
+    # to the float ``t`` here so the bridge stays one-line.
+    sim_payload = study_obj.simulation.model_dump(exclude_none=True)
+    if isinstance(sim_payload.get("schedule"), list):
+        sim_payload["schedule"] = [
+            entry["instant"] if isinstance(entry, dict) and set(entry.keys()) == {"instant"} else entry
+            for entry in sim_payload["schedule"]
+        ]
+    system.simulate(sim_payload)
     duration = datetime.datetime.now() - start
     if logger:
         logger.info2(f"Simulation completed in: {duration}")
