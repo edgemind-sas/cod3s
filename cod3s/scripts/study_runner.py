@@ -422,6 +422,28 @@ def run_study(
     if hasattr(system, "monitorTransition"):
         system.monitorTransition("#.*")
 
+    # When at least one target is wired, ask PyCATSHOO to dump the
+    # sequences (state trajectories that reached a target) as an XML
+    # file alongside the run artefacts. Without this call the sequences
+    # live only in memory and are lost when ``simulate()`` returns —
+    # every downstream consumer (``cod3s-platform``'s
+    # ``RunSequencesTable``, the user-supplied post-processor) then
+    # sees an empty list. Skipped when no targets are declared because
+    # the resulting XML is meaningless for a pure-indicators sub-run.
+    #
+    # The PyCATSHOO API splits this in two : ``setResultFileName(path,
+    # append)`` sets the output path, ``setBinSeqFile(bool)`` toggles
+    # binary vs textual XML. We keep the textual form because that's
+    # what ``cod3s-platform``'s sequences parser consumes.
+    has_targets = bool(getattr(study_obj, "targets", None))
+    if has_targets and hasattr(system, "setResultFileName"):
+        seq_path = results_path / "sequences.xml"
+        system.setResultFileName(str(seq_path), False)
+        if hasattr(system, "setBinSeqFile"):
+            system.setBinSeqFile(False)
+        if logger:
+            logger.info2(f"Sequences XML will be written to: {seq_path}")
+
     if logger:
         logger.info1(
             f"Starting simulation [nb_runs={study_obj.simulation.nb_runs}]"
