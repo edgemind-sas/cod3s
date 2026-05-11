@@ -418,9 +418,33 @@ def run_study(
 
     # Step 7: monitor + simulate
     # ``monitorTransition`` is required to expose transitions in the
-    # sequences XML output. Default pattern matches everything.
+    # sequences XML output. We restrict monitoring to ``.occ``
+    # transitions (failure occurrences, including CCF variants like
+    # ``.occ__cc_3``) and drop the matching ``.rep`` /
+    # ``.step_to_repli`` / state-change transitions that PyCATSHOO
+    # records by default.
+    #
+    # Pattern : ``#.*\.occ.*`` — the ``#`` prefix asks PyCATSHOO for a
+    # regex match, ``.*\.occ.*`` captures any transition whose name
+    # contains the literal ``.occ`` substring. We cannot anchor on
+    # ``.occ$`` because ObjFMExp emits CCF variants as ``.occ__cc_N``
+    # (one per element of the common-cause group), and a strict
+    # end-anchor would silently drop them — that was the bug that
+    # surfaced when only PC_DAME (which has no CCF) showed up in the
+    # recorded sequences.
+    #
+    # Rationale of the filter : a Monte-Carlo trajectory that reaches
+    # a target typically cycles through ``occ → rep → occ`` many
+    # times before the predicate fires. Including ``.rep`` in the
+    # recorded sequence makes every trajectory unique by timing of
+    # those reversible events, which destroys the equivalence-class
+    # grouping downstream (87 % singletons observed on the RATP DIL
+    # FMDS instance with the wildcard monitor). Filtering at the
+    # source costs nothing — PyCATSHOO simply doesn't store the
+    # excluded transitions — and gives the downstream tools a clean
+    # signal of *failure occurrences* in causal order.
     if hasattr(system, "monitorTransition"):
-        system.monitorTransition("#.*")
+        system.monitorTransition("#.*\\.occ.*")
 
     # When at least one target is wired, ask PyCATSHOO to dump the
     # sequences (state trajectories that reached a target) as an XML
