@@ -404,10 +404,6 @@ class ComponentClass(ObjCOD3S):
 
         instance_specs["cls"] = cls_instance
         instance_specs["name"] = name
-        # cod3s_sub_classes = ObjCOD3S.get_subclasses_dict()
-
-        # instance_class = cod3s_sub_classes.get(cls_instance, ComponentInstance)
-        # instance = instance_class(name=name, **kwargs_bis)
         instance = ObjCOD3S.from_dict(instance_specs)
 
         # __import__("ipdb").set_trace()

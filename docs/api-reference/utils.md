@@ -18,8 +18,6 @@ This section documents utility functions and helper classes.
 
 ::: cod3s.utils.etl.update_dict_deep
 
-::: cod3s.utils.etl.dict_diff
-
 ::: cod3s.utils.etl.remove_key_from_dict
 
 ## Logging

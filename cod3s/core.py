@@ -32,20 +32,6 @@ class ObjCOD3S(pydantic.BaseModel):
         return sub
 
     @classmethod
-    def get_subclasses_dict(cls, recursive=True):
-        """Enumerates all subclasses of a given class.
-
-        # Arguments
-        cls: class. The class to enumerate subclasses for.
-        recursive: bool (default: True). If True, recursively finds all sub-classes.
-
-        # Return value
-        A dict of subclasses of `cls`.
-        """
-        sub_list = cls.get_subclasses(recursive=recursive)
-        return {clz.__name__: clz for clz in sub_list}
-
-    @classmethod
     def from_yaml(
         cls,
         file_path: str,
