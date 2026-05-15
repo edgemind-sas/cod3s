@@ -187,16 +187,24 @@ class ISimuApp(App[None]):
         The engine is invoked from a worker thread so a slow PyCATSHOO
         ``stepForward`` does not freeze the UI. Panel refresh is scheduled
         back on the main thread via ``call_from_thread``.
+
+        If the planner refuses the replan (e.g. transition no longer active),
+        the user is notified and the worker falls through to a plain
+        ``step_forward``. Without the notification the step would silently
+        succeed on whatever transition PyCATSHOO picks itself, leaving the
+        operator unaware that their intended target was rejected.
         """
         engine = self._engine
         if engine is None:
             return
         try:
             engine.replan(trans_id=idx)
-        except Exception:
-            # Re-planning may fail (e.g. transition no longer active);
-            # fall through to a plain step_forward.
-            pass
+        except Exception as exc:
+            self.call_from_thread(
+                self.notify,
+                f"Replan rejected, falling through to step_forward: {exc}",
+                severity="warning",
+            )
         engine.step_forward()
         self.call_from_thread(self.refresh_panels)
 
