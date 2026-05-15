@@ -78,3 +78,23 @@ def test_transition_validator_accepts_stateprobmodel_instances():
     assert trans.target[0].prob == pytest.approx(0.4)
     assert trans.target[1].state == "b"
     assert trans.target[1].prob == pytest.approx(0.6)
+
+
+def test_transition_validator_accepts_mixed_branches():
+    """The validator must accept a list mixing ``StateProbModel``
+    instances and raw dicts in the same call. This shape is unusual but
+    valid: callers can build half their branches from existing models
+    and half from user-supplied dicts."""
+    branches = [
+        StateProbModel(state="a", prob=0.3),
+        {"state": "b", "prob": 0.5},
+        {"state": "c"},  # complement-share branch
+    ]
+    trans = PycTransition(name="branch", source="src", target=branches)
+    assert len(trans.target) == 3
+    for branch in trans.target:
+        assert isinstance(branch, StateProbModel)
+    # The complement branch should receive the residual 1 - 0.3 - 0.5 = 0.2.
+    assert trans.target[0].prob == pytest.approx(0.3)
+    assert trans.target[1].prob == pytest.approx(0.5)
+    assert trans.target[2].prob == pytest.approx(0.2)

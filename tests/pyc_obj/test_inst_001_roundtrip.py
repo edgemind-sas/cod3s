@@ -302,3 +302,45 @@ def test_helper_accepts_law_already_carrying_full_n_vector():
 
     rebuilt = InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=2)
     assert rebuilt.probs == pytest.approx([0.3, 0.7], rel=1e-9)
+
+
+def test_helper_rejects_full_n_vector_with_non_unit_sum():
+    """If a future PyCATSHOO build exposes the full N-vector but the
+    values do not sum to 1, the helper must refuse rather than silently
+    accept a malformed law."""
+    class _FakeLaw:
+        @staticmethod
+        def name():
+            return "inst"
+
+        @staticmethod
+        def nbParam():
+            return 2
+
+        @staticmethod
+        def parameter(i):
+            return [0.3, 0.5][i]  # sums to 0.8, not 1.0
+
+    with pytest.raises(ValueError, match="sum to"):
+        InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=2)
+
+
+def test_helper_single_target_inst_yields_unit_probability():
+    """A degenerate 1-branch inst law (``nbParam == 0``, ``n_targets ==
+    1``) must yield ``probs == [1.0]``. Edge case not exercised by the
+    higher-level round-trip tests."""
+    class _FakeLaw:
+        @staticmethod
+        def name():
+            return "inst"
+
+        @staticmethod
+        def nbParam():
+            return 0
+
+        @staticmethod
+        def parameter(i):
+            raise IndexError("no parameters")
+
+    rebuilt = InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=1)
+    assert rebuilt.probs == pytest.approx([1.0], rel=1e-9)

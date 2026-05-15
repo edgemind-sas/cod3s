@@ -25,8 +25,8 @@ class PycState(StateModel):
     is_active: bool = pydantic.Field(None, description="State is active ?")
 
     @classmethod
-    def from_bkd(basecls, bkd):
-        state = basecls(
+    def from_bkd(cls, bkd):
+        state = cls(
             id=bkd.name(),
             name=bkd.basename(),
             comp_name=bkd.parent().name(),
@@ -103,6 +103,7 @@ class TransitionModel(ObjCOD3S):
             return occ_law_specs
 
     @pydantic.model_validator(mode="before")
+    @classmethod
     def check_model(cls, values, **kwargs):
         target = values["target"]
         if isinstance(target, str):
@@ -154,7 +155,8 @@ class TransitionModel(ObjCOD3S):
             nb_states_no_prob = len(states_no_prob)
             if nb_states_no_prob > 0:
                 probs_comp = (1 - probs_tot_tmp) / nb_states_no_prob
-                [st.setdefault("prob", probs_comp) for st in target]
+                for st in target:
+                    st.setdefault("prob", probs_comp)
             # else: all probs explicit — they must already sum to 1 (or close).
             #       We don't normalize anymore: that hid user mistakes.
 
@@ -213,34 +215,6 @@ class TransitionModel(ObjCOD3S):
         return "\n".join(lines)
 
 
-# class TransitionTimeModel(TransitionModel):
-#     target: str = pydantic.Field(..., description="Target state name")
-#     occ_law: OccurrenceDistributionModel = pydantic.Field(
-#         ..., description="Occurrence distribution"
-#     )
-
-#     @pydantic.field_validator("occ_law", mode="before")
-#     def check_occ_law(cls, value, values, **kwargs):
-#         if not (isinstance(value, OccurrenceDistributionModel)):
-#             clsname = value.get("cls")
-#             if clsname:
-#                 clsname = clsname.capitalize() + "OccDistribution"
-#                 value["cls"] = clsname
-#             else:
-#                 raise AttributeError(
-#                     "Missing attribute 'cls' in OccurrenceDistributionModel"
-#                 )
-
-#             value = OccurrenceDistributionModel.from_dict(value)
-#         return value
-
-
-# class TransitionInstModel(TransitionModel):
-#     target: typing.List[StateProbModel] = pydantic.Field(
-#         ..., description="List of target states probability"
-#     )
-
-
 class AutomatonModel(ObjCOD3S):
     name: str = pydantic.Field(..., description="Automaton name")
     states: typing.List[StateModel] = pydantic.Field([], description="State list")
@@ -251,6 +225,7 @@ class AutomatonModel(ObjCOD3S):
     _bkd: typing.Any = pydantic.PrivateAttr(None)
 
     @pydantic.field_validator("states", mode="before")
+    @classmethod
     def check_states(cls, value, values, **kwargs):
         states_new = []
         for state in value:
@@ -259,16 +234,16 @@ class AutomatonModel(ObjCOD3S):
         return states_new
 
     @pydantic.model_validator(mode="after")
-    def check_consistency(cls, values):
-        states_name_list = [st.name for st in values.states]
-        init_state = values.init_state
+    def check_consistency(self):
+        states_name_list = [st.name for st in self.states]
+        init_state = self.init_state
 
         if (init_state is not None) and (init_state not in states_name_list):
             raise ValueError(
                 f"Init state '{init_state}' not in automaton states list {states_name_list}"
             )
 
-        for trans in values.transitions:
+        for trans in self.transitions:
             st_source = trans.source
             if st_source not in states_name_list:
                 raise ValueError(
@@ -290,10 +265,7 @@ class AutomatonModel(ObjCOD3S):
                             f"Transition '{trans.name}' (INST) target state '{st.state}' not in automaton states list {states_name_list}"
                         )
 
-        # pw1, pw2 = values.get('password1'), values.get('password2')
-        # if pw1 is not None and pw2 is not None and pw1 != pw2:
-        #     raise ValueError('passwords do not match')
-        return values
+        return self
 
     def get_state_by_name(self, state_name):
         for state in self.states:
@@ -318,7 +290,7 @@ class AutomatonModel(ObjCOD3S):
 
 class PycOccurrenceDistribution(OccurrenceDistributionModel):
     @classmethod
-    def from_bkd(basecls, pyc_occ_law):
+    def from_bkd(cls, pyc_occ_law):
         if pyc_occ_law.name() == "delay":
             dist = DelayOccDistribution(time=pyc_occ_law.parameter(0))
         elif pyc_occ_law.name() == "exp":
@@ -345,7 +317,7 @@ class PycOccurrenceDistribution(OccurrenceDistributionModel):
 
 
 class DelayOccDistribution(PycOccurrenceDistribution):
-    is_occ_time_deterministic: typing.ClassVar[bool] = True
+    # is_occ_time_deterministic = True (inherited from the base)
 
     time: typing.Any = pydantic.Field(
         0, description="Delay duration (could be a variable)"
@@ -373,7 +345,7 @@ class ExpOccDistribution(PycOccurrenceDistribution):
 
 
 class InstOccDistribution(PycOccurrenceDistribution):
-    is_occ_time_deterministic: typing.ClassVar[bool] = True
+    # is_occ_time_deterministic = True (inherited from the base)
 
     probs: typing.List[typing.Any] = pydantic.Field(
         [], description="Occurrence probabilité (could be a variable)"
@@ -382,7 +354,8 @@ class InstOccDistribution(PycOccurrenceDistribution):
     def to_bkd(self, comp_bkd):
         law = pyc.IDistLaw.newLaw(comp_bkd, pyc.TLawType.inst, 1)
         if len(self.probs) >= 2:
-            [law.setParameter(pi, i) for i, pi in enumerate(self.probs[:-1])]
+            for i, pi in enumerate(self.probs[:-1]):
+                law.setParameter(pi, i)
         return law
 
     @classmethod
@@ -411,6 +384,16 @@ class InstOccDistribution(PycOccurrenceDistribution):
         if len(explicit) == n_targets - 1:
             probs = [*explicit, max(0.0, 1.0 - sum(explicit))]
         elif len(explicit) == n_targets:
+            # PyCATSHOO is expected to expose only N-1 parameters; this
+            # branch covers a hypothetical future build that exposes the
+            # full N-vector. Validate the invariant so we do not silently
+            # accept a non-normalised vector.
+            total = sum(explicit)
+            if abs(total - 1.0) > 1e-9:
+                raise ValueError(
+                    f"Inst law exposes {n_targets} parameters but they sum "
+                    f"to {total} (expected 1.0). Probably a malformed law."
+                )
             probs = explicit
         else:
             raise ValueError(
@@ -438,7 +421,7 @@ class PycTransition(TransitionModel):
     )
 
     @classmethod
-    def from_bkd(basecls, trans_bkd):
+    def from_bkd(cls, trans_bkd):
         trans_name = trans_bkd.basename()
         comp_name = trans_bkd.parent().name()
         comp_classname = trans_bkd.parent().className()
@@ -471,7 +454,7 @@ class PycTransition(TransitionModel):
             state_target_bkd = trans_bkd.target(0)
             target = state_target_bkd.basename()
 
-        trans_obj = basecls(
+        trans_obj = cls(
             name=trans_name,
             comp_name=comp_name,
             comp_classname=comp_classname,
@@ -512,17 +495,6 @@ class PycTransition(TransitionModel):
 
             occ_law = InstOccDistribution(probs=probs)
             self._bkd.setDistLaw(occ_law.to_bkd(self._bkd.parent()))
-
-    # def model_dump(self, **kwrds):
-    #     exclude_list = [
-    #         "bkd",
-    #     ]
-    #     if kwrds.get("exclude"):
-    #         [kwrds["exclude"].add(attr) for attr in exclude_list]
-    #     else:
-    #         kwrds["exclude"] = set(exclude_list)
-
-    #     return super().model_dump(**kwrds)
 
     def __eq__(self, other):
         return (self.comp_name == other.comp_name) and (self.name == other.name)
@@ -589,28 +561,13 @@ class PycTransition(TransitionModel):
 
         return "\n".join(lines)
 
-    # def to_dict(self):
-
-    #     selfd = self.dict(exclude={"bkd"})
-
-    #     selfd["component"] = self._bkd.parent().name()
-    #     selfd["occ_law"] = str(self.occ_law)
-    #     selfd["occ_planned"] = str(self._bkd.endTime())
-    #     #ipdb.set_trace()
-    #     return selfd
-    #     #selfd["occ_law"] = self.occ_law.str_short()
-
 
 class PycAutomaton(AutomatonModel):
-    # @pydantic.validator('states', pre=True)
-    # def check_states(cls, value, values, **kwargs):
-    #     ipdb.set_trace()
-    #     value = [PycState(**v) for v in value]
-    #     return value
     id: str = pydantic.Field(None, description="State id")
     comp_name: str = pydantic.Field(None, description="Parent component name")
 
     @pydantic.field_validator("transitions", mode="before")
+    @classmethod
     def check_transitions(cls, value, values, **kwargs):
         value = [PycTransition(**v) for v in value]
         return value
@@ -637,8 +594,8 @@ class PycAutomaton(AutomatonModel):
         [trans.update_bkd(automaton=self) for trans in self.transitions]
 
     @classmethod
-    def from_bkd(basecls, bkd):
-        aut = basecls(
+    def from_bkd(cls, bkd):
+        aut = cls(
             id=bkd.name(),
             name=bkd.basename(),
             comp_name=bkd.parent().name(),
