@@ -38,14 +38,14 @@ class PycVariable(ObjCOD3S):
 
 
 class PycComponent(pyc.CComponent):
-    def __init__(self, name, label=None, description=None, metadata={}, **kwargs):
+    def __init__(self, name, label=None, description=None, metadata=None, **kwargs):
         super().__init__(name)
 
         self.label = name if label is None else label
         self.description = self.label if description is None else description
         self.automata_d = {}
 
-        self.metadata = copy.deepcopy(metadata)
+        self.metadata = copy.deepcopy(metadata) if metadata is not None else {}
 
         # Register the component in comp dictionnary
         self.system().comp[name] = self
@@ -323,23 +323,6 @@ class PycComponent(pyc.CComponent):
 
         return aut
 
-    def add_automaton_bis(self, name, states=[], init_state=None):
-
-        aut = self.addAutomaton(name)
-        states_dict = {}
-        for idx, st_name in enumerate(states):
-            st = aut.addState(st_name, idx)
-            states_dict[st_name] = st
-
-        if len(states) > 0 and init_state is None:
-            aut.setInitState(states_dict[states[0]])
-        else:
-            aut.setInitState(states_dict[init_state])
-
-        self.automata_d[name] = {"obj": aut, "states": states_dict}
-
-        return aut
-
     def register_branch_effects(self, automaton, transition_name, branches):
         """Wire state-entry sensitive methods for each inst-branch's effects.
 
@@ -421,18 +404,18 @@ class PycComponent(pyc.CComponent):
         init_st2=False,
         trans_name_12_fmt="{st1}_to_{st2}",
         cond_occ_12=True,
-        occ_law_12={"cls": "delay", "time": 0},
+        occ_law_12=None,
         occ_interruptible_12=True,
-        effects_st1={},
+        effects_st1=None,
         effects_st1_format="dict",
         trans_name_21_fmt="{st2}_to_{st1}",
         cond_occ_21=True,
-        occ_law_21={"cls": "delay", "time": 0},
+        occ_law_21=None,
         occ_interruptible_21=True,
-        effects_st2={},
+        effects_st2=None,
         effects_st2_format="dict",
         step=None,
-        pdmp_managers=[],
+        pdmp_managers=None,
     ):
         """
                 Adds a two-state automaton to the component.
@@ -513,6 +496,19 @@ class PycComponent(pyc.CComponent):
                 ...     effects_st2={"flow_rate": 100}
                 ... )
         """
+
+        # Normalise mutable-default sentinels: each ``None`` parameter
+        # falls back to the matching empty collection / canonical value.
+        if occ_law_12 is None:
+            occ_law_12 = {"cls": "delay", "time": 0}
+        if occ_law_21 is None:
+            occ_law_21 = {"cls": "delay", "time": 0}
+        if effects_st1 is None:
+            effects_st1 = {}
+        if effects_st2 is None:
+            effects_st2 = {}
+        if pdmp_managers is None:
+            pdmp_managers = []
 
         # st1_name = st_name_fmt.format(name=name, st=st1)
         # st2_name = st_name_fmt.format(name=name, st=st2)
@@ -1178,19 +1174,19 @@ class ObjFM(PycComponent):
     def __init__(
         self,
         fm_name,
-        targets=[],
+        targets=None,
         target_name=None,
         behaviour="internal",
         failure_state="occ",
         failure_cond=True,
-        failure_effects={},
-        failure_param_name=[],
-        failure_param=[],
+        failure_effects=None,
+        failure_param_name=None,
+        failure_param=None,
         repair_state="rep",
         repair_cond=True,
-        repair_effects={},
-        repair_param_name=[],
-        repair_param=[],
+        repair_effects=None,
+        repair_param_name=None,
+        repair_param=None,
         param_name_order_prefix="__{order}_o_{order_max}",
         trans_name_prefix="__cc_{target_comb}",
         trans_name_prefix_fun=None,
@@ -1201,6 +1197,21 @@ class ObjFM(PycComponent):
         **kwargs,
     ):
         # __import__("ipdb").set_trace()
+        # Normalise mutable-default sentinels.
+        if targets is None:
+            targets = []
+        if failure_effects is None:
+            failure_effects = {}
+        if failure_param_name is None:
+            failure_param_name = []
+        if failure_param is None:
+            failure_param = []
+        if repair_effects is None:
+            repair_effects = {}
+        if repair_param_name is None:
+            repair_param_name = []
+        if repair_param is None:
+            repair_param = []
 
         self.fm_name = fm_name
         self.targets = [targets] if isinstance(targets, str) else targets
@@ -1588,8 +1599,39 @@ class ObjFM(PycComponent):
                     repair_effects=self.repair_effects,
                 )
 
+    def _resolve_target_effects(self, target_comp, target_name, effects, kind):
+        """Resolve a user-supplied ``effects`` dict against a target component.
+
+        Each ``{var_name: value}`` entry is mapped to a PyCATSHOO variable
+        handle. ``var_name`` is resolved by trying ``getattr(target_comp, var)``
+        first (matches Python attributes added via ``self.var = self.addVariable(...)``)
+        then falling back to a basename lookup against ``target_comp.variables()``
+        (covers variables added with names that differ from the Python attribute).
+
+        ``kind`` is the user-facing label ("failure_effects" or "repair_effects")
+        injected into the error message — that is all the parameter is for.
+
+        Raises ``ValueError`` if any ``var_name`` cannot be resolved. A
+        misspelled key used to be silently dropped, producing simulations with
+        no effect at all and no diagnostic.
+        """
+        resolved = []
+        for var, value in effects.items():
+            if hasattr(target_comp, var):
+                comp_var = getattr(target_comp, var)
+            elif var in [v.basename() for v in target_comp.variables()]:
+                comp_var = target_comp.variable(var)
+            else:
+                raise ValueError(
+                    f"{kind}: variable {var!r} not found on target "
+                    f"{target_name!r} (ObjFM {self.fm_name!r}). Check the "
+                    f"spelling against the target's declared variables."
+                )
+            resolved.append({"var": comp_var, "value": value})
+        return resolved
+
     def _create_target_automaton(
-        self, target_name, repair_occ_law, failure_effects={}, repair_effects={}
+        self, target_name, repair_occ_law, failure_effects=None, repair_effects=None
     ):
         """Create a synchronized automaton in the target component.
 
@@ -1601,6 +1643,10 @@ class ObjFM(PycComponent):
             failure_effects: Effects to apply when failure occurs (dict of var_name: value)
             repair_effects: Effects to apply when repair occurs (dict of var_name: value)
         """
+        if failure_effects is None:
+            failure_effects = {}
+        if repair_effects is None:
+            repair_effects = {}
         target_comp = self.system().component(target_name)
 
         # Check for name conflict
@@ -1633,35 +1679,12 @@ class ObjFM(PycComponent):
                 param=self.repair_var_params_order1,
             )
 
-        # Resolve and Prepare failure effects
-        final_failure_effects = []
-        for var, value in failure_effects.items():
-            if hasattr(target_comp, var):
-                comp_var = getattr(target_comp, var)
-            elif var in [v.basename() for v in target_comp.variables()]:
-                comp_var = target_comp.variable(var)
-            else:
-                raise KeyError(
-                    f"failure_effects: variable {var!r} not found on target "
-                    f"{target_name!r} (ObjFM {self.fm_name!r}). Check the "
-                    f"spelling against the target's declared variables."
-                )
-            final_failure_effects.append({"var": comp_var, "value": value})
-
-        # Resolve and Prepare repair effects
-        final_repair_effects = []
-        for var, value in repair_effects.items():
-            if hasattr(target_comp, var):
-                comp_var = getattr(target_comp, var)
-            elif var in [v.basename() for v in target_comp.variables()]:
-                comp_var = target_comp.variable(var)
-            else:
-                raise KeyError(
-                    f"repair_effects: variable {var!r} not found on target "
-                    f"{target_name!r} (ObjFM {self.fm_name!r}). Check the "
-                    f"spelling against the target's declared variables."
-                )
-            final_repair_effects.append({"var": comp_var, "value": value})
+        final_failure_effects = self._resolve_target_effects(
+            target_comp, target_name, failure_effects, kind="failure_effects"
+        )
+        final_repair_effects = self._resolve_target_effects(
+            target_comp, target_name, repair_effects, kind="repair_effects"
+        )
 
         target_aut = target_comp.add_aut2st(
             name=self.fm_name,
