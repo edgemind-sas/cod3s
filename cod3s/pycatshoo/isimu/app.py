@@ -21,7 +21,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header
 
-from cod3s.pycatshoo.isimu import __version__ as ISIMU_VERSION
+from cod3s.version import __version__ as COD3S_VERSION
 from cod3s.pycatshoo.isimu.engine import ISimuEngine
 from cod3s.pycatshoo.isimu.export import export_csv, export_json
 from cod3s.pycatshoo.isimu.modals import ExportModal, ReplanModal
@@ -44,7 +44,7 @@ class ISimuApp(App[None]):
     """
 
     CSS_PATH = str(Path(__file__).parent / "styles.tcss")
-    TITLE = f"cod3s-isimu v{ISIMU_VERSION}"
+    TITLE = f"cod3s-isimu v{COD3S_VERSION}"
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),

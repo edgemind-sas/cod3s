@@ -36,8 +36,10 @@ def test_help_runs_via_subprocess() -> None:
 
 
 def test_version_runs_via_subprocess() -> None:
-    """``cod3s-isimu --version`` prints the package version and exits 0."""
-    from cod3s.pycatshoo.isimu import __version__
+    """``cod3s-isimu --version`` prints the parent ``cod3s`` package version
+    and exits 0. The interactive simulator no longer carries its own
+    independent version cadence."""
+    import cod3s
 
     result = subprocess.run(
         ["cod3s-isimu", "--version"],
@@ -46,7 +48,7 @@ def test_version_runs_via_subprocess() -> None:
         timeout=20,
     )
     assert result.returncode == 0, result.stderr
-    assert __version__ in result.stdout
+    assert cod3s.__version__ in result.stdout
 
 
 def test_parser_requires_model_or_factory() -> None:

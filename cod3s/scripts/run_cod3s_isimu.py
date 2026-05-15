@@ -27,7 +27,6 @@ from typing import Any
 
 import cod3s
 
-from cod3s.pycatshoo.isimu import __version__ as ISIMU_VERSION
 from cod3s.scripts._common import build_system_from_model, load_study_specs
 
 
@@ -69,7 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"cod3s-isimu {ISIMU_VERSION}",
+        version=f"cod3s-isimu {cod3s.__version__}",
     )
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument(

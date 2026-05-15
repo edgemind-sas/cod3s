@@ -278,22 +278,9 @@ results = pyc_system.simulate(sim_params)
 
 ## Versioning
 
-### Parent `cod3s` package
+Version lives in `cod3s/version.py` (read by `pyproject.toml` via `[tool.setuptools.dynamic]`) and is exposed as `cod3s.__version__`. Bumped by Roland at release time.
 
-Version lives in `cod3s/version.py` (read by `pyproject.toml` via `[tool.setuptools.dynamic]`). Bumped by Roland at release time.
-
-### `cod3s-isimu` (independent of the parent package)
-
-The interactive simulator ships its own version in `cod3s/pycatshoo/isimu/__init__.py` (`__version__`). It is **independent** of the parent `cod3s` package version because the TUI is an opt-in extra with its own cadence. The version is exposed by `cod3s-isimu --version` and shown in the TUI header.
-
-Bumping rule whenever you commit a change touching `cod3s/pycatshoo/isimu/` or `cod3s/scripts/run_cod3s_isimu.py`:
-
-| Change kind                                         | Bump        |
-|-----------------------------------------------------|-------------|
-| Bug fix, doc-only, refactor with no behaviour delta | `+0.0.1`    |
-| Feature evolution (new bindings, new panel/modal, new engine API, breaking change) | `+0.1.0` |
-
-Always update `__version__` and the test that asserts it (`tests/scripts/test_run_cod3s_isimu.py::test_version_runs_via_subprocess`) in the same commit. Mention the new version in the commit body.
+The `cod3s-isimu` CLI and the TUI header **reuse the parent package version** — there is no separate `__version__` for the interactive simulator. `cod3s-isimu --version` prints the parent `cod3s` version; the TUI shows the same value in its header. The test `tests/scripts/test_run_cod3s_isimu.py::test_version_runs_via_subprocess` enforces this contract.
 
 ## Examples
 
