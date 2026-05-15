@@ -10,12 +10,16 @@ then observe both targets repair *in the same step* (since they share
 the same ``ttr_order_1=5``). Scenario 3 demonstrates how to make the
 two repairs happen at different times via the ``p`` modal.
 
+The system build code is shared with scenarios 3 and 5 (same dual-target
+``cc_12`` topology, ``ttf=10`` / ``ttr=5``) — see
+``examples/objfm_trigger_common/objfm_trigger_common.py``.
+
 Launch
 ------
 
 ::
 
-    PYTHONPATH="examples/objfm_trigger_02_common_cause:$PYTHONPATH" \\
+    PYTHONPATH="examples/objfm_trigger_02_common_cause:examples/objfm_trigger_common:$PYTHONPATH" \\
         uv run cod3s-isimu --factory objfm_trigger_02_common_cause:build_system
 
 Or::
@@ -66,38 +70,11 @@ What you should retain
 
 from __future__ import annotations
 
-import Pycatshoo as Pyc
-
-import cod3s
+from objfm_trigger_common import build_system as _build_common
 
 
-class Equipment(cod3s.PycComponent):
-    def __init__(self, name: str, **kwargs) -> None:
-        super().__init__(name, **kwargs)
-        self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
-        self.working.setReinitialized(True)
-
-
-def build_system() -> cod3s.PycSystem:
-    system = cod3s.PycSystem(name="ObjFMTrigger02CommonCause")
-    for n in ("C1", "C2"):
-        system.add_component(name=n, cls="Equipment")
-    system.add_component(
-        cls="ObjFMDelay",
-        fm_name="fm_cc",
-        targets=["C1", "C2"],
-        behaviour="external_rep_indep",
-        failure_effects={"working": False},
-        # failure_param[i] is the order-(i+1) ttf.
-        # cc_1 / cc_2 (order 1) parked at 99999 so they never reach the
-        # fireable window; only cc_12 (order 2) fires at ttf=10.
-        failure_param=[(99999.0,), (10.0,)],
-        # repair_param[0] (order 1) is what targets use for self-repair.
-        # repair_param[1] is irrelevant — ObjFM rep is delay(0) in
-        # external_rep_indep regardless of the user's value.
-        repair_param=[(5.0,), (99999.0,)],
-    )
-    return system
+def build_system():
+    return _build_common("ObjFMTrigger02CommonCause")
 
 
 if __name__ == "__main__":

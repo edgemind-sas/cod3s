@@ -308,10 +308,12 @@ This convention applies to *examples*. Domain components in user code that genui
 Five scenarios, one folder each. Each docstring walks the user through a precise sequence of Enter / `p` / `b` actions to verify a specific facet of the trigger semantic:
 
 - `examples/objfm_trigger_01_minimal/` — single target, delay law, smallest possible trigger cycle. Run: `PYTHONPATH="examples/objfm_trigger_01_minimal:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_01_minimal:build_system`.
-- `examples/objfm_trigger_02_common_cause/` — two targets, `cc_12` common cause, delay law. Synchronous repair (★ "fires together"). Run: `PYTHONPATH="examples/objfm_trigger_02_common_cause:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_02_common_cause:build_system`.
-- `examples/objfm_trigger_03_async_repair/` — same setup as #02; the test sequence uses `p` to re-plan one target's repair to a later date, demonstrating that target repair clocks are independent. Run: `PYTHONPATH="examples/objfm_trigger_03_async_repair:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_03_async_repair:build_system`.
+- `examples/objfm_trigger_02_common_cause/` — two targets, `cc_12` common cause, delay law. Synchronous repair (★ "fires together"). Run: `PYTHONPATH="examples/objfm_trigger_02_common_cause:examples/objfm_trigger_common:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_02_common_cause:build_system`.
+- `examples/objfm_trigger_03_async_repair/` — same setup as #02; the test sequence uses `p` to re-plan one target's repair to a later date, demonstrating that target repair clocks are independent. Run: `PYTHONPATH="examples/objfm_trigger_03_async_repair:examples/objfm_trigger_common:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_03_async_repair:build_system`.
 - `examples/objfm_trigger_04_exp_manual/` — exponential laws, two targets. The operator drives the timeline via `p` (no auto-sampling in interactive mode). Run: `PYTHONPATH="examples/objfm_trigger_04_exp_manual:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_04_exp_manual:build_system`.
-- `examples/objfm_trigger_05_block_retrigger/` — same setup as #02; verifies a *non-event* — the ObjFM cannot re-trigger while a target is still in occ (`failure_cond` blocks it). Run: `PYTHONPATH="examples/objfm_trigger_05_block_retrigger:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_05_block_retrigger:build_system`.
+- `examples/objfm_trigger_05_block_retrigger/` — same setup as #02; verifies a *non-event* — the ObjFM cannot re-trigger while a target is still in occ (`failure_cond` blocks it). Run: `PYTHONPATH="examples/objfm_trigger_05_block_retrigger:examples/objfm_trigger_common:$PYTHONPATH" uv run cod3s-isimu --factory objfm_trigger_05_block_retrigger:build_system`.
+
+Scenarios 2, 3, and 5 share the same underlying system topology; the common build code lives in `examples/objfm_trigger_common/objfm_trigger_common.py` so the three scenario files are pure documentation walkthroughs of distinct interactive test sequences.
 
 ### Instantaneous transitions (probabilistic branching) demos
 

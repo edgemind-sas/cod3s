@@ -74,36 +74,18 @@ What you should retain
   each target's local repair clock runs independently.
 * The components panel coloring (dim / orange / bold red) makes the
   partial-recovery state at ``t∈[15, 25]`` immediately readable.
+
+The system build code is shared with scenarios 2 and 5 — see
+``examples/objfm_trigger_common/objfm_trigger_common.py``.
 """
 
 from __future__ import annotations
 
-import Pycatshoo as Pyc
-
-import cod3s
+from objfm_trigger_common import build_system as _build_common
 
 
-class Equipment(cod3s.PycComponent):
-    def __init__(self, name: str, **kwargs) -> None:
-        super().__init__(name, **kwargs)
-        self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
-        self.working.setReinitialized(True)
-
-
-def build_system() -> cod3s.PycSystem:
-    system = cod3s.PycSystem(name="ObjFMTrigger03AsyncRepair")
-    for n in ("C1", "C2"):
-        system.add_component(name=n, cls="Equipment")
-    system.add_component(
-        cls="ObjFMDelay",
-        fm_name="fm_cc",
-        targets=["C1", "C2"],
-        behaviour="external_rep_indep",
-        failure_effects={"working": False},
-        failure_param=[(99999.0,), (10.0,)],
-        repair_param=[(5.0,), (99999.0,)],
-    )
-    return system
+def build_system():
+    return _build_common("ObjFMTrigger03AsyncRepair")
 
 
 if __name__ == "__main__":
