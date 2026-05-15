@@ -437,14 +437,23 @@ class PycTransition(TransitionModel):
         source = state_source_bkd.basename()
 
         if isinstance(occ_law, InstOccDistribution):
-            target = []
+            target_states = []
             i = 0
             while tgt := trans_bkd.target(i):
-                tgt_spec = {"state": tgt.basename()}
-                if len(occ_law.probs) > i:
-                    tgt_spec.update({"prob": occ_law.probs[i]})
-                target.append(tgt_spec)
+                target_states.append(tgt.basename())
                 i += 1
+            # PyCATSHOO stores N-1 probabilities (the last branch carries the
+            # complement). Restore the full N-vector on the COD3S side so the
+            # serialised model matches the user-supplied ``probs`` and so
+            # ``InstOccDistribution.__str__`` reports the complete list.
+            if len(occ_law.probs) == len(target_states) - 1:
+                occ_law.probs.append(
+                    max(0.0, 1.0 - sum(occ_law.probs))
+                )
+            target = [
+                {"state": name, "prob": occ_law.probs[idx]}
+                for idx, name in enumerate(target_states)
+            ]
         else:
             state_target_bkd = trans_bkd.target(0)
             target = state_target_bkd.basename()

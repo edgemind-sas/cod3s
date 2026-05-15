@@ -17,6 +17,7 @@ from cod3s.pycatshoo.automaton import (
     InstOccDistribution,
     PycAutomaton,
     PycOccurrenceDistribution,
+    PycTransition,
 )
 from cod3s.pycatshoo.system import PycSystem
 
@@ -160,3 +161,47 @@ def test_four_branch_from_bkd_roundtrip(four_branch_system):
     dist = PycOccurrenceDistribution.from_bkd(trans._bkd.distLaw())
     assert isinstance(dist, InstOccDistribution)
     assert dist.probs == pytest.approx([0.5, 0.2, 0.2], rel=1e-9)
+
+
+# --- C5 regression: PycTransition.from_bkd reconstructs the full N-vector
+# of probabilities. Before the fix, ``probs`` only held the N-1 values that
+# PyCATSHOO stores natively, so the COD3S round-trip dropped the trailing
+# branch probability and ``InstOccDistribution.__str__`` reported a list
+# shorter than the number of target states.
+
+
+def test_two_branch_full_probs_via_transition_from_bkd(two_branch_system):
+    """``PycTransition.from_bkd`` must yield ``len(probs) == len(target)``
+    and reproduce the user-supplied probabilities exactly."""
+    _, automaton = two_branch_system
+    trans = _get_branch_transition(automaton)
+    rebuilt = PycTransition.from_bkd(trans._bkd)
+    assert isinstance(rebuilt.occ_law, InstOccDistribution)
+    assert rebuilt.occ_law.probs == pytest.approx([0.7, 0.3], rel=1e-9)
+    assert [b.prob for b in rebuilt.target] == pytest.approx([0.7, 0.3], rel=1e-9)
+    assert sum(rebuilt.occ_law.probs) == pytest.approx(1.0, rel=1e-9)
+
+
+def test_four_branch_full_probs_via_transition_from_bkd(four_branch_system):
+    """Same on a 4-branch transition — verifies the complement assignment
+    handles N > 2 correctly."""
+    _, automaton = four_branch_system
+    trans = _get_branch_transition(automaton)
+    rebuilt = PycTransition.from_bkd(trans._bkd)
+    assert rebuilt.occ_law.probs == pytest.approx([0.5, 0.2, 0.2, 0.1], rel=1e-9)
+    assert [b.prob for b in rebuilt.target] == pytest.approx(
+        [0.5, 0.2, 0.2, 0.1], rel=1e-9
+    )
+
+
+def test_inst_str_reports_full_probs_after_from_bkd(two_branch_system):
+    """``__str__`` must reflect all N probabilities, not just the N-1
+    PyCATSHOO holds. Pre-fix, the second probability was missing entirely
+    (``inst([0.7])``)."""
+    _, automaton = two_branch_system
+    trans = _get_branch_transition(automaton)
+    rebuilt = PycTransition.from_bkd(trans._bkd)
+    rendered = str(rebuilt.occ_law)
+    assert rendered.startswith("inst([0.7")
+    # The second probability must appear (was lost before the fix).
+    assert ", 0.3" in rendered
