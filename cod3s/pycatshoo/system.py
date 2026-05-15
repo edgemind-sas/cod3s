@@ -921,14 +921,24 @@ class PycSystem(pyc.CSystem):
             ):
                 trans_list_fireable.append(trans)
             elif not trans.occ_law.is_occ_time_deterministic:
-                trans.end_time = self.currentTime()
                 trans_list_fireable.append(trans)
             else:
                 trans_list_fireable.append(None)
 
-        # Update end time to match bkd endTime
+        # Sync ``trans.end_time`` with the backend planning so callers see a
+        # single source of truth. ``_bkd.endTime()`` returns:
+        #   - a finite date for deterministic laws (delay/inst, computed at
+        #     entry into the source state) and for any law that was explicitly
+        #     re-planned via ``setTransPlanning``;
+        #   - ``inf`` for non-deterministic laws (exp, ...) that have not been
+        #     re-planned. The interactive simulator does not auto-sample them
+        #     — keeping ``end_time = inf`` makes ``isimu_step_forward`` skip
+        #     them by design (it fires only ``end_time <= currentTime()``).
+        # The previous implementation wrote ``currentTime()`` in the elif
+        # branch above, which was a no-op because this loop immediately
+        # overwrote it.
         for trans in trans_list_fireable:
-            if trans:
+            if trans is not None:
                 trans.end_time = trans._bkd.endTime()
 
         return trans_list_fireable
@@ -1090,7 +1100,7 @@ class PycSystem(pyc.CSystem):
         if not selected_transition:
             raise IndexError(f"Incorrect transition id {trans_id}")
 
-        if not date:
+        if date is None:
             if (
                 selected_transition._bkd.endTime() >= 0
                 and selected_transition._bkd.endTime() < float("inf")
@@ -1099,7 +1109,7 @@ class PycSystem(pyc.CSystem):
             else:
                 date = self.currentTime()
 
-        if not state_index:
+        if state_index is None:
             state_index = 0
 
         self.setTransPlanning(selected_transition._bkd, date, state_index)

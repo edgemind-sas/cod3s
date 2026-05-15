@@ -23,13 +23,14 @@ Two notable workarounds compared to calling ``PycSystem.isimu_*`` directly:
 
 Note on non-deterministic occurrence laws (``exp``, ``uniform``, ...) — by
 design, the interactive simulator does **not** auto-sample them. They are
-returned by ``isimu_fireable_transitions`` with ``end_time = currentTime()``
-(see ``cod3s/pycatshoo/system.py:923``), so firing one at the cursor means
-"fire now, no time advance". To make the simulator advance through a
-non-deterministic transition, the user explicitly re-plans it to a future
-date via the ``p`` modal (or programmatically via :meth:`replan`). This is
-intentional: it gives the operator full control over the trace instead of
-hiding random draws behind the engine.
+returned by ``isimu_fireable_transitions`` with ``end_time = inf`` until the
+operator explicitly re-plans them (via the ``p`` modal or programmatically
+via :meth:`replan`). ``isimu_step_forward`` filters fireable transitions on
+``end_time <= currentTime()``, so an un-replanned non-deterministic
+transition is skipped — the operator must give it a date to make the
+simulator advance through it. This is intentional: it gives the operator
+full control over the trace instead of hiding random draws behind the
+engine.
 """
 
 from __future__ import annotations
