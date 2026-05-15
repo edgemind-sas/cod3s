@@ -1599,7 +1599,13 @@ class ObjFM(PycComponent):
                     repair_effects=self.repair_effects,
                 )
 
-    def _resolve_target_effects(self, target_comp, target_name, effects, kind):
+    def _resolve_target_effects(
+        self,
+        target_comp,
+        target_name,
+        effects,
+        kind: typing.Literal["failure_effects", "repair_effects"],
+    ):
         """Resolve a user-supplied ``effects`` dict against a target component.
 
         Each ``{var_name: value}`` entry is mapped to a PyCATSHOO variable
@@ -1984,90 +1990,3 @@ class ObjFMDelay(ObjFM):
     def set_occ_law_repair(self, params):
         return {"cls": "delay", "time": params[self.repair_param_name[0]]}
 
-
-# class PycComponent(ObjCOD3S):
-
-#     name: str = pydantic.Field(..., description="Component name")
-#     variables: typing.List[PycVariable] = pydantic.Field([], description="Variable list")
-#     states: typing.List[PycState] = pydantic.Field([], description="state list")
-#     automata: typing.List[PycAutomaton] = pydantic.Field([], description="Automata list")
-#     bkd: typing.Any = pydantic.Field(None, description="Component backend handler")
-
-#     @pydantic.validator('states', pre=True)
-#     def check_states(cls, value, values, **kwargs):
-#         value = [PycState(**v) for v in value]
-#         return value
-
-#     @pydantic.validator('variables', pre=True)
-#     def check_variables(cls, value, values, **kwargs):
-#         value = [PycVariable.from_dict(**v) for v in value]
-#         return value
-
-#     # @pydantic.validator('automata', pre=True)
-#     # def check_automata(cls, value, values, **kwargs):
-#     #     value = [PycAutomaton(**v) for v in value]
-#     #     return value
-
-#     def get_automaton_by_name(self, name):
-
-#         for elt in self.automata:
-#             if elt.name == name:
-#                 return elt
-
-#         raise ValueError(f"Automaton {name} is not part of component {self.name}")
-
-#     def get_variable_by_name(self, name):
-
-#         for elt in self.variables:
-#             if elt.name == name:
-#                 return elt
-
-#         raise ValueError(f"Variable {name} is not part of component {self.name}")
-
-
-#     @classmethod
-#     def from_bkd(basecls, bkd):
-
-#         comp = basecls(name=bkd.name(), bkd=bkd)
-#         comp.variables = \
-#             [PycVariable.from_bkd(elt) for elt in bkd.getVariables()]
-#         comp.states = \
-#             [PycState.from_bkd(elt) for elt in bkd.getStates()]
-#         comp.automata = \
-#             [PycAutomaton.from_bkd(elt) for elt in bkd.getAutomata()]
-
-#         return comp
-
-
-#     def dict(self, **kwrds):
-
-
-#     def to_df(self):
-
-#         df_var = pd.DataFrame(
-#             [var.dict(exclude={"bkd", "id"})
-#              for var in self.variables])
-
-#         df_var["type"] = "VAR"
-
-#         aut_dict_list = []
-#         for aut in self.automata:
-#             aut_dict = \
-#                 aut.dict(exclude={"bkd", "id",
-#                                   "states", "transitions",
-#                                   "init_state"})
-
-#             aut_dict.update(
-#                 value_init=aut.init_state,
-#                 value_current=aut.get_active_state().name,
-#             )
-
-#             aut_dict_list.append(aut_dict)
-
-#         df_aut = pd.DataFrame(aut_dict_list)
-#         df_aut["type"] = "ST"
-
-#         df = pd.concat([df_var, df_aut],
-#                        axis=0, ignore_index=True)
-
-#         return df
