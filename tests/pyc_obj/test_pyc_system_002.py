@@ -1,4 +1,5 @@
 import pytest
+import cod3s
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 from cod3s.pycatshoo.component import PycComponent
 from cod3s.pycatshoo.automaton import (
@@ -59,7 +60,8 @@ def coin_toss_system():
         name="CoinState", component="Coin", state="even|odd", stats=["mean"]
     )
 
-    return system
+    yield system
+    cod3s.terminate_session()
 
 
 def test_coin_toss_system(coin_toss_system):
@@ -74,7 +76,4 @@ def test_coin_toss_system(coin_toss_system):
     # Check that we have results for all scheduled times
     assert ind_even_val["instant"].to_list() == schedule
 
-    assert ind_even_val["values"].iloc[-1] < 0.5 
-    
-def test_delete(coin_toss_system):
-    coin_toss_system.deleteSys()
+    assert ind_even_val["values"].iloc[-1] < 0.5

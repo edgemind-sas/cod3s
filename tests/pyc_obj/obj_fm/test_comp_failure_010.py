@@ -10,7 +10,8 @@ def the_system():
 
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
-    return system
+    yield system
+    cod3s.terminate_session()
 
 
 def test_system(the_system):
@@ -63,8 +64,4 @@ def test_system(the_system):
     assert transitions[2].name.endswith("occ__01_02_04")
     assert transitions[-1].name.endswith("occ__all")
 
-
-def test_delete(the_system):
-    the_system.deleteSys()
-    cod3s.terminate_session()
 

@@ -66,7 +66,8 @@ def the_system():
     automaton1.update_bkd(comp)
     automaton2.update_bkd(comp)
 
-    return system
+    yield system
+    terminate_session()
 
 
 def test_system(the_system):
@@ -126,5 +127,3 @@ def test_system(the_system):
     assert trans_fired[0].model_dump() == expected_dump
 
 
-def test_delete(the_system):
-    terminate_session()

@@ -12,6 +12,13 @@ from cod3s.pycatshoo.automaton import PycAutomaton, PycTransition
 import Pycatshoo as pyc
 
 
+@pytest.fixture(autouse=True)
+def cleanup_pycatshoo_session():
+    """Always release the PyCATSHOO singleton, even on assertion failure."""
+    yield
+    terminate_session()
+
+
 def test_component_withAutom():
     system = PycSystem(name="Sys")
 
@@ -141,8 +148,6 @@ def test_component_withAutom():
 
     assert comp.describe() == expected_dict
 
-    terminate_session()
-
 
 def test_automaton():
 
@@ -219,4 +224,3 @@ def test_automaton():
     }
 
     assert autom_dict == expected_dict
-    terminate_session()

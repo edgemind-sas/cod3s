@@ -1,4 +1,5 @@
 import pytest
+import cod3s
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 from cod3s.pycatshoo.component import PycComponent
 from cod3s.pycatshoo.automaton import (
@@ -54,7 +55,8 @@ def the_system():
         measure="sojourn-time",
     )
 
-    return system
+    yield system
+    cod3s.terminate_session()
 
 
 def test_system(the_system):
@@ -115,5 +117,3 @@ def test_system(the_system):
     #     ), f"Mean value {mean_value} is not close to 0.5"
 
 
-def test_delete(the_system):
-    the_system.deleteSys()

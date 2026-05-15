@@ -63,7 +63,8 @@ def the_system():
         repair_param=[0.1, 0.1],
     )
 
-    return system
+    yield system
+    cod3s.terminate_session()
 
 
 def test_system(the_system):
@@ -98,8 +99,4 @@ def test_system(the_system):
     for cname in ["C1", "C2", "C3"]:
         assert the_system.comp[cname].v_flow_out.value() == 1
 
-
-def test_delete(the_system):
-    the_system.deleteSys()
-    cod3s.terminate_session()
 

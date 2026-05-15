@@ -12,6 +12,10 @@ from cod3s.pycatshoo.automaton import (
 
 @pytest.fixture(scope="module")
 def the_system():
+    """PyCATSHOO singleton — module-scoped so the test below sees the same
+    system. Always release the singleton on teardown so subsequent test
+    modules get a clean slate, regardless of which assertion (if any)
+    failed inside the test."""
     system = PycSystem(name="CoinToss")
 
     # Create coin toss component
@@ -51,7 +55,8 @@ def the_system():
     # Add automaton to coin_comp
     toss_automaton.update_bkd(coin_comp)
 
-    return system
+    yield system
+    terminate_session()
 
 
 def test_system(the_system):
@@ -89,7 +94,7 @@ def test_system(the_system):
                 "effects_format": "dict",
             },
         ],
-        "occ_law": {"cls": "InstOccDistribution", "probs": [0.6]},
+        "occ_law": {"cls": "InstOccDistribution", "probs": [0.6, 0.4]},
         "end_time": 0.0,
         "condition": None,
         "comp_name": "Coin",
@@ -119,5 +124,3 @@ def test_system(the_system):
     assert transitions[0].model_dump() == expected_dump
 
 
-def test_delete(the_system):
-    terminate_session()

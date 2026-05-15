@@ -1,11 +1,14 @@
 import pytest
+import cod3s
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 import Pycatshoo as pyc
 
 
 @pytest.fixture(scope="module")
 def pyc_system():
-    return PycSystem(name="TestSystem")
+    system = PycSystem(name="TestSystem")
+    yield system
+    cod3s.terminate_session()
 
 
 def test_pyc_system_initialization(pyc_system):
@@ -52,6 +55,3 @@ def test_simulate(pyc_system):
     ].to_list() == [1] * len(schedule)
 
 
-def test_delete(pyc_system):
-
-    pyc_system.deleteSys()

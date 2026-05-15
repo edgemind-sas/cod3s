@@ -12,6 +12,14 @@ from cod3s.pycatshoo.automaton import PycAutomaton, PycTransition
 import Pycatshoo as pyc
 
 
+@pytest.fixture(autouse=True)
+def cleanup_pycatshoo_session():
+    """Always release the PyCATSHOO singleton, even when an assertion fails
+    before reaching ``terminate_session()`` at the end of the test body."""
+    yield
+    terminate_session()
+
+
 def test_component():
     system = PycSystem(name="System")
     comp_specs = {"name": "name_component", "cls": "PycComponent"}
@@ -24,17 +32,11 @@ def test_component():
 
     # Check results : description of a pycComponent instance
     expected_dict = {
-                    "name": "name_component",
-                    "label": "name_component",
-                    "cls" : "PycComponent",
-                    "description": "name_component",
-                    "variables" : ['var_bool', 'var_int'],
-                    "automatons" : {}
-    } 
-    print("expected_dict")
-    print(expected_dict)
-    print ("\n           ")
-    print("comp.describe()")
-    print(comp.describe())
+        "name": "name_component",
+        "label": "name_component",
+        "cls": "PycComponent",
+        "description": "name_component",
+        "variables": ["var_bool", "var_int"],
+        "automatons": {},
+    }
     assert comp.describe() == expected_dict
-    terminate_session()

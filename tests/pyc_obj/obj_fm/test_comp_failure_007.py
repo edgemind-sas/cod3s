@@ -89,7 +89,8 @@ def the_system():
         repair_param=[0.0001, 0.001, 0.01, 0.1],
     )
 
-    return system
+    yield system
+    cod3s.terminate_session()
 
 
 def test_system(the_system):
@@ -161,8 +162,4 @@ def test_system(the_system):
     assert the_system.comp["T3"].flow_available_out.value() is True
 
 
-
-def test_delete(the_system):
-    the_system.deleteSys()
-    cod3s.terminate_session()
 

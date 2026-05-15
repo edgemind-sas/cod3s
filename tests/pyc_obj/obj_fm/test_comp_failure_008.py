@@ -10,7 +10,8 @@ def the_system():
 
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
-    return system
+    yield system
+    cod3s.terminate_session()
 
 
 def test_system(the_system):
@@ -78,8 +79,4 @@ def test_system(the_system):
     assert the_system.comp["C004"].flow_in_max.value() == -1
     assert the_system.comp["C004"].flow_out_max.value() == -1
 
-
-def test_delete(the_system):
-    the_system.deleteSys()
-    cod3s.terminate_session()
 
