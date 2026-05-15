@@ -189,10 +189,12 @@ class ISimuApp(App[None]):
         back on the main thread via ``call_from_thread``.
 
         If the planner refuses the replan (e.g. transition no longer active),
-        the user is notified and the worker falls through to a plain
-        ``step_forward``. Without the notification the step would silently
-        succeed on whatever transition PyCATSHOO picks itself, leaving the
-        operator unaware that their intended target was rejected.
+        the worker notifies the operator and bails out — it does NOT fall
+        through to ``step_forward`` on whatever PyCATSHOO would pick.
+        Symmetric with :meth:`_replan_worker` and :meth:`_resolve_inst_worker`,
+        which also return after notifying. Previously the worker fell
+        through silently, advancing time on a transition the operator did
+        not choose.
         """
         engine = self._engine
         if engine is None:
@@ -201,10 +203,10 @@ class ISimuApp(App[None]):
             engine.replan(trans_id=idx)
         except Exception as exc:
             self.call_from_thread(
-                self.notify,
-                f"Replan rejected, falling through to step_forward: {exc}",
-                severity="warning",
+                self.notify, f"Replan rejected: {exc}", severity="error"
             )
+            self.call_from_thread(self.refresh_panels)
+            return
         engine.step_forward()
         self.call_from_thread(self.refresh_panels)
 
