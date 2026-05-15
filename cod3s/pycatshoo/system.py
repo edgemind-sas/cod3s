@@ -291,14 +291,14 @@ class PycSystem(pyc.CSystem):
         self.isimu_sequence = PycSequence()
         self.comp = {}  # Populated by PycComponent register method at init
 
-    def add_components(self, comp_specs_list=[], logger=None):
-        for comp_specs in comp_specs_list:
+    def add_components(self, comp_specs_list=None, logger=None):
+        for comp_specs in comp_specs_list or []:
             comp_cur = self.add_component(logger=logger, **comp_specs)
             if logger:
                 logger.info2(f"Add: {repr(comp_cur)}")
 
-    def add_connections(self, conn_specs_list=[], logger=None):
-        for conn_specs in conn_specs_list:
+    def add_connections(self, conn_specs_list=None, logger=None):
+        for conn_specs in conn_specs_list or []:
             component_source = conn_specs.get("component_source")
             interface_source = conn_specs.get("interface_source")
             component_target = conn_specs.get("component_target")
@@ -802,8 +802,8 @@ class PycSystem(pyc.CSystem):
         markers=True,
         comp_pattern=".*",
         attr_pattern=".*",
-        layout={},
-        traces={},
+        layout=None,
+        traces=None,
         **px_conf,
     ):
         """Create a line plot of indicator values using plotly express.
@@ -838,8 +838,8 @@ class PycSystem(pyc.CSystem):
         indic_sel_df = indic_sel_df.loc[idx_stat_sel]
 
         fig = px.line(indic_sel_df, x=x, y=y, color=color, markers=markers, **px_conf)
-        fig.update_layout(**layout)
-        fig.update_traces(**traces)
+        fig.update_layout(**(layout or {}))
+        fig.update_traces(**(traces or {}))
 
         return fig
 
@@ -881,21 +881,18 @@ class PycSystem(pyc.CSystem):
         except KeyboardInterrupt:
             self.isimu_stop()
 
-    def isimu_active_transitions(self, **kwargs):
+    def isimu_active_transitions(self):
         """Get all currently active transitions in the system.
 
         Retrieves all transitions that are currently active (their source state is active
         and their conditions are met).
-
-        Args:
-            **kwargs: Additional arguments (reserved for future use)
 
         Returns:
             list[PycTransition]: List of active transitions
         """
         return [PycTransition.from_bkd(trans) for trans in self.activeTransitions()]
 
-    def isimu_fireable_transitions(self, **kwargs):
+    def isimu_fireable_transitions(self):
         """Return active transitions annotated with their fireability,
         with the same indexing as ``isimu_active_transitions``.
 
@@ -918,9 +915,6 @@ class PycSystem(pyc.CSystem):
         On return, every non-``None`` slot carries
         ``end_time == _bkd.endTime()`` — a single source of truth for the
         UI and for :meth:`isimu_step_forward`.
-
-        Args:
-            **kwargs: Additional arguments (reserved for future use)
 
         Returns:
             list[Optional[PycTransition]]: Active transitions with
@@ -977,14 +971,11 @@ class PycSystem(pyc.CSystem):
             if trans is not None:
                 trans.end_time = trans._bkd.endTime()
 
-    def isimu_show_active_transitions(self, **kwargs):
+    def isimu_show_active_transitions(self):
         """Display all currently active transitions in a formatted list.
 
         Shows each active transition with its index and a detailed representation
         including component name, transition name, source and target states.
-
-        Args:
-            **kwargs: Additional arguments (reserved for future use)
 
         Example output:
             0: PycTransition pump1.failure: working → failed [exp(0.001)] @ 100.0
@@ -996,14 +987,11 @@ class PycSystem(pyc.CSystem):
         )
         print(trans_list_str)
 
-    def isimu_show_fireable_transitions(self, **kwargs):
+    def isimu_show_fireable_transitions(self):
         """Display all currently fireable transitions in a formatted list.
 
         Shows each fireable transition with its index and a detailed representation.
         A transition is fireable if it's active and meets timing/probability conditions.
-
-        Args:
-            **kwargs: Additional arguments (reserved for future use)
 
         Example output:
             0: PycTransition pump1.repair: failed → working [delay(24)] @ 124.0
@@ -1087,7 +1075,7 @@ class PycSystem(pyc.CSystem):
         return trans_fired
 
     def isimu_set_transition(
-        self, trans_id=None, date=None, state_index=None, **kwargs
+        self, trans_id=None, date=None, state_index=None
     ):
         """Schedule a transition to occur at a specific time.
 
@@ -1098,7 +1086,6 @@ class PycSystem(pyc.CSystem):
                 If None, uses current time. Defaults to None.
             state_index (int, optional): For transitions with multiple target states,
                 specifies which state to transition to. Defaults to 0.
-            **kwargs: Additional arguments (reserved for future use)
 
         Returns:
             If trans_id is None, returns result of isimu_step_forward()
