@@ -10,11 +10,11 @@ import cod3s
 from cod3s.pycatshoo.system import PycSystem
 from kb_test import ObjFlow  # noqa: F401  used via add_component(cls=...)
 
-
 @pytest.fixture(autouse=True)
 def run_around_tests():
     yield
     cod3s.terminate_session()
+
 
 
 def fire(system, name, date=None):

@@ -3,11 +3,11 @@ import cod3s
 from cod3s.pycatshoo.system import PycSystem
 from kb_test import ObjFlow, ObjFlow2I1O
 
-
 @pytest.fixture(autouse=True)
 def run_around_tests():
     yield
     cod3s.terminate_session()
+
 
 
 # --- Helpers ---

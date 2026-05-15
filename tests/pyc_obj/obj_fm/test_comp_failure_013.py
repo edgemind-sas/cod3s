@@ -99,7 +99,6 @@ def the_system():
     )
 
     yield system
-    cod3s.terminate_session()
 
 
 def test_system(the_system):

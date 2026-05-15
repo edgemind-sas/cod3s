@@ -11,7 +11,6 @@ def the_system():
     system.pdmp_manager = system.addPDMPManager("pdmp_manager")
 
     yield system
-    cod3s.terminate_session()
 
 
 def test_system(the_system):
