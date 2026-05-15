@@ -95,12 +95,14 @@ def test_component_withAutom():
                         "source": "state3",
                         "target": [
                             {
+                                "cls": "StateProbModel",
                                 "state": "state2",
                                 "prob": 0.5,
                                 "effects": {},
                                 "effects_format": "dict",
                             },
                             {
+                                "cls": "StateProbModel",
                                 "state": "state1",
                                 "prob": 0.5,
                                 "effects": {},

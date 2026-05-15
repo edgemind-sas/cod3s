@@ -82,12 +82,14 @@ def test_system(the_system):
         "source": "toss",
         "target": [
             {
+                "cls": "StateProbModel",
                 "state": "even",
                 "prob": 0.6,
                 "effects": {},
                 "effects_format": "dict",
             },
             {
+                "cls": "StateProbModel",
                 "state": "odd",
                 "prob": 0.4,
                 "effects": {},

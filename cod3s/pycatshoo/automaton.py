@@ -44,28 +44,8 @@ class OccurrenceDistributionModel(ObjCOD3S):
     is_occ_time_deterministic: typing.ClassVar[bool] = True
     _bkd: typing.Any = pydantic.PrivateAttr(None)
 
-    # TODO: IS IT STILL USEFULL ?
-    @staticmethod
-    def get_clsname(**specs):
-        clsname = specs.pop("cls")
-        clsname = clsname.capitalize() + "OccDistribution"
 
-        return clsname
-
-    # def model_dump(self, **kwrds):
-    #     exclude_list = [
-    #         "bkd",
-    #         "is_occ_time_deterministic",
-    #     ]
-    #     if kwrds.get("exclude"):
-    #         [kwrds["exclude"].add(attr) for attr in exclude_list]
-    #     else:
-    #         kwrds["exclude"] = set(exclude_list)
-
-    #     return super().model_dump(**kwrds)
-
-
-class StateProbModel(pydantic.BaseModel):
+class StateProbModel(ObjCOD3S):
     state: str = pydantic.Field(..., description="Target state name")
     prob: typing.Optional[float] = pydantic.Field(
         None,
@@ -91,9 +71,9 @@ class StateProbModel(pydantic.BaseModel):
 class TransitionModel(ObjCOD3S):
     name: str = pydantic.Field(..., description="transition name")
     source: str = pydantic.Field(..., description="Source state name")
-    target: str | typing.List[StateProbModel] = pydantic.Field(
-        ..., description="Target state name"
-    )
+    target: pydantic.SerializeAsAny[
+        str | typing.List[StateProbModel]
+    ] = pydantic.Field(..., description="Target state name")
     occ_law: pydantic.SerializeAsAny[OccurrenceDistributionModel] = pydantic.Field(
         None, description="Occurrence distribution"
     )
@@ -131,6 +111,20 @@ class TransitionModel(ObjCOD3S):
                 values["occ_law"] = cls.sanitize_occ_law(values["occ_law"])
         else:
             # Inst transition (probabilistic branching).
+            # Normalize the inputs to plain dicts so the rest of the
+            # validator can use ``st.get(...)`` uniformly. Callers may
+            # pass either raw dicts (typical from YAML / user code) or
+            # already-built ``StateProbModel`` instances (typical when
+            # round-tripping a model_dump via ObjCOD3S.from_dict).
+            normalized = []
+            for st in target:
+                if isinstance(st, StateProbModel):
+                    normalized.append(st.model_dump())
+                else:
+                    normalized.append(st)
+            target = normalized
+            values["target"] = target
+
             if len(target) == 0:
                 raise ValueError(
                     "Inst transition must have at least one branch (got an empty target list)"
@@ -391,26 +385,45 @@ class InstOccDistribution(PycOccurrenceDistribution):
             [law.setParameter(pi, i) for i, pi in enumerate(self.probs[:-1])]
         return law
 
+    @classmethod
+    def from_bkd_with_target_count(cls, law_bkd, n_targets):
+        """Reconstruct an ``InstOccDistribution`` from a PyCATSHOO law,
+        normalising the probability vector so that ``len(probs) == n_targets``.
+
+        PyCATSHOO stores ``N-1`` probabilities for an ``N``-branch inst law
+        (the last branch carries the complement, ``1 - sum(probs)``). Reading
+        ``law.parameter(i)`` therefore yields ``N-1`` values; this method
+        appends the complement so the COD3S model carries the full
+        ``N``-vector matching the number of target states.
+
+        Returns a fresh instance with ``_bkd`` bound to ``law_bkd``.
+        """
+        if law_bkd.name() != "inst":
+            raise ValueError(
+                f"InstOccDistribution.from_bkd_with_target_count expects an "
+                f"inst law, got {law_bkd.name()!r}"
+            )
+        if n_targets < 1:
+            raise ValueError(
+                f"n_targets must be >= 1, got {n_targets}"
+            )
+        explicit = [law_bkd.parameter(i) for i in range(law_bkd.nbParam())]
+        if len(explicit) == n_targets - 1:
+            probs = [*explicit, max(0.0, 1.0 - sum(explicit))]
+        elif len(explicit) == n_targets:
+            probs = explicit
+        else:
+            raise ValueError(
+                f"Inst law has {len(explicit)} parameters but transition "
+                f"targets {n_targets} states. Expected N-1 or N "
+                f"parameters."
+            )
+        dist = cls(probs=probs)
+        dist._bkd = law_bkd
+        return dist
+
     def __str__(self):
         return f"inst({self.probs})"
-
-
-# TO BE IMPLEMENTED
-class UniformOccDistribution(PycOccurrenceDistribution):
-    is_occ_time_deterministic: typing.ClassVar[bool] = False
-
-    min: typing.Any = pydantic.Field(
-        0, description="Occurrence min time (could be a variable)"
-    )
-    max: typing.Any = pydantic.Field(
-        0, description="Occurrence max time (could be a variable)"
-    )
-
-    def to_bkd(self, comp_bkd):
-        return pyc.IDistLaw.newLaw(comp_bkd, pyc.TLawType.uniforme, self.min, self.max)
-
-    def __str__(self):
-        return f"unif({self.min}, {self.max})"
 
 
 class PycTransition(TransitionModel):
@@ -442,14 +455,14 @@ class PycTransition(TransitionModel):
             while tgt := trans_bkd.target(i):
                 target_states.append(tgt.basename())
                 i += 1
-            # PyCATSHOO stores N-1 probabilities (the last branch carries the
-            # complement). Restore the full N-vector on the COD3S side so the
-            # serialised model matches the user-supplied ``probs`` and so
-            # ``InstOccDistribution.__str__`` reports the complete list.
-            if len(occ_law.probs) == len(target_states) - 1:
-                occ_law.probs.append(
-                    max(0.0, 1.0 - sum(occ_law.probs))
-                )
+            # Re-build the inst law with the full N-vector of probabilities
+            # (PyCATSHOO stores N-1; the complement lives in the helper).
+            # We rebuild rather than mutate so the invariant
+            # ``len(probs) == n_targets`` lives in one place — see
+            # ``InstOccDistribution.from_bkd_with_target_count``.
+            occ_law = InstOccDistribution.from_bkd_with_target_count(
+                trans_bkd.distLaw(), len(target_states)
+            )
             target = [
                 {"state": name, "prob": occ_law.probs[idx]}
                 for idx, name in enumerate(target_states)

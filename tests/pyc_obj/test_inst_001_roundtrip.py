@@ -205,3 +205,100 @@ def test_inst_str_reports_full_probs_after_from_bkd(two_branch_system):
     assert rendered.startswith("inst([0.7")
     # The second probability must appear (was lost before the fix).
     assert ", 0.3" in rendered
+
+
+# --- T3: the N-vector invariant is now owned by the InstOccDistribution
+# helper. These tests exercise the helper directly, independently of
+# ``PycTransition.from_bkd``.
+
+
+def test_helper_appends_complement_when_law_has_n_minus_1_params(two_branch_system):
+    _, automaton = two_branch_system
+    trans = _get_branch_transition(automaton)
+    law = trans._bkd.distLaw()
+    assert law.nbParam() == 1  # PyCATSHOO stores N-1
+    rebuilt = InstOccDistribution.from_bkd_with_target_count(law, n_targets=2)
+    assert len(rebuilt.probs) == 2
+    assert sum(rebuilt.probs) == pytest.approx(1.0, rel=1e-9)
+    assert rebuilt._bkd is law
+
+
+def test_helper_rejects_non_inst_law(two_branch_system):
+    """Passing a delay/exp law into the helper must raise a clear error."""
+    _, automaton = two_branch_system
+    # Find a non-inst transition by building a throwaway delay.
+    # Use the law of the source state's no-arg constructor path via a fake:
+    # easier — just monkey-patch a stub bkd.
+    class _FakeLaw:
+        @staticmethod
+        def name():
+            return "exp"
+
+        @staticmethod
+        def nbParam():
+            return 1
+
+        @staticmethod
+        def parameter(i):
+            return 0.5
+
+    with pytest.raises(ValueError, match="inst law"):
+        InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=2)
+
+
+def test_helper_rejects_invalid_target_count():
+    class _FakeLaw:
+        @staticmethod
+        def name():
+            return "inst"
+
+        @staticmethod
+        def nbParam():
+            return 0
+
+        @staticmethod
+        def parameter(i):
+            return 0.0
+
+    with pytest.raises(ValueError, match="n_targets must be"):
+        InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=0)
+
+
+def test_helper_rejects_param_count_mismatch():
+    """Defensive: a law with neither N-1 nor N parameters is rejected."""
+    class _FakeLaw:
+        @staticmethod
+        def name():
+            return "inst"
+
+        @staticmethod
+        def nbParam():
+            return 5  # claims 5 params for a 2-target transition
+
+        @staticmethod
+        def parameter(i):
+            return 0.1
+
+    with pytest.raises(ValueError, match="parameters"):
+        InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=2)
+
+
+def test_helper_accepts_law_already_carrying_full_n_vector():
+    """If a hypothetical PyCATSHOO build returns N parameters instead of
+    N-1, the helper must accept them as-is rather than re-appending a
+    bogus complement."""
+    class _FakeLaw:
+        @staticmethod
+        def name():
+            return "inst"
+
+        @staticmethod
+        def nbParam():
+            return 2
+
+        @staticmethod
+        def parameter(i):
+            return [0.3, 0.7][i]
+
+    rebuilt = InstOccDistribution.from_bkd_with_target_count(_FakeLaw(), n_targets=2)
+    assert rebuilt.probs == pytest.approx([0.3, 0.7], rel=1e-9)
