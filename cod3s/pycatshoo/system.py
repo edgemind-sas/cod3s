@@ -896,52 +896,86 @@ class PycSystem(pyc.CSystem):
         return [PycTransition.from_bkd(trans) for trans in self.activeTransitions()]
 
     def isimu_fireable_transitions(self, **kwargs):
-        """Get all transitions that can be fired at the current time.
+        """Return active transitions annotated with their fireability,
+        with the same indexing as ``isimu_active_transitions``.
 
-        A transition is fireable if:
-        - For deterministic transitions: its end time is less than or equal to the
-          minimum end time of all active transitions
-        - For non-deterministic transitions: it is active at the current time
+        Each slot of the returned list is either:
+
+        * a :class:`PycTransition` — the transition is *available* to the
+          interactive controller. For deterministic laws this also means
+          it is "fireable now" (``end_time <= currentTime()`` will hold
+          after the planning sync below). For non-deterministic laws this
+          means "active but not auto-fired"; the operator must replan it
+          via :meth:`isimu_set_transition` before ``stepForward`` accepts
+          it (its ``end_time`` is ``inf`` until then).
+        * ``None`` — the slot belongs to a deterministic transition whose
+          ``end_time`` is strictly greater than the minimum end-time over
+          all active transitions, i.e. it cannot fire at the current
+          cursor. Slots are kept (not compacted) so callers can index
+          into the list with the same positions they read from
+          ``isimu_active_transitions``.
+
+        On return, every non-``None`` slot carries
+        ``end_time == _bkd.endTime()`` — a single source of truth for the
+        UI and for :meth:`isimu_step_forward`.
 
         Args:
             **kwargs: Additional arguments (reserved for future use)
 
         Returns:
-            list[PycTransition]: List of fireable transitions, with None entries for
-                non-fireable transitions to maintain indexing
+            list[Optional[PycTransition]]: Active transitions with
+                ``None`` slots for non-fireable deterministic ones.
         """
         trans_list = self.isimu_active_transitions()
         if not trans_list:
             return []
-        end_time_bound = min([trans._bkd.endTime() for trans in trans_list])
-        trans_list_fireable = []
-        for trans in trans_list:
-            if trans.occ_law.is_occ_time_deterministic and (
-                trans.end_time <= end_time_bound
-            ):
-                trans_list_fireable.append(trans)
-            elif not trans.occ_law.is_occ_time_deterministic:
-                trans_list_fireable.append(trans)
-            else:
-                trans_list_fireable.append(None)
+        fireable_or_none = self._mask_fireable(trans_list)
+        self._sync_end_times_from_bkd(fireable_or_none)
+        return fireable_or_none
 
-        # Sync ``trans.end_time`` with the backend planning so callers see a
-        # single source of truth. ``_bkd.endTime()`` returns:
-        #   - a finite date for deterministic laws (delay/inst, computed at
-        #     entry into the source state) and for any law that was explicitly
-        #     re-planned via ``setTransPlanning``;
-        #   - ``inf`` for non-deterministic laws (exp, ...) that have not been
-        #     re-planned. The interactive simulator does not auto-sample them
-        #     — keeping ``end_time = inf`` makes ``isimu_step_forward`` skip
-        #     them by design (it fires only ``end_time <= currentTime()``).
-        # The previous implementation wrote ``currentTime()`` in the elif
-        # branch above, which was a no-op because this loop immediately
-        # overwrote it.
-        for trans in trans_list_fireable:
+    @staticmethod
+    def _mask_fireable(trans_list):
+        """Filter ``trans_list`` keeping only transitions the interactive
+        controller may act on, padding non-fireable deterministic ones
+        with ``None`` to preserve indexing.
+
+        A deterministic transition is kept iff its ``end_time`` is at the
+        end-time bound (the minimum across active transitions); above the
+        bound it is replaced by ``None``. A non-deterministic transition
+        is always kept — its ``end_time`` may be ``inf`` (un-replanned),
+        but the operator must be able to see it to act on it.
+        """
+        end_time_bound = min(t._bkd.endTime() for t in trans_list)
+        out = []
+        for trans in trans_list:
+            deterministic = trans.occ_law.is_occ_time_deterministic
+            if deterministic and trans.end_time <= end_time_bound:
+                out.append(trans)
+            elif not deterministic:
+                out.append(trans)
+            else:
+                out.append(None)
+        return out
+
+    @staticmethod
+    def _sync_end_times_from_bkd(trans_list_or_none):
+        """For each non-``None`` slot, copy ``_bkd.endTime()`` onto
+        ``trans.end_time`` so callers see a single source of truth.
+
+        ``_bkd.endTime()`` returns:
+
+        * a finite date for deterministic laws (delay / inst — computed at
+          entry into the source state) and for any law that was explicitly
+          re-planned via ``setTransPlanning``;
+        * ``inf`` for non-deterministic laws (exp, ...) that have not been
+          re-planned. The interactive simulator does not auto-sample
+          them — keeping ``end_time = inf`` makes
+          :meth:`isimu_step_forward` skip them by design (it fires only
+          ``end_time <= currentTime()``).
+        """
+        for trans in trans_list_or_none:
             if trans is not None:
                 trans.end_time = trans._bkd.endTime()
-
-        return trans_list_fireable
 
     def isimu_show_active_transitions(self, **kwargs):
         """Display all currently active transitions in a formatted list.
