@@ -1,5 +1,6 @@
 import pytest
 
+from cod3s import terminate_session
 from cod3s.pycatshoo.system import PycSystem, PycMCSimulationParam
 import Pycatshoo as pyc
 from cod3s.kb import (
@@ -10,6 +11,13 @@ from cod3s.kb import (
 
 from cod3s.system import Connection, System
 from pydantic import ValidationError
+
+
+@pytest.fixture
+def terminate_pyc_after():
+    """Release the PyCATSHOO singleton on teardown, even on assertion failure."""
+    yield
+    terminate_session()
 
 
 @pytest.fixture(scope="module")
@@ -151,11 +159,7 @@ def test_flow_system_creation(kb_cod3s):
     assert block_to_consumer.interface_target == "flow_in"
 
 
-@pytest.mark.skipif(
-    pytest.importorskip("Pycatshoo", reason="Pycatshoo not installed") is None,
-    reason="Pycatshoo module not installed",
-)
-def test_kb_to_bkd_pycatshoo(kb_cod3s):
+def test_kb_to_bkd_pycatshoo(kb_cod3s, terminate_pyc_after):
     """Test the to_bkd_pycatshoo method of ComponentInstance."""
     # Create a system with components
     system = System(name="flow_system", kb_name="test_flow_kb")
@@ -167,13 +171,6 @@ def test_kb_to_bkd_pycatshoo(kb_cod3s):
     assert (
         str(system.component("source1").__class__) == "<class 'Pycatshoo.CComponent'>"
     )
-
-    import Pycatshoo
-
-    Pycatshoo.CSystem.terminate()
-
-    # Verify that the component was created with the correct name
-    # assert pyc_component.name() == "source1"
 
 
 # def test_delete(pyc_system):
