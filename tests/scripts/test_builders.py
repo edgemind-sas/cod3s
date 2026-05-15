@@ -30,7 +30,7 @@ class TestYamlModelBuilder:
         with pytest.raises(FileNotFoundError):
             b.build()
 
-    def test_with_explicit_namespace(self, tmp_path):
+    def test_with_explicit_namespace(self, tmp_path, terminate_pyc_after):
         """Verify build() forwards the namespace to build_system_from_model."""
         # Create a minimal YAML model that doesn't need imports
         # (uses default PycSystem)

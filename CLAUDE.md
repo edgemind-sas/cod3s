@@ -2,6 +2,14 @@
 
 This file provides guidance to any AI assistant when working with code in this repository.
 
+## Language
+
+**Conversation with Roland: French.** All chat replies, status updates, planning prose, brainstorm notes, and commit-message bodies written *for the human in this session* must be in French.
+
+**Code artefacts: English.** Everything that lives in the repository — source code, identifiers, docstrings, inline comments, log/exception messages, Markdown documentation (`docs/`, `README.md`, `CLAUDE.md`, brainstorm/plan files under `docs/`), test names and assertion messages, example walkthrough text inside `examples/*.py` — is written in English. This keeps the codebase consistent for future readers and tooling.
+
+Commit-message subjects follow Conventional Commits in English (`feat(...):`, `fix(...):`, etc.); the body can stay English too unless Roland explicitly asks for a French body.
+
 ## Workflow / Collaboration
 
 **Solo project — no PRs / MRs to open.** Roland is the sole developer and code reviewer of COD3S. Do not run `gh pr create` (or equivalents) and do not propose opening one as a "next step".
