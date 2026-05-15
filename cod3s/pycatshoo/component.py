@@ -1244,7 +1244,7 @@ class ObjFM(PycComponent):
         self.step = step
 
         self.cond_inner_logic = cond_inner_logic
-        self.cond_outer_logic = cond_inner_logic
+        self.cond_outer_logic = cond_outer_logic
 
         self.var_params = {}
         self.failure_effects = copy.deepcopy(failure_effects)
@@ -1641,7 +1641,11 @@ class ObjFM(PycComponent):
             elif var in [v.basename() for v in target_comp.variables()]:
                 comp_var = target_comp.variable(var)
             else:
-                continue
+                raise KeyError(
+                    f"failure_effects: variable {var!r} not found on target "
+                    f"{target_name!r} (ObjFM {self.fm_name!r}). Check the "
+                    f"spelling against the target's declared variables."
+                )
             final_failure_effects.append({"var": comp_var, "value": value})
 
         # Resolve and Prepare repair effects
@@ -1652,7 +1656,11 @@ class ObjFM(PycComponent):
             elif var in [v.basename() for v in target_comp.variables()]:
                 comp_var = target_comp.variable(var)
             else:
-                continue
+                raise KeyError(
+                    f"repair_effects: variable {var!r} not found on target "
+                    f"{target_name!r} (ObjFM {self.fm_name!r}). Check the "
+                    f"spelling against the target's declared variables."
+                )
             final_repair_effects.append({"var": comp_var, "value": value})
 
         target_aut = target_comp.add_aut2st(
