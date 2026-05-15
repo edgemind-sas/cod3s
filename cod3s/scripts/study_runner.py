@@ -32,6 +32,8 @@ from typing import Any, Optional, Type, Union
 
 import yaml
 
+import json
+
 from cod3s.scripts._common import load_study_specs
 from cod3s.scripts.builders import SystemBuilder
 from cod3s.specs.study_yaml import (
@@ -47,6 +49,115 @@ from cod3s.specs.study_yaml import (
     StudyYaml,
     TargetSpec,
 )
+
+
+def _clamp_top_pct(raw: Any) -> int:
+    """Clamp the top-sequences percent to PyCATSHOO's accepted [1, 100] int range.
+
+    PyCATSHOO's ``CAnalyser.printFilteredSeq`` expects an int. ``None`` or
+    a missing value → 100 (no filtering). Out-of-range values are clamped
+    to the nearest boundary.
+    """
+    if raw is None:
+        return 100
+    try:
+        return max(1, min(100, round(float(raw))))
+    except (TypeError, ValueError):
+        return 100
+
+
+def _apply_sequence_filtering(
+    system: Any,
+    study_obj: StudyYaml,
+    results_path: Path,
+    logger: Any,
+) -> None:
+    """Apply Tier 1 native PyCATSHOO sequence filtering when configured.
+
+    Reads ``study_obj.simulation.sequence_filtering`` (carried as an extra
+    field on ``SimulationConfig`` thanks to ``extra="allow"``) and, when
+    present, re-writes ``sequences.xml`` via ``CAnalyser.printFilteredSeq``
+    with the requested top-N% retention plus an optional
+    ``IFilterFct.newConditionFilter``.
+
+    No-op when no filtering is configured — the raw ``sequences.xml``
+    produced by ``setResultFileName`` is left untouched.
+
+    Side-effect : writes ``sequence_filtering_metrics.json`` next to the
+    XML when the analyser exposes ``totalSeqCount``/``filteredSeqCount``,
+    so the platform can report filtering effectiveness in the run UI.
+
+    Fail-open : any exception (e.g. ``newConditionFilter`` rejecting an
+    unknown ``variable_path``) logs a warning and leaves the raw XML in
+    place. The user sees the full table rather than a cryptic crash.
+
+    Refs :
+    - Bench ``cod3s/platform/docs/solutions/architecture-patterns/2026-05-13-pycatshoo-vs-cod3s-sequence-perf.md``
+    - PyCATSHOO manual §9.3.20 (IFilterFct), §9.3.2.4.40 (setSeqFilter)
+    """
+    sim_cfg = getattr(study_obj, "simulation", None)
+    if sim_cfg is None:
+        return
+    # ``extra="allow"`` exposes unknown keys via model_extra ; fall back
+    # to attribute access for older Pydantic builds.
+    extras = getattr(sim_cfg, "model_extra", None) or {}
+    filtering = extras.get("sequence_filtering") or getattr(sim_cfg, "sequence_filtering", None)
+    if not filtering:
+        return
+
+    seq_path = results_path / "sequences.xml"
+
+    try:
+        import Pycatshoo as Pyc
+    except ImportError as exc:
+        if logger:
+            logger.warning(f"Sequence filtering skipped (PyCATSHOO unavailable): {exc}")
+        return
+
+    try:
+        analyser = Pyc.CAnalyser(system)
+        analyser.keepFilteredSeq(True)
+
+        condition = filtering.get("condition_filter") if isinstance(filtering, dict) else getattr(filtering, "condition_filter", None)
+        if condition:
+            cond = condition if isinstance(condition, dict) else condition.model_dump()
+            try:
+                f = Pyc.IFilterFct.newConditionFilter(
+                    cond["variable_path"],   # → C++ arg `object`
+                    float(cond["time"]),
+                    cond["op"],
+                    float(cond["val"]),
+                )
+                analyser.setSeqFilter(f)
+            except Exception as exc:
+                if logger:
+                    logger.warning(
+                        f"setSeqFilter failed for variable_path={cond.get('variable_path')!r}: {exc}. "
+                        "Continuing without condition filter (raw sequences will be filtered by top% only)."
+                    )
+
+        raw_pct = filtering.get("top_sequences_pct") if isinstance(filtering, dict) else getattr(filtering, "top_sequences_pct", None)
+        pct = _clamp_top_pct(raw_pct)
+        analyser.printFilteredSeq(pct, str(seq_path), "PySeq.xsl")
+
+        if logger:
+            logger.info2(f"Sequence filtering applied (top_pct={pct}, condition={'yes' if condition else 'no'})")
+
+        # Capture filtering effectiveness for downstream observability.
+        try:
+            metrics = {
+                "total_sequences": int(analyser.totalSeqCount()),
+                "filtered_sequences": int(analyser.filteredSeqCount()),
+            }
+            (results_path / "sequence_filtering_metrics.json").write_text(json.dumps(metrics))
+        except AttributeError:
+            # Older PyCATSHOO builds may not expose these counters ; skip.
+            pass
+    except Exception as exc:
+        if logger:
+            logger.warning(
+                f"Sequence filtering failed entirely: {exc}. Raw sequences.xml left in place."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +599,13 @@ def run_study(
     duration = datetime.datetime.now() - start
     if logger:
         logger.info2(f"Simulation completed in: {duration}")
+
+    # Step 7.5 : apply Tier 1 sequence filtering when requested. Re-writes
+    # ``sequences.xml`` via ``CAnalyser.printFilteredSeq`` with top-N% and
+    # an optional ``newConditionFilter``. No-op when no filtering set,
+    # fail-open on errors so the run still produces output. See helper
+    # docstring for refs.
+    _apply_sequence_filtering(system, study_obj, results_path, logger)
 
     # Step 8: dump PyCATSHOO parameters file (legacy artifact —
     # consumers expect it next to results)
