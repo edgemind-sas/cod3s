@@ -1,7 +1,6 @@
 import pydantic
 import pandas as pd
 import typing
-import statistics
 import re
 import tqdm
 from collections import defaultdict
@@ -839,11 +838,19 @@ class SequenceAnalyser(ObjCOD3S):
             )
 
     def update_probs(self):
-
-        for seq in self.sequences:
-            seq.probability = (
-                seq.weight / self.weight_total if self.weight_total > 0 else None
-            )
+        # ``self.weight_total`` is a property that walks the whole
+        # ``self.sequences`` list — read it ONCE outside the loop,
+        # otherwise this method is O(N²) on the number of sequences
+        # (it used to read the property twice per iteration). At
+        # 5000 raw sequences pre-grouping, the difference is ~3 s vs
+        # a few ms.
+        total = self.weight_total
+        if total > 0:
+            for seq in self.sequences:
+                seq.probability = seq.weight / total
+        else:
+            for seq in self.sequences:
+                seq.probability = None
 
     def group_sequences(self, inplace=False, progress=False):
         """Group sequences by target_name and merge identical event patterns.
@@ -911,9 +918,16 @@ class SequenceAnalyser(ObjCOD3S):
                                 if seq.events[event_idx].time is not None
                             ]
 
-                            # Calculate mean time
+                            # Calculate mean time. ``statistics.mean`` is
+                            # accurate (Fraction-based) but ~20× slower
+                            # than ``sum / len`` on plain floats, and at
+                            # 20k sequences the property re-evaluation
+                            # alone costs ~250 ms — see profile in
+                            # examples/bench_sequence_paths/.
                             mean_time = (
-                                statistics.mean(event_times) if event_times else None
+                                sum(event_times) / len(event_times)
+                                if event_times
+                                else None
                             )
 
                             # Create merged event using first sequence as template
@@ -932,7 +946,9 @@ class SequenceAnalyser(ObjCOD3S):
                         for seq in sequences_to_merge
                         if seq.end_time is not None
                     ]
-                    mean_end_time = statistics.mean(end_times) if end_times else None
+                    mean_end_time = (
+                        sum(end_times) / len(end_times) if end_times else None
+                    )
 
                     # Create merged sequence
                     merged_sequence = Sequence(
