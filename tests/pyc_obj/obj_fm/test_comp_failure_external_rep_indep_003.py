@@ -79,9 +79,9 @@ def test_rep_indep_combo_order2_independent_repair():
     # Fire any of the chained delay(0) transitions: the simulator processes
     # all fireable delay(0) at this date. After this single step:
     # - C1.frun.occ done, C2.frun.occ done, ObjFM.cc_12.rep done (auto-trigger).
-    fire(system, "C1.occ")
-    assert is_state_active(c1_aut, "occ")
-    assert is_state_active(c2_aut, "occ")
+    fire(system, "C1.frun__occ")
+    assert is_state_active(c1_aut, "frun__occ")
+    assert is_state_active(c2_aut, "frun__occ")
     # ObjFM has triggered back to rep.
     assert is_state_active(fm_aut, "rep__cc_12")
     # ctrl_vars stay True (target owns reset).
@@ -94,13 +94,13 @@ def test_rep_indep_combo_order2_independent_repair():
     assert f"{fm_comp_name}.occ__cc_2" not in after_trigger
     assert f"{fm_comp_name}.occ__cc_12" not in after_trigger
     # Target self-repairs are fireable (their own mu_1 law).
-    assert "C1.rep" in after_trigger
-    assert "C2.rep" in after_trigger
+    assert "C1.frun__rep" in after_trigger
+    assert "C2.frun__rep" in after_trigger
 
     # C1 self-repairs alone (with explicit date to avoid chaining C2.rep).
-    fire(system, "C1.rep", date=20)
-    assert is_state_active(c1_aut, "rep")
-    assert is_state_active(c2_aut, "occ")
+    fire(system, "C1.frun__rep", date=20)
+    assert is_state_active(c1_aut, "frun__rep")
+    assert is_state_active(c2_aut, "frun__occ")
     assert fm.ctrl_vars["C1"].value() is False
     assert fm.ctrl_vars["C2"].value() is True
 
@@ -111,8 +111,8 @@ def test_rep_indep_combo_order2_independent_repair():
     assert f"{fm_comp_name}.occ__cc_12" not in after_c1_rep
 
     # C2 finishes repairing.
-    fire(system, "C2.rep")
-    assert is_state_active(c2_aut, "rep")
+    fire(system, "C2.frun__rep")
+    assert is_state_active(c2_aut, "frun__rep")
     assert fm.ctrl_vars["C2"].value() is False
 
     # All combos fireable again.
@@ -147,7 +147,7 @@ def test_rep_indep_partial_state_blocks_higher_order_combo():
 
     # Trigger cc_2 (C2 only) — trigger chains C2.occ + ObjFM.cc_2.rep.
     fire(system, f"{fm_comp_name}.occ__cc_2", date=10)
-    fire(system, "C2.occ")
+    fire(system, "C2.frun__occ")
 
     # C2 in occ, C1 in rep.
     fireable = fireable_names(system)
@@ -156,6 +156,6 @@ def test_rep_indep_partial_state_blocks_higher_order_combo():
     assert f"{fm_comp_name}.occ__cc_2" not in fireable
     assert f"{fm_comp_name}.occ__cc_12" not in fireable
     # C2.rep is fireable (its own mu_1 law).
-    assert "C2.rep" in fireable
+    assert "C2.frun__rep" in fireable
 
     system.isimu_stop()

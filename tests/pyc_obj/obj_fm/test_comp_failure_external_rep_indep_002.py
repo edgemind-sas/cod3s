@@ -69,25 +69,25 @@ def test_rep_indep_trigger_single_target():
     assert fireable_names(system) == {f"{fm_comp_name}.occ"}
     assert ctrl.value() is False
     assert is_state_active(fm_aut, "rep")
-    assert is_state_active(target_aut, "rep")
+    assert is_state_active(target_aut, "frun__rep")
 
     # Fire ObjFM.occ at explicit date.
     fire(system, f"{fm_comp_name}.occ", date=10)
     assert ctrl.value() is True
     assert is_state_active(fm_aut, "occ")
     # Target hasn't transitioned yet (we stopped at the explicit date=10).
-    assert is_state_active(target_aut, "rep")
+    assert is_state_active(target_aut, "frun__rep")
 
     # Both target.occ AND ObjFM.rep are fireable now (both delay 0).
     after_occ = fireable_names(system)
-    assert "C1.occ" in after_occ
+    assert "C1.frun__occ" in after_occ
     assert f"{fm_comp_name}.rep" in after_occ
 
     # Fire target.occ. The simulator will chain ObjFM.rep (delay 0) in the
     # same step since both are fireable at this time.
-    fire(system, "C1.occ")
+    fire(system, "C1.frun__occ")
     # Target reached occ, failure_effects applied.
-    assert is_state_active(target_aut, "occ")
+    assert is_state_active(target_aut, "frun__occ")
     assert system.comp["C1"].flow_in_max.value() == 0.0
     # ObjFM auto-triggerd back to rep.
     assert is_state_active(fm_aut, "rep")
@@ -101,7 +101,7 @@ def test_rep_indep_trigger_single_target():
     after_trigger = fireable_names(system)
     assert f"{fm_comp_name}.occ" not in after_trigger
     # Target.rep IS fireable (its own mu_1 law).
-    assert "C1.rep" in after_trigger
+    assert "C1.frun__rep" in after_trigger
 
     system.isimu_stop()
 
@@ -133,14 +133,14 @@ def test_rep_indep_target_repair_resets_ctrl():
 
     # Drive a full trigger: ObjFM.occ -> chain to C1.occ + ObjFM.rep.
     fire(system, f"{fm_comp_name}.occ", date=10)
-    fire(system, "C1.occ")
-    assert is_state_active(target_aut, "occ")
+    fire(system, "C1.frun__occ")
+    assert is_state_active(target_aut, "frun__occ")
     assert ctrl.value() is True
     assert system.comp["C1"].flow_in_max.value() == 0.0
 
     # Fire the target's repair transition.
-    fire(system, "C1.rep")
-    assert is_state_active(target_aut, "rep")
+    fire(system, "C1.frun__rep")
+    assert is_state_active(target_aut, "frun__rep")
     assert ctrl.value() is False, (
         "Target.rep must reset its ctrl_var to False so that the ObjFM "
         "can fire a new occurrence."

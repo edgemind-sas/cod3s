@@ -1477,11 +1477,13 @@ class ObjFM(PycComponent):
                         return cond
 
                     # Failure: targets must be in repair state (available).
+                    # The target automaton's state is name-prefixed since
+                    # the multi-ObjFM-per-target fix; mirror that here.
                     failure_cond_cur = make_external_cond(
                         failure_cond_cur,
                         target_comps_cur,
                         self.fm_name,
-                        self.repair_state,
+                        f"{self.fm_name}__{self.repair_state}",
                     )
 
                     if self.behaviour == "external":
@@ -1490,7 +1492,7 @@ class ObjFM(PycComponent):
                             repair_cond_cur,
                             target_comps_cur,
                             self.fm_name,
-                            self.failure_state,
+                            f"{self.fm_name}__{self.failure_state}",
                         )
                     # external_rep_indep: ObjFM repair is unconditional
                     # (trigger model — instantaneous delay(0), see
@@ -1692,11 +1694,21 @@ class ObjFM(PycComponent):
             target_comp, target_name, repair_effects, kind="repair_effects"
         )
 
+        # Prefix the state and transition names with the ObjFM's
+        # ``fm_name`` so the target can host several ObjFM in
+        # ``external`` / ``external_rep_indep`` mode without colliding
+        # on the bare ``occ`` / ``rep`` namespace. The resulting
+        # sequence trace also disambiguates which ObjFM fired the event
+        # (e.g. ``C1.frun__occ`` instead of ``C1.occ``).
+        st_rep_prefixed = f"{self.fm_name}__{self.repair_state}"
+        st_occ_prefixed = f"{self.fm_name}__{self.failure_state}"
         target_aut = target_comp.add_aut2st(
             name=self.fm_name,
-            st1=self.repair_state,
-            st2=self.failure_state,
+            st1=st_rep_prefixed,
+            st2=st_occ_prefixed,
             init_st2=False,
+            # ``st1`` / ``st2`` are already prefixed, so the bare ``{st2}``
+            # / ``{st1}`` format yields the prefixed transition name.
             trans_name_12_fmt="{st2}",
             cond_occ_12=occ_condition,
             occ_law_12={"cls": "delay", "time": 0},  # Always instantaneous
@@ -1720,7 +1732,7 @@ class ObjFM(PycComponent):
         # effects_st1 (which registers the effect on the variable itself,
         # creating a conflict with the ObjFM.occ effect at simulation start).
         if self.behaviour == "external_rep_indep":
-            rep_state_bkd = target_aut.get_state_by_name(self.repair_state)._bkd
+            rep_state_bkd = target_aut.get_state_by_name(st_rep_prefixed)._bkd
 
             def reset_ctrl_on_target_repair():
                 if rep_state_bkd.isActive() and ctrl_var.value() is True:

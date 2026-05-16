@@ -89,13 +89,13 @@ def test_external_single_synchronization():
     assert system.comp["C1__frun"].ctrl_vars["C1"].value() == True
 
     # Check that ObjFM repair is NOT fireable (waits for target)
-    assert_fireable(system, {"C1.occ"})
+    assert_fireable(system, {"C1.frun__occ"})
 
     # Propagate to target
-    fire_transition(system, "C1.occ", date=10)
+    fire_transition(system, "C1.frun__occ", date=10)
 
     target_aut = system.comp["C1"].automata_d["frun"]
-    assert is_state_active(target_aut, "occ")
+    assert is_state_active(target_aut, "frun__occ")
 
     # Now ObjFM repair is fireable
     assert_fireable(system, {"C1__frun.rep"})
@@ -108,12 +108,12 @@ def test_external_single_synchronization():
     assert system.comp["C1__frun"].ctrl_vars["C1"].value() == False
 
     # Check that ObjFM failure is NOT fireable (waits for target repair)
-    assert_fireable(system, {"C1.rep"})
+    assert_fireable(system, {"C1.frun__rep"})
 
     # Propagate to target
-    fire_transition(system, "C1.rep")
+    fire_transition(system, "C1.frun__rep")
 
-    assert is_state_active(target_aut, "rep")
+    assert is_state_active(target_aut, "frun__rep")
 
     # Back to initial state
     assert_fireable(system, {"C1__frun.occ"})
@@ -164,15 +164,15 @@ def test_external_multi_synchronization():
     expected_step1 = {
         f"{fm_comp_name}.occ__cc_1",
         f"{fm_comp_name}.occ__cc_2",
-        "C1.occ",
-        "C2.occ",
+        "C1.frun__occ",
+        "C2.frun__occ",
     }
     assert_fireable(system, expected_step1)
 
     # Fire C1 failure but it force also C2 failure
-    fire_transition(system, "C1.occ")
-    assert is_state_active(system.comp["C1"].automata_d["frun"], "occ")
-    assert is_state_active(system.comp["C2"].automata_d["frun"], "occ")
+    fire_transition(system, "C1.frun__occ")
+    assert is_state_active(system.comp["C1"].automata_d["frun"], "frun__occ")
+    assert is_state_active(system.comp["C2"].automata_d["frun"], "frun__occ")
 
     expected_step2 = {f"{fm_comp_name}.rep__cc_12"}
     assert_fireable(system, expected_step2)
@@ -180,8 +180,8 @@ def test_external_multi_synchronization():
     fire_transition(system, f"{fm_comp_name}.rep__cc_12")
     # Both failed. ObjFM can repair cc_12.
     expected_step3 = {
-        "C1.rep",
-        "C2.rep",
+        "C1.frun__rep",
+        "C2.frun__rep",
     }
     assert_fireable(system, expected_step3)
 
@@ -194,7 +194,7 @@ def test_external_multi_synchronization():
     assert_fireable(
         system,
         {
-            "C2.occ",
+            "C2.frun__occ",
             f"{fm_comp_name}.occ__cc_1",
             f"{fm_comp_name}.occ__cc_12",
         },
@@ -213,7 +213,7 @@ def test_external_multi_synchronization():
     assert_fireable(
         system,
         {
-            "C1.occ",
+            "C1.frun__occ",
             f"{fm_comp_name}.rep__cc_2",
         },
     )

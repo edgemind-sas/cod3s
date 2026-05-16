@@ -53,9 +53,9 @@ def test_rep_indep_repair_cond_default_true():
     system.isimu_start()
 
     fire(system, f"{fm_comp_name}.occ", date=10)
-    fire(system, "C1.occ")
+    fire(system, "C1.frun__occ")
     # Default repair_cond is True -> target.rep is fireable.
-    assert "C1.rep" in fireable_names(system)
+    assert "C1.frun__rep" in fireable_names(system)
 
     system.isimu_stop()
 
@@ -95,12 +95,12 @@ def test_rep_indep_repair_cond_callable_evaluated_on_target():
 
     # Drive the trigger cycle.
     fire(system, f"{fm_comp_name}.occ", date=10)
-    fire(system, "C1.occ")
+    fire(system, "C1.frun__occ")
 
     # Cond is False -> with the deterministic delay law, the transition
     # endTime stays beyond the bound, so C1.rep is NOT fireable. This proves
     # the user-provided repair_cond is wired into the target's repair
     # transition (rather than the previous TODO `lambda: True`).
-    assert "C1.rep" not in fireable_names(system)
+    assert "C1.frun__rep" not in fireable_names(system)
 
     system.isimu_stop()

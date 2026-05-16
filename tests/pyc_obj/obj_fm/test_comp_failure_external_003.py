@@ -72,28 +72,28 @@ def test_external_3_targets_all_combos(combo, affected_targets):
     fire_transition(system, f"{fm_comp_name}.occ__{combo}", date=10)
 
     # Propagation aux cibles (le point fixe traite toutes les cibles simultanées)
-    fire_transition(system, f"{affected_targets[0]}.occ")
+    fire_transition(system, f"{affected_targets[0]}.frun__occ")
 
     # Vérification des états et des effets
     for t in ["C1", "C2", "C3"]:
         target_aut = system.comp[t].automata_d["frun"]
         if t in affected_targets:
-            assert is_state_active(target_aut, "occ")
+            assert is_state_active(target_aut, "frun__occ")
             assert system.comp[t].flow_in_max.value() == 0.0
         else:
-            assert is_state_active(target_aut, "rep")
+            assert is_state_active(target_aut, "frun__rep")
             assert system.comp[t].flow_in_max.value() == 10.0
 
     # Réparation de l'ObjFM
     fire_transition(system, f"{fm_comp_name}.rep__{combo}", date=20)
 
     # Propagation de la réparation aux cibles
-    fire_transition(system, f"{affected_targets[0]}.rep")
+    fire_transition(system, f"{affected_targets[0]}.frun__rep")
 
     # Vérification finale : les états sont 'rep' mais les valeurs restent à 0 car pas de repair_effects
     for t in ["C1", "C2", "C3"]:
         target_aut = system.comp[t].automata_d["frun"]
-        assert is_state_active(target_aut, "rep")
+        assert is_state_active(target_aut, "frun__rep")
         if t in affected_targets:
             assert system.comp[t].flow_in_max.value() == 0.0
         else:

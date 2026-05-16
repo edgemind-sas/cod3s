@@ -71,7 +71,7 @@ def test_external_effects_propagation():
 
     # Step 2: Propagate to targets
     # Firing C1.occ will also fire C2.occ as they are both instantaneous and enabled
-    fire_transition(system, "C1.occ", date=10)
+    fire_transition(system, "C1.frun__occ", date=10)
     
     # Both failed -> both effects should be applied
     assert system.comp["C1"].flow_in_max.value() == 0.0
@@ -84,7 +84,7 @@ def test_external_effects_propagation():
     assert system.comp["C2"].flow_in_max.value() == 0.0
 
     # Repair C1 (this also repairs C2 because they are both instantaneous and enabled)
-    fire_transition(system, "C1.rep")
+    fire_transition(system, "C1.frun__rep")
     assert system.comp["C1"].flow_in_max.value() == 10.0
     assert system.comp["C2"].flow_in_max.value() == 10.0
 

@@ -51,7 +51,7 @@ def test_rep_indep_failure_effects_applied():
 
     # Trigger: ObjFM.occ at date=10 -> chain to C1.occ + ObjFM.rep.
     fire(system, f"{fm_comp_name}.occ", date=10)
-    fire(system, "C1.occ")
+    fire(system, "C1.frun__occ")
     # After the chain, target.frun is in occ, failure_effects applied.
     assert system.comp["C1"].flow_in_max.value() == 0.0
 
@@ -81,11 +81,11 @@ def test_rep_indep_repair_effects_applied():
 
     # Drive the trigger cycle.
     fire(system, f"{fm_comp_name}.occ", date=10)
-    fire(system, "C1.occ")
+    fire(system, "C1.frun__occ")
     assert system.comp["C1"].flow_in_max.value() == 0.0
 
     # Fire target.rep -> repair_effects applied.
-    fire(system, "C1.rep")
+    fire(system, "C1.frun__rep")
     assert system.comp["C1"].flow_in_max.value() == 7.5
 
     system.isimu_stop()

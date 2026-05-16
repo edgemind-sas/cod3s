@@ -114,11 +114,11 @@ def test_external_dependency_system():
     # CX__frun repair (rep__cc_1) NOT fireable yet (waits for CA)
     # CA failure (CA.occ) IS fireable.
     fireable_step1 = {tr._bkd.name() for tr in system.isimu_fireable_transitions()}
-    assert "CA.occ" in fireable_step1
+    assert "CA.frun__occ" in fireable_step1
     assert "CX__frun.rep__cc_1" not in fireable_step1
     
     # Propagate to CA
-    fire_transition(system, "CA.occ", date=10)
+    fire_transition(system, "CA.frun__occ", date=10)
 
     # CA should be 2.
     assert system.comp["CA"].v_flow_out.value() == 2
@@ -135,11 +135,11 @@ def test_external_dependency_system():
     
     # Check intermediate state
     fireable_step2 = {tr._bkd.name() for tr in system.isimu_fireable_transitions()}
-    assert "T4.occ" in fireable_step2
+    assert "T4.frun__occ" in fireable_step2
     assert "TXX__frun.rep__cc_4" not in fireable_step2
     
     # Propagate to T4
-    fire_transition(system, "T4.occ")
+    fire_transition(system, "T4.frun__occ")
 
     # T4 failure effect: v_flow_out = 1.
     assert system.comp["T4"].v_flow_out.value() == 1
@@ -158,9 +158,9 @@ def test_external_dependency_system():
     
     # Propagate repair to CA
     fireable_step4 = {tr._bkd.name() for tr in system.isimu_fireable_transitions()}
-    assert "CA.rep" in fireable_step4
+    assert "CA.frun__rep" in fireable_step4
     
-    fire_transition(system, "CA.rep")
+    fire_transition(system, "CA.frun__rep")
     
     # No repair effects -> CA value stays 2!
     assert system.comp["CA"].v_flow_out.value() == 2

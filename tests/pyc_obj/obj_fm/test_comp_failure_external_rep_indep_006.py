@@ -51,14 +51,14 @@ def test_rep_indep_objfmdelay_uses_delay_law():
 
     # Drive the trigger at date 10.
     fire(system, f"{fm_comp_name}.occ", date=10)
-    fire(system, "C1.occ")
-    assert is_state_active(target_aut, "occ")
+    fire(system, "C1.frun__occ")
+    assert is_state_active(target_aut, "frun__occ")
     assert system.comp["C1"].flow_in_max.value() == 0.0
 
     # Fire C1.rep without forcing a date — should land at 10 + ttr_1 = 30
     # (delay law).
-    fire(system, "C1.rep")
-    assert is_state_active(target_aut, "rep")
+    fire(system, "C1.frun__rep")
+    assert is_state_active(target_aut, "frun__rep")
     assert system.comp["C1"].flow_in_max.value() == 10.0
     assert system.currentTime() == pytest.approx(30.0)
 
