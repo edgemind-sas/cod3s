@@ -413,6 +413,35 @@ class Sequence(ObjCOD3S):
 
         return result
 
+    def rm_events_by_obj(self, obj_name, inplace=False):
+        """Drop every event whose ``obj`` attribute equals ``obj_name``.
+
+        Used by :meth:`SequenceAnalyser.filter_objfm_cycles` to strip an
+        ObjFM's own events from the trace when the ObjFM runs in
+        ``external`` mode — only the target components' occ/rep events
+        carry information about the trajectory in that case.
+
+        Args:
+            obj_name (str): Exact ``SeqEvent.obj`` value to drop.
+            inplace (bool): If True, modify this sequence. If False,
+                return a new sequence with the matching events removed.
+
+        Returns:
+            Sequence: The (modified or new) sequence.
+        """
+        if not inplace:
+            result = Sequence(
+                probability=self.probability,
+                weight=self.weight,
+                end_time=self.end_time,
+                target_name=self.target_name,
+                events=[],
+            )
+        else:
+            result = self
+        result.events = [ev for ev in self.events if ev.obj != obj_name]
+        return result
+
     def rename_events(self, attr, pat_source, pat_target, inplace=False):
         """Rename events of the sequence using Event.rename method.
 
@@ -945,6 +974,148 @@ class SequenceAnalyser(ObjCOD3S):
         # Group sequences to merge identical patterns after filtering
         result = result.group_sequences(inplace=True)
 
+        return result
+
+    def rm_events_by_obj(self, obj_name, inplace=False, progress=False):
+        """Drop every event whose ``obj`` equals ``obj_name`` from all
+        sequences. Re-groups after filtering so collapsed signatures
+        merge.
+
+        Args:
+            obj_name (str): Exact ``SeqEvent.obj`` value to drop.
+            inplace (bool): If True, modify this instance.
+            progress (bool): Display a tqdm progress bar.
+
+        Returns:
+            SequenceAnalyser: The (modified or new) analyser.
+        """
+        if not inplace:
+            result = SequenceAnalyser(sequences=[])
+        else:
+            result = self
+
+        filtered_sequences = []
+        for sequence in tqdm.tqdm(
+            self.sequences, disable=not progress, desc=f"Dropping obj={obj_name!r}"
+        ):
+            filtered_sequences.append(
+                sequence.rm_events_by_obj(obj_name=obj_name, inplace=False)
+            )
+
+        result.sequences = filtered_sequences
+        result = result.group_sequences(inplace=True)
+        return result
+
+    def filter_objfm_cycles(
+        self,
+        objfm_internal=None,
+        objfm_external=None,
+        failure_state="occ",
+        repair_state="rep",
+        inplace=False,
+        progress=False,
+    ):
+        """Strip occ/rep cycles introduced by ObjFM failure modes so the
+        sequence analysis focuses on the events that actually contributed
+        to reaching the top event.
+
+        An ObjFM transient — a failure followed somewhere later by its
+        mirror repair — does not contribute to the sequence leading to
+        the top event: by the time the top event fires, the failure has
+        been repaired. Keeping those pairs in the trace inflates the
+        number of distinct sequences and biases the downstream
+        :meth:`compute_minimal_sequences` (which is greedy and
+        order-dependent on the post-grouping list).
+
+        Two ObjFM modes are handled distinctly:
+
+        * **internal** — the ObjFM owns its own ``occ`` / ``rep``
+          transitions (the failure effect is applied directly to the
+          target variables). We drop paired
+          ``{fm}.{occ}<suffix>`` / ``{fm}.{rep}<suffix>`` events with a
+          regex capture so any user-customised ``trans_name_prefix``
+          (default ``__cc_{target_comb}``) works out of the box. Pairs
+          are dropped only when the suffix matches exactly between occ
+          and rep. For a single-target ObjFM (``order_max == 1``) no
+          suffix is generated and the regex still matches.
+
+        * **external / external_rep_indep** — the ObjFM is a sync
+          mechanism: its own events do not carry information about the
+          trajectory (the per-target automata do). We drop *every*
+          event whose ``obj == fm_name``, then filter the paired
+          ``{target}.{fm_name}__{occ}`` / ``{target}.{fm_name}__{rep}``
+          events on each target. The target side is matched by pattern
+          — the target list is **not** required, the prefixed naming
+          imposed by ``ObjFM._create_target_automaton`` makes them
+          unambiguously identifiable from the ObjFM's name alone.
+
+        Args:
+            objfm_internal (Iterable[str] | None): Names of ObjFM in
+                ``internal`` mode (defaults to ``None`` = empty).
+            objfm_external (Iterable[str] | None): Names of ObjFM in
+                ``external`` or ``external_rep_indep`` mode. Pass only
+                the ObjFM names — targets are auto-discovered from the
+                event traces via the prefixed naming convention.
+            failure_state (str): Suffix used by the ObjFM for the
+                failure state (default ``"occ"`` — matches the ObjFM
+                default).
+            repair_state (str): Suffix used by the ObjFM for the
+                repair state (default ``"rep"``).
+            inplace (bool): If True, modify this instance.
+            progress (bool): Display a tqdm progress bar.
+
+        Returns:
+            SequenceAnalyser: The (modified or new) analyser with the
+            occ/rep cycles removed and signatures regrouped.
+        """
+        import re
+
+        if not inplace:
+            result = SequenceAnalyser(
+                sequences=[s.model_copy(deep=True) for s in self.sequences]
+            )
+        else:
+            result = self
+
+        objfm_internal = list(objfm_internal or [])
+        objfm_external = list(objfm_external or [])
+
+        # Apply all filters to each sequence directly, then group once
+        # at the end. Avoids paying the cost of group_sequences per
+        # objfm.
+        fail_esc = re.escape(failure_state)
+        rep_esc = re.escape(repair_state)
+
+        for seq in tqdm.tqdm(
+            result.sequences, disable=not progress, desc="filter_objfm_cycles"
+        ):
+            # External: drop ObjFM's own events entirely, then drop the
+            # paired target events whose attr is ``{fm}__{occ}`` /
+            # ``{fm}__{rep}`` (post-fix: each target automaton's
+            # transitions are name-prefixed with the ObjFM name).
+            for fm_name in objfm_external:
+                seq.rm_events_by_obj(fm_name, inplace=True)
+                fm_esc = re.escape(fm_name)
+                # Match the prefixed target event on ANY component:
+                # ``.+\.{fm}__{occ}$`` — the ``.+`` captures the
+                # target name, ``\1`` is reused in pat2 to require the
+                # same target between occ and rep.
+                seq.rm_events_ordered_pattern(
+                    name_pat1=rf"^(.+)\.{fm_esc}__{fail_esc}$",
+                    name_pat2=rf"\1\.{fm_esc}__{rep_esc}$",
+                    inplace=True,
+                )
+            # Internal: occ<suffix>/rep<suffix> pairs on the ObjFM.
+            for fm_name in objfm_internal:
+                fm_esc = re.escape(fm_name)
+                seq.rm_events_ordered_pattern(
+                    name_pat1=rf"^{fm_esc}\.{fail_esc}(\S*)$",
+                    name_pat2=rf"{fm_esc}\.{rep_esc}\1$",
+                    inplace=True,
+                )
+
+        # Single regrouping at the end.
+        result.group_sequences(inplace=True)
         return result
 
     def compute_minimal_sequences(self, inplace=False, progress=False):
