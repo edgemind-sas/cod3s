@@ -363,11 +363,64 @@ def main() -> int:
         print()
         print(
             "=== filter occ↔rep + group + compute_minimal_sequences "
-            "(expected fix) ==="
+            "(explicit, post-mortem from XML) ==="
         )
         analyse(seq_path, minimal=True, filter_occ_rep=True, top=args.top)
 
+        print()
+        print(
+            "=== from_pyc_system + filter_objfm_cycles() "
+            "(auto-discover via attached system) ==="
+        )
+        analyse_via_pyc_system(system, top=args.top)
+
     return 0
+
+
+def analyse_via_pyc_system(system: "cod3s.PycSystem", top: int = 10) -> None:
+    """Alternate analysis path that bypasses the XML round-trip and the
+    explicit ``objfm_internal=[...]`` argument.
+
+    With the system still alive in-process, ``SequenceAnalyser.from_pyc_system``
+    reads the trajectories directly from PyCATSHOO's ``CSequence``
+    objects (no XML write/read/parse overhead) AND attaches the system
+    to the analyser so ``filter_objfm_cycles`` can auto-discover the
+    ObjFM via introspection — no need to remember the ObjFM's
+    ``target_name__fm_name`` mangling.
+    """
+    from cod3s.pycatshoo.sequence import SequenceAnalyser
+
+    t0 = time.perf_counter()
+    analyser = SequenceAnalyser.from_pyc_system(system)
+    print(f"  from_pyc_system : {time.perf_counter() - t0:.2f} s "
+          f"→ {len(analyser.sequences)} raw trajectories")
+
+    t0 = time.perf_counter()
+    analyser.filter_objfm_cycles(inplace=True)  # ← zero config
+    print(f"  filter_objfm_cycles (auto-discover) : "
+          f"{time.perf_counter() - t0:.2f} s "
+          f"→ {len(analyser.sequences)} signatures")
+
+    t0 = time.perf_counter()
+    analyser.compute_minimal_sequences(inplace=True)
+    print(f"  compute_minimal_sequences : "
+          f"{time.perf_counter() - t0:.2f} s "
+          f"→ {len(analyser.sequences)} minimal sequences")
+
+    print()
+    _print_top(analyser.sequences, top=top)
+    w_ab, w_ba = _symmetry_check(analyser.sequences, "cc_1", "cc_2")
+    if w_ab and w_ba:
+        ratio = max(w_ab, w_ba) / min(w_ab, w_ba)
+        verdict = "OK (within MC noise)" if ratio < 1.3 else "SUSPECT — investigate"
+    else:
+        ratio = float("nan")
+        verdict = "no data"
+    print()
+    print(f"  Symmetry on ordered pairs cc_1 ↔ cc_2 (weight aggregated) :")
+    print(f"    cc_1 then cc_2 : weight {w_ab}")
+    print(f"    cc_2 then cc_1 : weight {w_ba}")
+    print(f"    asymmetry ratio : {ratio:.2f}×  ({verdict})")
 
 
 if __name__ == "__main__":

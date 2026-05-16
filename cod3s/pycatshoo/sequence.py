@@ -489,6 +489,13 @@ class SequenceAnalyser(ObjCOD3S):
     # nb_sequences_ori: int = pydantic.Field(0, description="Original number of sequences")
     sequences: typing.List[Sequence] = pydantic.Field([], description="Sequence list")
 
+    # Optional reference to the originating ``PycSystem`` so methods like
+    # ``filter_objfm_cycles`` can introspect the model (discover ObjFM,
+    # their behaviour, custom failure/repair_state names). Set by
+    # ``from_pyc_system`` and not serialised — analysers loaded from XML
+    # don't have it.
+    _system: typing.Any = pydantic.PrivateAttr(None)
+
     @property
     def nb_sequences(self) -> int:
         """Get the number of sequences in the analyser."""
@@ -652,15 +659,27 @@ class SequenceAnalyser(ObjCOD3S):
 
     @classmethod
     def from_pyc_system(cls, system, end_cause_default="Normal"):
-        """Create a SequenceAnalyser from a pyc.CAnalyser object.
+        """Create a SequenceAnalyser from a live ``PycSystem``.
+
+        The system reference is stored as a private attribute on the
+        analyser so methods like :meth:`filter_objfm_cycles` can
+        introspect the model (auto-discover ObjFM, their behaviour, and
+        custom ``failure_state`` / ``repair_state`` names) without the
+        caller having to repeat the configuration. The reference is
+        not serialised — analysers reloaded from XML do not have it
+        and fall back to fully explicit calls.
 
         Args:
-            analyser: A pyc.CAnalyser object containing sequence data
+            system: The ``PycSystem`` whose ``sequences()`` are read.
+            end_cause_default: Default ``end_cause`` for sequences that
+                do not expose one.
 
         Returns:
-            SequenceAnalyser: A new instance with sequences extracted from the analyser
+            SequenceAnalyser: A new instance with sequences extracted
+            from the system and the system stored for introspection.
         """
         sequence_analyser = cls()
+        sequence_analyser._system = system
 
         for seq_raw in system.sequences():
             events = []
@@ -1049,18 +1068,32 @@ class SequenceAnalyser(ObjCOD3S):
           imposed by ``ObjFM._create_target_automaton`` makes them
           unambiguously identifiable from the ObjFM's name alone.
 
+        **Auto-discovery** — if the analyser was created via
+        :meth:`from_pyc_system` (or its system was attached
+        otherwise), and *both* ``objfm_internal`` and ``objfm_external``
+        are left at ``None``, the method introspects the system: every
+        component that is an :class:`~cod3s.pycatshoo.component.ObjFM`
+        is routed to the correct bucket based on its ``behaviour``
+        attribute, and each ObjFM's own ``failure_state`` /
+        ``repair_state`` are honoured (so a system with mixed
+        conventions is handled correctly in a single call). Pass an
+        explicit list to override the discovery for one bucket.
+
         Args:
             objfm_internal (Iterable[str] | None): Names of ObjFM in
-                ``internal`` mode (defaults to ``None`` = empty).
+                ``internal`` mode. ``None`` triggers auto-discovery
+                (when a system is attached) or means "no internal
+                filtering" (when not).
             objfm_external (Iterable[str] | None): Names of ObjFM in
-                ``external`` or ``external_rep_indep`` mode. Pass only
-                the ObjFM names — targets are auto-discovered from the
-                event traces via the prefixed naming convention.
+                ``external`` or ``external_rep_indep`` mode. Same
+                semantics as ``objfm_internal``.
             failure_state (str): Suffix used by the ObjFM for the
                 failure state (default ``"occ"`` — matches the ObjFM
-                default).
+                default). Ignored when auto-discovery applies (the
+                per-ObjFM value is used).
             repair_state (str): Suffix used by the ObjFM for the
-                repair state (default ``"rep"``).
+                repair state (default ``"rep"``). Same caveat as
+                ``failure_state``.
             inplace (bool): If True, modify this instance.
             progress (bool): Display a tqdm progress bar.
 
@@ -1074,30 +1107,67 @@ class SequenceAnalyser(ObjCOD3S):
             result = SequenceAnalyser(
                 sequences=[s.model_copy(deep=True) for s in self.sequences]
             )
+            # Pass the system ref through to the new analyser so a
+            # chained call (e.g. ``analyser.filter_objfm_cycles().compute_minimal_sequences()``)
+            # keeps the introspection capability.
+            result._system = self._system
         else:
             result = self
 
-        objfm_internal = list(objfm_internal or [])
-        objfm_external = list(objfm_external or [])
+        # If neither bucket was specified explicitly and a system is
+        # attached, auto-discover the ObjFM. Otherwise fall back to
+        # the legacy explicit-only behaviour.
+        auto_discover = (
+            objfm_internal is None
+            and objfm_external is None
+            and self._system is not None
+        )
+
+        if auto_discover:
+            internal_specs, external_specs = self._discover_objfm_specs()
+            # Auto-discovery: each spec carries its own state names so a
+            # system mixing default ``occ``/``rep`` and custom names is
+            # handled in one pass. For external mode, the spec also
+            # carries the ``fm_name`` separately from the component name
+            # (the latter is what appears in ``obj``, the former is what
+            # the target events are prefixed with).
+        else:
+            objfm_internal = list(objfm_internal or [])
+            objfm_external = list(objfm_external or [])
+            internal_specs = [
+                (name, failure_state, repair_state) for name in objfm_internal
+            ]
+            # In the explicit API, the user passes the component name as
+            # seen in the event trace (``f"{target_name}__{fm_name}"``).
+            # We derive ``fm_name`` (the suffix used to prefix target
+            # events) by splitting on the last ``__``. Falls back to the
+            # name as-is when no ``__`` is present (covers tests built on
+            # synthetic obj names).
+            external_specs = [
+                (name, _derive_fm_name(name), failure_state, repair_state)
+                for name in objfm_external
+            ]
 
         # Apply all filters to each sequence directly, then group once
-        # at the end. Avoids paying the cost of group_sequences per
-        # objfm.
-        fail_esc = re.escape(failure_state)
-        rep_esc = re.escape(repair_state)
-
+        # at the end. Each ObjFM keeps its own failure/repair_state so
+        # mixed-convention systems are handled in a single pass.
         for seq in tqdm.tqdm(
             result.sequences, disable=not progress, desc="filter_objfm_cycles"
         ):
-            # External: drop ObjFM's own events entirely, then drop the
-            # paired target events whose attr is ``{fm}__{occ}`` /
-            # ``{fm}__{rep}`` (post-fix: each target automaton's
-            # transitions are name-prefixed with the ObjFM name).
-            for fm_name in objfm_external:
-                seq.rm_events_by_obj(fm_name, inplace=True)
+            # External: drop ObjFM's own events entirely (matched by
+            # the full component name, which appears in ``obj``), then
+            # drop the paired target events whose attr is
+            # ``{fm_name}__{occ}`` / ``{fm_name}__{rep}`` (post-fix:
+            # each target automaton's transitions are name-prefixed
+            # with the ObjFM's bare ``fm_name``, not its full
+            # component name).
+            for comp_name, fm_name, fail_state, rep_state in external_specs:
+                seq.rm_events_by_obj(comp_name, inplace=True)
                 fm_esc = re.escape(fm_name)
+                fail_esc = re.escape(fail_state)
+                rep_esc = re.escape(rep_state)
                 # Match the prefixed target event on ANY component:
-                # ``.+\.{fm}__{occ}$`` — the ``.+`` captures the
+                # ``.+\.{fm_name}__{occ}$`` — the ``.+`` captures the
                 # target name, ``\1`` is reused in pat2 to require the
                 # same target between occ and rep.
                 seq.rm_events_ordered_pattern(
@@ -1106,8 +1176,10 @@ class SequenceAnalyser(ObjCOD3S):
                     inplace=True,
                 )
             # Internal: occ<suffix>/rep<suffix> pairs on the ObjFM.
-            for fm_name in objfm_internal:
+            for fm_name, fail_state, rep_state in internal_specs:
                 fm_esc = re.escape(fm_name)
+                fail_esc = re.escape(fail_state)
+                rep_esc = re.escape(rep_state)
                 seq.rm_events_ordered_pattern(
                     name_pat1=rf"^{fm_esc}\.{fail_esc}(\S*)$",
                     name_pat2=rf"{fm_esc}\.{rep_esc}\1$",
@@ -1117,6 +1189,54 @@ class SequenceAnalyser(ObjCOD3S):
         # Single regrouping at the end.
         result.group_sequences(inplace=True)
         return result
+
+    def _discover_objfm_specs(self):
+        """Introspect the attached ``PycSystem`` to enumerate ObjFM
+        components and partition them by behaviour.
+
+        Returns:
+            tuple: ``(internal_specs, external_specs)`` where:
+
+            * ``internal_specs`` is a list of
+              ``(comp_name, failure_state, repair_state)`` tuples.
+              ``comp_name`` is what appears in ``SeqEvent.obj`` for the
+              ObjFM's events.
+            * ``external_specs`` is a list of
+              ``(comp_name, fm_name, failure_state, repair_state)``
+              tuples. ``comp_name`` is used to drop the ObjFM's own
+              events (matching ``obj``); ``fm_name`` is the bare
+              failure-mode name used to prefix transitions on the
+              target automaton (matching the suffix in ``attr``).
+
+            ``failure_state`` and ``repair_state`` are read from each
+            ObjFM individually so a system mixing default ``occ`` /
+            ``rep`` and custom names is handled in one pass.
+
+            ObjFM in ``external_rep_indep`` mode are routed to the
+            ``external`` bucket (their event-level shape is identical
+            from the analyser's point of view).
+        """
+        # Lazy import to avoid a cycle (component.py imports from
+        # ``pycatshoo`` which imports ``sequence``).
+        from cod3s.pycatshoo.component import ObjFM
+
+        internal = []
+        external = []
+        if self._system is None:
+            return internal, external
+        for comp in self._system.comp.values():
+            if not isinstance(comp, ObjFM):
+                continue
+            fail = comp.failure_state
+            rep = comp.repair_state
+            if comp.behaviour == "internal":
+                internal.append((comp.name(), fail, rep))
+            else:
+                # external / external_rep_indep: keep both the full
+                # comp.name() (for the ObjFM-events drop) and the
+                # bare fm_name (for the target-events pattern).
+                external.append((comp.name(), comp.fm_name, fail, rep))
+        return internal, external
 
     def compute_minimal_sequences(self, inplace=False, progress=False):
         """Compute minimal sequences by removing sequences that are included in shorter ones.
@@ -1283,6 +1403,20 @@ class SequenceAnalyser(ObjCOD3S):
                     data.append({**seq_info, **event_info})
 
         return pd.DataFrame(data, columns=columns)
+
+
+def _derive_fm_name(comp_name):
+    """Derive the bare ``fm_name`` from a component name as seen in a
+    sequence trace.
+
+    ObjFM component names follow the convention
+    ``f"{target_name}__{fm_name}"`` (cf. ``ObjFM.__init__`` in
+    ``component.py``), so we split on the last ``__``. When the name
+    has no ``__`` (mostly in synthetic test fixtures), it is returned
+    as-is.
+    """
+    head, sep, tail = comp_name.rpartition("__")
+    return tail if sep else comp_name
 
 
 # Parser
