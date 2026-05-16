@@ -54,6 +54,7 @@ nav:
     - Simulation: user-guide/simulation.md
     - Interactive Simulation: user-guide/interactive-simulation.md
     - Indicators: user-guide/indicators.md
+    - Sequence Analysis: user-guide/sequence-analysis.md
     - PyCATSHOO Integration: user-guide/pycatshoo-integration.md
   - Tutorials:
     - Basic Component: tutorials/basic-component.md
