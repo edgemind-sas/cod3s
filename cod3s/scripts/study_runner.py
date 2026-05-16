@@ -66,6 +66,121 @@ def _clamp_top_pct(raw: Any) -> int:
         return 100
 
 
+# ---------------------------------------------------------------------------
+# Sequence analysis artefacts (sequences_minimal.json + sequences_all.json)
+# ---------------------------------------------------------------------------
+
+#: JSON-on-disk envelope version. Bump as semver when the schema
+#: evolves. Consumers (eg. cod3s-platform) pin this version via a
+#: Pydantic ``Literal`` for forward-compat safety.
+SEQUENCE_ARTIFACT_SCHEMA_VERSION = "1.0.0"
+
+
+class SequenceAnalysisError(Exception):
+    """Raised by :func:`_persist_sequence_analysis_artifacts` on
+    unexpected failures. Callers catch narrowly so true bugs surface."""
+
+
+def _serialise_analyser(analyser: Any) -> str:
+    """Serialize a ``SequenceAnalyser`` to JSON matching the
+    ``SequenceArtifactV1`` schema consumed by cod3s-platform.
+
+    Always emits the canonical envelope::
+
+        {
+            "schema_version": "1.0.0",
+            "target_group_id": null,    # populated by the platform on read
+            "sequences": [...],
+            "meta": {"truncated_at": null, "parse_error": null}
+        }
+
+    ``sequences`` is the list currently held by the analyser — the
+    caller decides whether minimal or post-filter is serialised.
+    """
+    payload = {
+        "schema_version": SEQUENCE_ARTIFACT_SCHEMA_VERSION,
+        "target_group_id": None,
+        "sequences": [s.model_dump(mode="json", exclude_none=False) for s in analyser.sequences],
+        "meta": {"truncated_at": None, "parse_error": None},
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _persist_sequence_analysis_artifacts(
+    system: Any,
+    study_obj: StudyYaml,
+    results_path: Path,
+    logger: Any,
+) -> None:
+    """Persist ``sequences_minimal.json`` + ``sequences_all.json`` next to
+    ``sequences.xml`` after a Monte Carlo simulation.
+
+    Uses Path A (``SequenceAnalyser.from_pyc_system(system)``) for
+    auto-discovery of ObjFM names and modes — no need to parse the
+    study yaml a second time. ~2× faster than the post-mortem XML
+    round-trip path that cod3s-platform uses on historical runs.
+
+    Fail-open : narrowly caught exceptions log a warning and skip the
+    artefacts. The raw ``sequences.xml`` stays authoritative and the
+    platform falls back to its XML-based pipeline transparently.
+
+    Inplace pattern : we serialise the post-``filter_objfm_cycles``
+    analyser first (``sequences_all.json`` snapshot), then call
+    ``compute_minimal_sequences(inplace=False)`` to obtain the minimal
+    analyser as a *separate* object. This guarantees the ``all``
+    serialisation is not mutated by any lazy iteration during the
+    minimal pass.
+    """
+    has_targets = bool(getattr(study_obj, "targets", None))
+    if not has_targets:
+        # No early-stop target → trajectories ran the full TMAX, the
+        # sequence analysis would be uninformative (each trajectory is
+        # essentially unique). Skip without warning.
+        return
+
+    import time
+
+    try:
+        from cod3s.pycatshoo.sequence import SequenceAnalyser
+
+        t0 = time.perf_counter()
+        analyser = SequenceAnalyser.from_pyc_system(system)
+        t_construct = time.perf_counter() - t0
+
+        t1 = time.perf_counter()
+        analyser.group_sequences(inplace=True)
+        analyser.filter_objfm_cycles(inplace=True)
+        t_pipeline = time.perf_counter() - t1
+
+        # sequences_all.json = post-filter snapshot (full detail).
+        all_path = results_path / "sequences_all.json"
+        all_path.write_text(_serialise_analyser(analyser), encoding="utf-8")
+
+        # sequences_minimal.json = full canonical pipeline.
+        # inplace=False → new analyser, the ``all`` snapshot above is safe.
+        minimal = analyser.compute_minimal_sequences(inplace=False)
+        min_path = results_path / "sequences_minimal.json"
+        min_path.write_text(_serialise_analyser(minimal), encoding="utf-8")
+
+        if logger:
+            logger.info2(
+                f"sequence_analysis perf: "
+                f"from_pyc_system={t_construct*1000:.1f}ms, "
+                f"pipeline={t_pipeline*1000:.1f}ms, "
+                f"all_size={all_path.stat().st_size}B, "
+                f"min_size={min_path.stat().st_size}B"
+            )
+    except (ImportError, AttributeError, ValueError, KeyError, OSError) as exc:
+        # Narrow except: bugs (TypeError, MemoryError, KeyboardInterrupt)
+        # bubble up. Truncate exc repr to avoid leaking large payload to logs.
+        if logger:
+            logger.warning(
+                f"sequence analysis artefacts skipped "
+                f"({type(exc).__name__}: {repr(exc)[:200]}). "
+                "sequences.xml stays authoritative."
+            )
+
+
 def _apply_sequence_filtering(
     system: Any,
     study_obj: StudyYaml,
@@ -606,6 +721,16 @@ def run_study(
     # fail-open on errors so the run still produces output. See helper
     # docstring for refs.
     _apply_sequence_filtering(system, study_obj, results_path, logger)
+
+    # Step 7.6 : persist sequence-analysis JSON artefacts using Path A
+    # (``SequenceAnalyser.from_pyc_system`` — auto-discovery of ObjFM
+    # names + modes, ~2× faster than the XML round-trip Path B that
+    # downstream consumers like cod3s-platform fall back to for legacy
+    # runs). Writes ``sequences_minimal.json`` (canonical pipeline
+    # output, the analyst's deliverable) and ``sequences_all.json``
+    # (post-filter snapshot, for advanced analysis). Fail-open on any
+    # cod3s API mismatch — the raw ``sequences.xml`` stays authoritative.
+    _persist_sequence_analysis_artifacts(system, study_obj, results_path, logger)
 
     # Step 8: dump PyCATSHOO parameters file (legacy artifact —
     # consumers expect it next to results)
