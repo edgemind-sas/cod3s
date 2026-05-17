@@ -33,7 +33,15 @@ from pydantic import ValidationError
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, RadioButton, RadioSet, Static
+from textual.widgets import (
+    Button,
+    Input,
+    Label,
+    RadioButton,
+    RadioSet,
+    SelectionList,
+    Static,
+)
 
 from cod3s.pycatshoo.seq_tui.pipeline import (
     FilterObjFMCyclesStep,
@@ -201,26 +209,92 @@ class _ConfigStepModalBase(ModalScreen[Optional[PipelineStep]]):
 
 
 class ConfigFilterObjFMCyclesModal(_ConfigStepModalBase):
+    """Configure a ``filter_objfm_cycles`` step.
+
+    UX adapts to the loaded state:
+
+    * **Live mode** — when ``available_internal`` and/or
+      ``available_external`` are non-empty (passed in by the App from
+      ``SeqTuiState`` when ``cod3s-seq --factory`` was used), the
+      modal renders a :class:`SelectionList` per bucket with every
+      ObjFM pre-checked. Zero typos, no need to remember the exact
+      component names.
+    * **Post-mortem mode** — when both lists are empty, the modal
+      falls back to two free-form text inputs (the historical
+      behaviour). The user types ObjFM names comma-separated.
+
+    The ``failure_state`` and ``repair_state`` inputs are always
+    rendered (override the defaults when the model uses custom
+    ``trans_name_prefix`` values).
+    """
+
     title_text = "filter_objfm_cycles"
     help_text = (
-        "Comma-separated lists of ObjFM names. Leave empty for either side. "
-        "Failure/repair state names are usually 'occ' / 'rep'."
+        "ObjFM names to filter. Failure/repair state names are usually "
+        "'occ' / 'rep'."
     )
 
+    def __init__(
+        self,
+        *,
+        available_internal: tuple[str, ...] = (),
+        available_external: tuple[str, ...] = (),
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._available_internal = tuple(available_internal)
+        self._available_external = tuple(available_external)
+
+    @property
+    def live_mode(self) -> bool:
+        """``True`` iff at least one ObjFM bucket was pre-discovered."""
+        return bool(self._available_internal or self._available_external)
+
     def _compose_fields(self) -> ComposeResult:
-        yield Label("ObjFM internal (comma-separated):")
-        yield Input(placeholder="pump_X__def_pump, valve_Y__def_valve", id="int")
-        yield Label("ObjFM external (comma-separated):")
-        yield Input(placeholder="(empty)", id="ext")
+        if self.live_mode:
+            yield Static(
+                f"[i](live mode — {len(self._available_internal)} internal, "
+                f"{len(self._available_external)} external discovered)[/i]",
+                classes="modal-help",
+            )
+            if self._available_internal:
+                yield Label("ObjFM internal (check to filter):")
+                yield SelectionList[str](
+                    *[(name, name, True) for name in self._available_internal],
+                    id="int-sel",
+                )
+            if self._available_external:
+                yield Label("ObjFM external (check to filter):")
+                yield SelectionList[str](
+                    *[(name, name, True) for name in self._available_external],
+                    id="ext-sel",
+                )
+        else:
+            yield Label("ObjFM internal (comma-separated):")
+            yield Input(
+                placeholder="pump_X__def_pump, valve_Y__def_valve", id="int"
+            )
+            yield Label("ObjFM external (comma-separated):")
+            yield Input(placeholder="(empty)", id="ext")
         yield Label("Failure state:")
         yield Input(value="occ", id="fs")
         yield Label("Repair state:")
         yield Input(value="rep", id="rs")
 
     def _build_step(self) -> PipelineStep:
+        if self.live_mode:
+            internal: list[str] = []
+            external: list[str] = []
+            if self._available_internal:
+                internal = list(self.query_one("#int-sel", SelectionList).selected)
+            if self._available_external:
+                external = list(self.query_one("#ext-sel", SelectionList).selected)
+        else:
+            internal = _parse_csv_list(self.query_one("#int", Input).value)
+            external = _parse_csv_list(self.query_one("#ext", Input).value)
         return FilterObjFMCyclesStep(
-            objfm_internal=_parse_csv_list(self.query_one("#int", Input).value),
-            objfm_external=_parse_csv_list(self.query_one("#ext", Input).value),
+            objfm_internal=internal,
+            objfm_external=external,
             failure_state=self.query_one("#fs", Input).value.strip() or "occ",
             repair_state=self.query_one("#rs", Input).value.strip() or "rep",
         )

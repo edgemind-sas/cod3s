@@ -137,7 +137,16 @@ class SeqTuiApp(App[None]):
             step = STEP_CLASSES[op]()
             self._apply_step_worker(step)
             return
-        self.push_screen(modal_cls(), self._on_step_configured)
+        # Live-mode hook: ConfigFilterObjFMCyclesModal can render a
+        # checklist when ObjFM names are known. Pass them through.
+        if op == "filter_objfm_cycles":
+            modal = modal_cls(
+                available_internal=self._state.available_objfms_internal,
+                available_external=self._state.available_objfms_external,
+            )
+        else:
+            modal = modal_cls()
+        self.push_screen(modal, self._on_step_configured)
 
     def _on_step_configured(self, step: Optional["PipelineStep"]) -> None:
         if step is None:
