@@ -362,39 +362,229 @@ for normalising object names across runs.
 
 ## Examples
 
-### 1. Load + minimise + export
+The repository ships a complete demo system —
+`examples/ccf_sequence_asymmetry/` — that produces a realistic
+sequence dump on which every example below can be replayed verbatim.
+Each example shows the **exact command line**, the **modal inputs**
+you should type, and the **expected result** in the panels.
+
+### Prerequisites — produce a sequence dump
+
+`cod3s-seq` is a post-mortem tool: it needs an `.xml` or `.json` dump
+to inspect. Two simple ways to obtain one:
+
+**Option A — run the bundled CCF demo (≈ 30 s)**:
 
 ```bash
-cod3s-seq results/sequences.xml
+# From the repo root
+cd examples/ccf_sequence_asymmetry
+python ccf_sequence_asymmetry.py --nb-runs 5000 --out /tmp/ccf-demo
+ls /tmp/ccf-demo/sequences.xml
 ```
 
-1. Press `+`, pick `group_sequences`. The sequences collapse to
-   distinct signatures.
-2. Press `+`, pick `filter_objfm_cycles`. Enter the relevant ObjFM
-   names in the modal (comma-separated).
-3. Press `+`, pick `compute_minimal_sequences`. The cut-sets appear.
-4. Press `e`, pick `Markdown`, type `/tmp/report.md`. Done.
+The demo simulates two redundant pumps (`pump_1`, `pump_2`) that
+share a single order-2 CCF failure mode `def_pump`. After ~5 000
+Monte-Carlo runs you obtain `/tmp/ccf-demo/sequences.xml`
+(≈ 5 000 `<SEQ>` entries).
 
-Save the pipeline with `s` for replay on future dumps.
-
-### 2. Replay a saved pipeline
+**Option B — run a real study via `run-cod3s-study`**:
 
 ```bash
-cod3s-seq results/sequences.xml --pipeline canonical.yaml
+run-cod3s-study --model system.yaml --study-specs study.yaml \
+                --results-dir /tmp/my-study
+# Produces /tmp/my-study/sequences.xml (raw)
+# and      /tmp/my-study/sequences_minimal.json (already pipelined).
 ```
 
-The TUI opens already showing the post-pipeline state; the pipeline
-panel lists the three applied steps with their size deltas.
+The rest of this section assumes `/tmp/ccf-demo/sequences.xml`
+exists.
 
-### 3. Compare two dumps with the same pipeline
+### Example 1 — first contact: just look at the data
 
 ```bash
-cod3s-seq runA/sequences.xml --pipeline canonical.yaml
-cod3s-seq runB/sequences.xml --pipeline canonical.yaml
+cod3s-seq /tmp/ccf-demo/sequences.xml
 ```
 
-The Markdown export of each session can be diffed with any standard
-tool (`diff`, `git diff --no-index`).
+What you see immediately after the TUI opens:
+
+* **Pipeline panel** — empty, with the hint `(empty — press + to add a step)`.
+* **Sequences panel** — header reads `Sequences (5000 signatures, total weight 5000)` because the raw XML has not been grouped yet (one entry per Monte-Carlo run).
+* **Detail panel** — empty, with `(no sequence selected)`.
+
+Press `↓` to walk the list, then `Enter` on any row: the detail
+panel fills with the full event chronology.
+
+Press `q` to quit. Nothing is written to disk yet.
+
+### Example 2 — group, filter, minimise (the canonical pipeline)
+
+```bash
+cod3s-seq /tmp/ccf-demo/sequences.xml
+```
+
+In the TUI, type the following sequence:
+
+| Step | Key      | Modal input                                                                                         | Visible effect                                                            |
+|------|----------|-----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| 1    | `+`      | Select **Group identical sequences** → `Add`                                                        | Pipeline shows `1. group_sequences  [-N sigs]`. List shrinks to ≈ 8 sigs. |
+| 2    | `+`      | Select **Filter ObjFM cycles** → `Add`. In the next modal: `ObjFM internal = pump_X__def_pump`, leave defaults. | Pipeline gains `2. filter_objfm_cycles(int=['pump_X__def_pump'])`. Sigs drop again. |
+| 3    | `+`      | Select **Compute minimal sequences** → `Add`                                                        | Pipeline gains `3. compute_minimal_sequences`. Only minimal cut-sets remain. |
+
+The header of the Sequences panel now reads something like
+`Sequences (3 signatures, total weight 5000)`, and the top entry has
+a signature like `pump_X__def_pump.occ__cc_12 → system_down.occ`.
+
+Press `e`, pick **Markdown report**, type `/tmp/ccf-report.md`,
+press `Enter`. A notification confirms the export.
+
+```bash
+# Outside the TUI
+head -20 /tmp/ccf-report.md
+```
+
+You see the top summary table sorted by descending weight and one
+detail section per surviving sequence.
+
+### Example 3 — save the pipeline as YAML and replay it
+
+Continuing from Example 2 (do not quit yet), press `s` and type
+`/tmp/canonical.yaml`. The file looks like:
+
+```yaml
+version: '1.0.0'
+steps:
+- op: group_sequences
+- op: filter_objfm_cycles
+  objfm_internal:
+  - pump_X__def_pump
+  objfm_external: []
+  failure_state: occ
+  repair_state: rep
+- op: compute_minimal_sequences
+```
+
+Quit (`q`) and replay the pipeline non-interactively on a fresh dump:
+
+```bash
+cod3s-seq /tmp/ccf-demo/sequences.xml --pipeline /tmp/canonical.yaml
+```
+
+The TUI opens with the pipeline already applied — the panels show
+exactly the same minimised sigs as in Example 2.
+
+### Example 4 — compare two simulation runs
+
+Re-run the CCF demo with a different seed to get a second dump:
+
+```bash
+cd examples/ccf_sequence_asymmetry
+python ccf_sequence_asymmetry.py --nb-runs 5000 --seed 42 \
+    --out /tmp/ccf-runA
+python ccf_sequence_asymmetry.py --nb-runs 5000 --seed 7 \
+    --out /tmp/ccf-runB
+```
+
+Export a Markdown report for each, applying the same pipeline:
+
+```bash
+cod3s-seq /tmp/ccf-runA/sequences.xml --pipeline /tmp/canonical.yaml
+# in the TUI: press `e`, pick Markdown, type /tmp/runA.md, Enter, q
+
+cod3s-seq /tmp/ccf-runB/sequences.xml --pipeline /tmp/canonical.yaml
+# in the TUI: press `e`, pick Markdown, type /tmp/runB.md, Enter, q
+```
+
+Diff the two reports side-by-side:
+
+```bash
+diff -u /tmp/runA.md /tmp/runB.md | less
+# or, if you want a coloured view:
+git diff --no-index /tmp/runA.md /tmp/runB.md
+```
+
+Differences in weight (column 2 of the top table) reflect
+Monte-Carlo noise; differences in *signatures* indicate that the two
+runs explored qualitatively different failure modes — a signal worth
+investigating.
+
+### Example 5 — undo / redo to experiment with alternative pipelines
+
+```bash
+cod3s-seq /tmp/ccf-demo/sequences.xml
+```
+
+1. `+` → `group_sequences` → `Add`. The list collapses.
+2. `+` → `compute_minimal_sequences` → `Add` (skipping the filter on purpose).
+3. Observe the suspicious result: minimal sequences include orphaned `occ` / `rep` pairs.
+4. Press `u` — undo. The minimal step disappears; you're back to the grouped state.
+5. `+` → `filter_objfm_cycles` → input `ObjFM internal = pump_X__def_pump`, `Add`.
+6. `+` → `compute_minimal_sequences` → `Add`.
+
+The pipeline panel now lists 3 clean steps and the surviving
+signatures no longer contain `rep__cc_*` events. Press `r` to redo
+the discarded step ; press `u` again to come back. The undo stack
+has depth 20 by default.
+
+### Example 6 — clean noisy events before minimisation
+
+Some simulations emit periodic "heartbeat" events that have no
+analytical value. To suppress them:
+
+```bash
+cod3s-seq /tmp/my-study/sequences.xml
+```
+
+1. `+` → `rm_events_by_obj` → input `Object name = clock` → `Add`. Every event whose `obj == "clock"` disappears from every sequence.
+2. `+` → `group_sequences` → `Add`. Sequences that differed only by clock noise collapse.
+3. Continue with `filter_objfm_cycles` + `compute_minimal_sequences` as in Example 2.
+
+### Example 7 — fully non-interactive batch (export only, no TUI)
+
+For CI / batch scripts where you don't want an interactive session,
+use the programmatic API instead of `cod3s-seq`:
+
+```python
+# scripts/batch_export.py
+from pathlib import Path
+
+from cod3s.pycatshoo.seq_tui import (
+    Pipeline,
+    export_markdown,
+    load_sequences_from_xml,
+)
+from cod3s.pycatshoo.sequence import SequenceAnalyser
+
+for run_dir in Path("/tmp/runs").iterdir():
+    sequences = load_sequences_from_xml(run_dir / "sequences.xml")
+    analyser = SequenceAnalyser(sequences=sequences)
+    analyser.update_probs()
+    Pipeline.load_yaml("/tmp/canonical.yaml").apply(analyser)
+    export_markdown(analyser, run_dir / "report.md")
+    print(f"{run_dir.name}: {len(analyser.sequences)} sigs")
+```
+
+```bash
+python scripts/batch_export.py
+```
+
+The pipeline YAML is the same artefact `cod3s-seq` saves with `s`,
+so the interactive and batch workflows stay in lock-step.
+
+### Example 8 — round-trip JSON cod3s through the TUI
+
+```bash
+# 1. Start from raw XML, save as canonical JSON cod3s.
+cod3s-seq /tmp/ccf-demo/sequences.xml --pipeline /tmp/canonical.yaml
+# In the TUI: e → JSON cod3s → /tmp/ccf-minimal.json, q
+
+# 2. Reload the JSON dump — same view as before the save.
+cod3s-seq /tmp/ccf-minimal.json
+```
+
+This is how an R&D engineer ships an analysed dump to a safety
+analyst: the JSON file is self-contained (schema, weights, events,
+target names) and re-opens in `cod3s-seq` exactly where the
+engineer left off.
 
 ## Programmatic API
 

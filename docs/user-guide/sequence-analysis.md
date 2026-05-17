@@ -17,7 +17,7 @@ results.
     For interactive post-mortem analysis — stacking
     group / filter / minimal operations through a TUI, saving the
     pipeline as YAML, and exporting to JSON cod3s / CSV / Markdown —
-    see [Interactive Sequence TUI (`cod3s-seq`)](seq-tui.md).
+    see [Interactive Sequence TUI (`cod3s-seq`)](cod3s-seq.md).
 
 ## Data model
 
