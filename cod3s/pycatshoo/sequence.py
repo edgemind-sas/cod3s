@@ -1,12 +1,95 @@
+import json
 import pydantic
 import pandas as pd
 import typing
 import re
 import tqdm
 from collections import defaultdict
+from pathlib import Path
 from .automaton import PycTransition
 from ..core import ObjCOD3S
 import colored as clr
+
+
+# JSON envelope version emitted by :func:`serialise_analyser`. Bump when
+# the envelope shape changes (not when ``Sequence``'s own schema evolves
+# — that one is governed by Pydantic v2's per-field default behaviour).
+SEQUENCE_ARTIFACT_SCHEMA_VERSION = "1.0.0"
+
+
+def serialise_analyser(
+    analyser,
+    *,
+    target_group_id=None,
+    meta=None,
+):
+    """Serialise a :class:`SequenceAnalyser` to the canonical JSON
+    envelope consumed by cod3s-platform and the ``cod3s-seq`` TUI.
+
+    Envelope shape::
+
+        {
+            "schema_version": "1.0.0",
+            "target_group_id": <opaque, default None>,
+            "sequences": [ <Sequence.model_dump(mode="json")> ... ],
+            "meta": {"truncated_at": None, "parse_error": None, **caller_extra}
+        }
+
+    The ``sequences`` list reflects whatever the analyser currently
+    holds — caller decides whether minimal, post-filter or raw.
+
+    Args:
+        analyser: A ``SequenceAnalyser`` instance.
+        target_group_id: Optional opaque identifier populated by the
+            platform on read. Not interpreted here.
+        meta: Optional dict merged into the ``meta`` envelope. Defaults
+            ``{"truncated_at": None, "parse_error": None}`` are kept
+            unless overridden.
+
+    Returns:
+        str: Compact JSON document (no whitespace between keys).
+    """
+    base_meta = {"truncated_at": None, "parse_error": None}
+    if meta:
+        base_meta.update(meta)
+    payload = {
+        "schema_version": SEQUENCE_ARTIFACT_SCHEMA_VERSION,
+        "target_group_id": target_group_id,
+        "sequences": [
+            s.model_dump(mode="json", exclude_none=False) for s in analyser.sequences
+        ],
+        "meta": base_meta,
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def persist_sequence_analysis_artifacts(
+    analyser,
+    path,
+    *,
+    target_group_id=None,
+    meta=None,
+    encoding="utf-8",
+):
+    """Write the canonical JSON envelope to ``path``.
+
+    Thin wrapper around :func:`serialise_analyser` that handles the
+    filesystem side. ``path`` is coerced to :class:`pathlib.Path` so
+    callers may pass either ``str`` or ``Path``.
+
+    Args:
+        analyser: A ``SequenceAnalyser`` instance.
+        path: Target file. Parent directory must exist.
+        target_group_id: Same as :func:`serialise_analyser`.
+        meta: Same as :func:`serialise_analyser`.
+        encoding: Text encoding for the file (default ``"utf-8"``).
+    """
+    Path(path).write_text(
+        serialise_analyser(
+            analyser, target_group_id=target_group_id, meta=meta
+        ),
+        encoding=encoding,
+    )
 
 
 # NOTE RD:

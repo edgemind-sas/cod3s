@@ -1,0 +1,32 @@
+/* cod3s-seq — Textual CSS layout
+ *
+ * Three side-by-side panels: pipeline (left, 1fr), sequences table
+ * (middle, 2fr), and detail (right, 1fr). The sequence table is the
+ * widest because the signature column needs room to breathe.
+ */
+
+Screen {
+    layout: horizontal;
+}
+
+#panel-pipeline {
+    width: 1fr;
+    border: round $accent;
+    padding: 0 1;
+}
+
+#panel-sequences {
+    width: 2fr;
+    border: round $secondary;
+    padding: 0 1;
+}
+
+#panel-detail {
+    width: 1fr;
+    border: round $warning;
+    padding: 0 1;
+}
+
+DataTable {
+    height: 1fr;
+}

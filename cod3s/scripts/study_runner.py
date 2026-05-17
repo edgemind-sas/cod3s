@@ -73,37 +73,15 @@ def _clamp_top_pct(raw: Any) -> int:
 #: JSON-on-disk envelope version. Bump as semver when the schema
 #: evolves. Consumers (eg. cod3s-platform) pin this version via a
 #: Pydantic ``Literal`` for forward-compat safety.
-SEQUENCE_ARTIFACT_SCHEMA_VERSION = "1.0.0"
+# Re-exported for backward compatibility with cod3s-platform code that
+# imports ``SEQUENCE_ARTIFACT_SCHEMA_VERSION`` from here. New code should
+# import from ``cod3s.pycatshoo.sequence`` directly.
+from cod3s.pycatshoo.sequence import SEQUENCE_ARTIFACT_SCHEMA_VERSION  # noqa: F401
 
 
 class SequenceAnalysisError(Exception):
     """Raised by :func:`_persist_sequence_analysis_artifacts` on
     unexpected failures. Callers catch narrowly so true bugs surface."""
-
-
-def _serialise_analyser(analyser: Any) -> str:
-    """Serialize a ``SequenceAnalyser`` to JSON matching the
-    ``SequenceArtifactV1`` schema consumed by cod3s-platform.
-
-    Always emits the canonical envelope::
-
-        {
-            "schema_version": "1.0.0",
-            "target_group_id": null,    # populated by the platform on read
-            "sequences": [...],
-            "meta": {"truncated_at": null, "parse_error": null}
-        }
-
-    ``sequences`` is the list currently held by the analyser — the
-    caller decides whether minimal or post-filter is serialised.
-    """
-    payload = {
-        "schema_version": SEQUENCE_ARTIFACT_SCHEMA_VERSION,
-        "target_group_id": None,
-        "sequences": [s.model_dump(mode="json", exclude_none=False) for s in analyser.sequences],
-        "meta": {"truncated_at": None, "parse_error": None},
-    }
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def _persist_sequence_analysis_artifacts(
@@ -141,7 +119,10 @@ def _persist_sequence_analysis_artifacts(
     import time
 
     try:
-        from cod3s.pycatshoo.sequence import SequenceAnalyser
+        from cod3s.pycatshoo.sequence import (
+            SequenceAnalyser,
+            persist_sequence_analysis_artifacts,
+        )
 
         t0 = time.perf_counter()
         analyser = SequenceAnalyser.from_pyc_system(system)
@@ -154,13 +135,13 @@ def _persist_sequence_analysis_artifacts(
 
         # sequences_all.json = post-filter snapshot (full detail).
         all_path = results_path / "sequences_all.json"
-        all_path.write_text(_serialise_analyser(analyser), encoding="utf-8")
+        persist_sequence_analysis_artifacts(analyser, all_path)
 
         # sequences_minimal.json = full canonical pipeline.
         # inplace=False → new analyser, the ``all`` snapshot above is safe.
         minimal = analyser.compute_minimal_sequences(inplace=False)
         min_path = results_path / "sequences_minimal.json"
-        min_path.write_text(_serialise_analyser(minimal), encoding="utf-8")
+        persist_sequence_analysis_artifacts(minimal, min_path)
 
         if logger:
             logger.info2(

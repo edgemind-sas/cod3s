@@ -55,6 +55,7 @@ nav:
     - Interactive Simulation: user-guide/interactive-simulation.md
     - Indicators: user-guide/indicators.md
     - Sequence Analysis: user-guide/sequence-analysis.md
+    - Interactive Sequence TUI (cod3s-seq): user-guide/cod3s-seq.md
     - PyCATSHOO Integration: user-guide/pycatshoo-integration.md
   - Tutorials:
     - Basic Component: tutorials/basic-component.md

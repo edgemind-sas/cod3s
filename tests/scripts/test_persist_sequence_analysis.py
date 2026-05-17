@@ -1,9 +1,14 @@
-"""Tests for ``_persist_sequence_analysis_artifacts`` + ``_serialise_analyser``.
+"""Tests for ``_persist_sequence_analysis_artifacts`` + ``serialise_analyser``.
 
 Uses mock systems / mock analysers to avoid loading PyCATSHOO. The
 canonical pipeline (group → filter_objfm_cycles → compute_minimal_sequences)
 is exercised through ``SequenceAnalyser`` itself (which IS loaded — we
 mock only the ``from_pyc_system`` factory + the ``system`` input).
+
+Note: ``serialise_analyser`` lives in ``cod3s.pycatshoo.sequence`` since
+1.5.0 — the helper was promoted to a public API for reuse by the
+``cod3s-seq`` TUI. ``SEQUENCE_ARTIFACT_SCHEMA_VERSION`` is re-exported
+from ``study_runner`` for backward compat.
 """
 
 from __future__ import annotations
@@ -17,11 +22,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from cod3s.pycatshoo.sequence import (
+    persist_sequence_analysis_artifacts,
+    serialise_analyser,
+)
 from cod3s.scripts.study_runner import (
     SEQUENCE_ARTIFACT_SCHEMA_VERSION,
     SequenceAnalysisError,
     _persist_sequence_analysis_artifacts,
-    _serialise_analyser,
 )
 from cod3s.specs.study_yaml import StudyYaml, TargetSpec
 
@@ -99,6 +107,13 @@ def fake_sequence_analyser(monkeypatch):
             return all_analyser
 
     fake_module.SequenceAnalyser = FakeSequenceAnalyser
+    # The helper under test imports ``persist_sequence_analysis_artifacts``
+    # from the same module — we expose the real one (it's a thin
+    # serialise+write wrapper, no PyCATSHOO dependency) so the fake
+    # module is import-compatible with the helper's signature.
+    fake_module.persist_sequence_analysis_artifacts = (
+        persist_sequence_analysis_artifacts
+    )
     monkeypatch.setitem(sys.modules, "cod3s.pycatshoo.sequence", fake_module)
 
     return {
@@ -178,6 +193,12 @@ class TestA3FailOpen:
                 raise ValueError("synthetic boom — should not leak into log payload")
 
         fake_module.SequenceAnalyser = BoomAnalyser
+        # Helper imported by the function under test — provide the real
+        # one so the failure exercised here is the ValueError from
+        # from_pyc_system, not an ImportError on the helper itself.
+        fake_module.persist_sequence_analysis_artifacts = (
+            persist_sequence_analysis_artifacts
+        )
         monkeypatch.setitem(sys.modules, "cod3s.pycatshoo.sequence", fake_module)
 
         logger = MagicMock()
@@ -289,14 +310,14 @@ class TestA6PerfBudget:
 
 
 # ---------------------------------------------------------------------------
-# Bonus — _serialise_analyser unit tests (pure function, no IO)
+# Bonus — serialise_analyser unit tests (pure function, no IO)
 # ---------------------------------------------------------------------------
 
 
 class TestSerialiseAnalyser:
     def test_returns_compact_json_string(self):
         analyser, _ = _make_mock_analyser(sequence_count=2)
-        s = _serialise_analyser(analyser)
+        s = serialise_analyser(analyser)
         assert isinstance(s, str)
         # Compact (no whitespace): `,` separator without space.
         assert ", " not in s
@@ -305,12 +326,12 @@ class TestSerialiseAnalyser:
 
     def test_envelope_contains_constant_version(self):
         analyser, _ = _make_mock_analyser(sequence_count=0)
-        payload = json.loads(_serialise_analyser(analyser))
+        payload = json.loads(serialise_analyser(analyser))
         assert payload["schema_version"] == SEQUENCE_ARTIFACT_SCHEMA_VERSION
 
     def test_empty_sequence_list_serialises(self):
         analyser, _ = _make_mock_analyser(sequence_count=0)
-        payload = json.loads(_serialise_analyser(analyser))
+        payload = json.loads(serialise_analyser(analyser))
         assert payload["sequences"] == []
 
 

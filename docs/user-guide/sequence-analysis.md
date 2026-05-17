@@ -13,6 +13,12 @@ including the *non-trivial* prerequisite — filtering ObjFM occ/rep
 cycles — without which the minimal-sequence algorithm produces biased
 results.
 
+!!! tip "Interactive exploration"
+    For interactive post-mortem analysis — stacking
+    group / filter / minimal operations through a TUI, saving the
+    pipeline as YAML, and exporting to JSON cod3s / CSV / Markdown —
+    see [Interactive Sequence TUI (`cod3s-seq`)](cod3s-seq.md).
+
 ## Data model
 
 The analysis layer lives in `cod3s.pycatshoo.sequence` and revolves
