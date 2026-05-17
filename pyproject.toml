@@ -46,6 +46,7 @@ Issues = "https://github.com/edgemind-sas/cod3s/issues"
 [project.scripts]
 run-cod3s-study = "cod3s.scripts.run_cod3s_study:main"
 cod3s-isimu = "cod3s.scripts.run_cod3s_isimu:main"
+cod3s-seq = "cod3s.scripts.run_cod3s_seq:main"
 
 [tool.uv]
 dev-dependencies = [
@@ -83,6 +84,7 @@ exclude = ["tests*", "log*", "*.tests*", "*.log*", "archive*", "docs*"]
 
 [tool.setuptools.package-data]
 "cod3s.pycatshoo.isimu" = ["*.tcss"]
+"cod3s.pycatshoo.seq_tui" = ["*.tcss"]
 
 # Dev tools configuration
 [tool.black]
