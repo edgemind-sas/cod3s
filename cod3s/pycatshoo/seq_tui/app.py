@@ -202,11 +202,12 @@ class SeqTuiApp(App[None]):
         self.call_from_thread(self.refresh_panels)
         delta = new_state.last_delta
         if delta is not None:
-            sign = "+" if delta.d_sequences >= 0 else ""
             self.call_from_thread(
                 self.notify,
-                f"{delta.step_summary}: {sign}{delta.d_sequences} sigs, "
-                f"Δw={delta.d_total_weight:+d}",
+                f"{delta.step_summary}: "
+                f"{delta.before_sequences} → {delta.after_sequences} "
+                f"séquences distinctes (Δ {delta.d_sequences:+d}, "
+                f"Δw {delta.d_total_weight:+d})",
                 severity="information",
             )
 
@@ -237,12 +238,12 @@ class SeqTuiApp(App[None]):
             self.call_from_thread(self.refresh_panels)
             delta = new_state.last_delta
             if delta is not None:
-                sign = "+" if delta.d_sequences >= 0 else ""
                 self.call_from_thread(
                     self.notify,
                     f"Step {i}/{len(steps)} — {delta.step_summary}: "
-                    f"{sign}{delta.d_sequences} sigs, "
-                    f"Δw={delta.d_total_weight:+d}",
+                    f"{delta.before_sequences} → {delta.after_sequences} "
+                    f"séquences distinctes (Δ {delta.d_sequences:+d}, "
+                    f"Δw {delta.d_total_weight:+d})",
                     severity="information",
                 )
 

@@ -76,10 +76,16 @@ class PipelinePanel(Container):
         delta = state.last_delta
         for i, step in enumerate(steps, start=1):
             label = f"{i}. {step.summary()}"
-            # Tag the most recent step with the size delta.
+            # Tag the most recent step with the size transition.
+            # Format: `[10000 → 8544 séqs, Δ -1456]`. The arrow makes
+            # the transition explicit ; `séqs` is the abbreviated
+            # `séquences distinctes` used in the notification toast.
             if delta is not None and i == len(steps):
-                sign = "+" if delta.d_sequences >= 0 else ""
-                label = f"{label}    [{sign}{delta.d_sequences} sigs]"
+                label = (
+                    f"{label}    "
+                    f"[{delta.before_sequences} → {delta.after_sequences} séqs, "
+                    f"Δ {delta.d_sequences:+d}]"
+                )
             list_view.append(ListItem(Static(label)))
 
 

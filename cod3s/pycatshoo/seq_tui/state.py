@@ -120,6 +120,8 @@ class SeqTuiState:
             d_sequences=after_count - before_count,
             d_total_weight=after_weight - before_weight,
             step_summary=step.summary(),
+            before_sequences=before_count,
+            after_sequences=after_count,
         )
 
         new_pipeline = self.pipeline.append(step)
@@ -172,6 +174,13 @@ class StateDelta:
     d_sequences: int
     d_total_weight: int
     step_summary: str
+    # Absolute counts on either side of the step. Carried so the
+    # notification can render the explicit before → after transition
+    # (`10000 → 8544 séquences distinctes`), more readable than the
+    # raw delta in isolation. Default 0 keeps backward compat for
+    # call sites that don't populate them.
+    before_sequences: int = 0
+    after_sequences: int = 0
 
 
 # ---------------------------------------------------------------------------
