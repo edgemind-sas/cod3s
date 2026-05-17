@@ -20,37 +20,28 @@ Examples
 from __future__ import annotations
 
 import argparse
-import importlib
 import sys
 from pathlib import Path
 from typing import Any
 
 import cod3s
 
-from cod3s.scripts._common import build_system_from_model, load_study_specs
+from cod3s.scripts._common import (
+    build_system_from_model,
+    load_study_specs,
+    resolve_factory,
+)
 
 
 def _resolve_factory(spec: str) -> Any:
-    """Resolve ``module.path:function_name`` into a callable.
+    """Backwards-compatible alias kept for callers of the script API.
 
-    Raises a clear :class:`ValueError` / :class:`ImportError` /
-    :class:`AttributeError` if the spec is malformed or the target is missing.
+    The shared implementation now lives in ``_common.resolve_factory``;
+    this wrapper preserves the historical ``_resolve_factory`` symbol
+    (private leading underscore) for any direct importers of this
+    module.
     """
-    if ":" not in spec:
-        raise ValueError(f"--factory expects 'module.path:function_name', got {spec!r}")
-    module_path, _, fn_name = spec.partition(":")
-    if not module_path or not fn_name:
-        raise ValueError(f"--factory expects 'module.path:function_name', got {spec!r}")
-    try:
-        module = importlib.import_module(module_path)
-    except ImportError as exc:
-        raise ImportError(f"Cannot import module {module_path!r}: {exc}") from exc
-    fn = getattr(module, fn_name, None)
-    if fn is None or not callable(fn):
-        raise AttributeError(
-            f"Module {module_path!r} has no callable named {fn_name!r}"
-        )
-    return fn
+    return resolve_factory(spec, flag_label="--factory")
 
 
 def _build_parser() -> argparse.ArgumentParser:

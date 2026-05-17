@@ -7,12 +7,47 @@ loading without duplicating code.
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import yaml
+
+
+def resolve_factory(spec: str, *, flag_label: str = "--factory") -> Callable[[], Any]:
+    """Resolve ``module.path:function_name`` into a callable.
+
+    Shared between ``cod3s-isimu`` and ``cod3s-seq`` so both CLIs accept
+    the same ``--factory module:fn`` shorthand for an in-process system
+    builder.
+
+    Raises a clear :class:`ValueError` / :class:`ImportError` /
+    :class:`AttributeError` when the spec is malformed or the target is
+    missing. The ``flag_label`` parameter only affects the error
+    message — pass the actual flag name (e.g. ``--factory``) so the
+    error tells the user which option to fix.
+    """
+    if ":" not in spec:
+        raise ValueError(
+            f"{flag_label} expects 'module.path:function_name', got {spec!r}"
+        )
+    module_path, _, fn_name = spec.partition(":")
+    if not module_path or not fn_name:
+        raise ValueError(
+            f"{flag_label} expects 'module.path:function_name', got {spec!r}"
+        )
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        raise ImportError(f"Cannot import module {module_path!r}: {exc}") from exc
+    fn = getattr(module, fn_name, None)
+    if fn is None or not callable(fn):
+        raise AttributeError(
+            f"Module {module_path!r} has no callable named {fn_name!r}"
+        )
+    return fn
 
 
 def import_module_from_path(
