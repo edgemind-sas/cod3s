@@ -275,12 +275,13 @@ results = pyc_system.simulate(sim_params)
 
 - **run-cod3s-study**: CLI for batch Monte-Carlo studies (`cod3s/scripts/run_cod3s_study.py`).
 - **cod3s-isimu**: CLI for the interactive Textual TUI simulator (`cod3s/scripts/run_cod3s_isimu.py`). Textual ships as a default runtime dependency; no extra install step. See `docs/user-guide/interactive-simulation.md`.
+- **cod3s-seq**: CLI for the post-mortem sequence-analysis TUI (`cod3s/scripts/run_cod3s_seq.py`). Loads a PyCATSHOO XML dump or a JSON cod3s envelope, lets the user stack pipeline steps (group / filter / minimal / rm / rename), supports undo/redo, save/load YAML, export JSON cod3s / CSV / Markdown. See `docs/user-guide/seq-tui.md`.
 
 ## Versioning
 
 Version lives in `cod3s/version.py` (read by `pyproject.toml` via `[tool.setuptools.dynamic]`) and is exposed as `cod3s.__version__`. Bumped by Roland at release time.
 
-The `cod3s-isimu` CLI and the TUI header **reuse the parent package version** — there is no separate `__version__` for the interactive simulator. `cod3s-isimu --version` prints the parent `cod3s` version; the TUI shows the same value in its header. The test `tests/scripts/test_run_cod3s_isimu.py::test_version_runs_via_subprocess` enforces this contract.
+The `cod3s-isimu` and `cod3s-seq` CLIs and the TUI headers **reuse the parent package version** — there is no separate `__version__` for either TUI. `cod3s-isimu --version` and `cod3s-seq --version` both print the parent `cod3s` version; the TUI shows the same value in its header. The tests `tests/scripts/test_run_cod3s_isimu.py::test_version_runs_via_subprocess` and `tests/scripts/test_run_cod3s_seq.py::test_version_runs_via_subprocess` enforce this contract.
 
 ## Examples
 
