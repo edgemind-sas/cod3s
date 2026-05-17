@@ -172,6 +172,81 @@ def test_main_applies_startup_pipeline(tmp_path: Path, monkeypatch) -> None:
     assert len(state.analyser.sequences) == 2
 
 
+def test_parser_accepts_factory(tmp_path: Path) -> None:
+    parser = _build_parser()
+    ns = parser.parse_args(["x.xml", "--factory", "mod.path:fn"])
+    assert ns.factory == "mod.path:fn"
+
+
+def test_main_factory_invalid_module_errors_cleanly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An unknown factory module must surface a clean parser.error
+    rather than crashing somewhere deep in the loader."""
+    seq_path = tmp_path / "seq.json"
+    _write_synthetic_json_cod3s(seq_path)
+
+    # Stub the TUI so we never get there
+    monkeypatch.setattr(
+        "cod3s.pycatshoo.seq_tui.app.run_seq_tui", lambda state: None
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                str(seq_path),
+                "--factory",
+                "nonexistent_module_xyzzy:build_system",
+            ]
+        )
+
+
+def test_main_factory_resolves_and_attaches_system(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A valid factory builds a PycSystem-like object that gets attached.
+
+    We monkey-patch ``resolve_factory`` to return a stub system so this
+    test stays free of the PyCATSHOO singleton — the contract under test
+    is *the wiring between CLI and state*, not the PyCATSHOO API.
+    """
+    seq_path = tmp_path / "seq.json"
+    _write_synthetic_json_cod3s(seq_path)
+
+    class _FakeSystem:
+        def name(self) -> str:
+            return "fake-system"
+
+        comp: dict = {}
+
+        # Make discover_objfms a no-op by giving an empty comp dict —
+        # the real cod3s ObjFM check loops over comp.values().
+
+    fake_system = _FakeSystem()
+
+    def fake_resolve(spec, **kwargs):
+        return lambda: fake_system
+
+    monkeypatch.setattr(
+        "cod3s.scripts._common.resolve_factory", fake_resolve
+    )
+
+    captured = {}
+
+    def fake_run(state):
+        captured["state"] = state
+
+    monkeypatch.setattr("cod3s.pycatshoo.seq_tui.app.run_seq_tui", fake_run)
+
+    rc = main([str(seq_path), "--factory", "fake:build"])
+    assert rc == 0
+    state = captured["state"]
+    # System attached to the analyser.
+    assert state.analyser._system is fake_system
+    # No ObjFM discovered (the fake has no .comp entries).
+    assert state.available_objfms_internal == ()
+
+
 def test_main_max_sequences_caps_load(tmp_path: Path, monkeypatch) -> None:
     seq_path = tmp_path / "seq.json"
     _write_synthetic_json_cod3s(seq_path)

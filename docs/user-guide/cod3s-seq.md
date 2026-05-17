@@ -49,10 +49,34 @@ cod3s-seq results/sequences.xml --pipeline canonical.yaml
 
 # Quickly explore a huge XML dump — only load the first 200 sequences
 cod3s-seq results/sequences.xml --max-sequences 200
+
+# Live mode: a Python factory builds the PycSystem so ObjFM are
+# auto-discovered and the filter modal renders a checklist
+cod3s-seq results/sequences.xml --factory mymodule:build_system
 ```
 
 The TUI opens immediately; press `?` (or the displayed key bindings in
 the footer) to discover the actions.
+
+## Post-mortem mode vs live mode
+
+`cod3s-seq` runs in one of two modes, chosen at startup:
+
+| Mode         | Triggered by                       | What it knows                                                                                  | UX difference                                                                                                 |
+|--------------|------------------------------------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| Post-mortem  | The default (no `--factory`)       | Only the dump file. ObjFM names are unknown to the tool.                                       | The `filter_objfm_cycles` modal asks you to **type** the ObjFM names as a comma-separated list.               |
+| Live         | `--factory module.path:fn`         | Also the **populated `PycSystem`** returned by the factory — every `ObjFM` component is known. | The `filter_objfm_cycles` modal renders a **checklist** of every ObjFM (`SelectionList`), pre-checked.        |
+
+The factory contract is identical to `cod3s-isimu`'s: `fn()` must
+return a populated `PycSystem`, **without simulating it** —
+`cod3s-seq` does the simulation itself (via the loaded dump). PyCATSHOO
+is a process-level singleton, so you can't run `cod3s-isimu` and
+`cod3s-seq --factory` simultaneously in the same shell.
+
+When the live system is attached, `filter_objfm_cycles` also gains
+auto-discovery: calling it with empty lists is no longer a no-op —
+the analyser introspects every `ObjFM` component on the system and
+filters them all in one go.
 
 ## Layout
 
@@ -585,6 +609,60 @@ This is how an R&D engineer ships an analysed dump to a safety
 analyst: the JSON file is self-contained (schema, weights, events,
 target names) and re-opens in `cod3s-seq` exactly where the
 engineer left off.
+
+### Example 9 — live mode with a factory (`--factory`)
+
+The bundled CCF demo exposes a `build_system` factory you can point
+`cod3s-seq` at:
+
+```bash
+# Re-use the dump generated in the prerequisites step
+cod3s-seq /tmp/ccf-demo/sequences.xml \
+    --factory examples.ccf_sequence_asymmetry.ccf_sequence_asymmetry:build_system \
+    --log-level INFO
+```
+
+The first two log lines confirm the system was attached and the
+ObjFM was discovered:
+
+```
+[INFO] Live mode: system 'CCF_Sequence_Asymmetry_Demo' attached (3 components)
+[INFO] Discovered ObjFM: internal=['pump_X__def_pump'], external=[]
+```
+
+Now press `+` → **Filter ObjFM cycles** → `Add`. Instead of a
+text-input asking for ObjFM names, the modal renders a
+**checklist**: every discovered ObjFM is listed, pre-checked, with
+the message `(live mode — 1 internal, 0 external discovered)` at the
+top. Hit `Tab` / `Space` to toggle entries, or just press `Enter` to
+accept all the defaults.
+
+The benefit:
+
+* **Zero typos**: you don't have to remember the exact ObjFM name
+  (`pump_X__def_pump`, not `def_pump`) — it's there in the list.
+* **Discoverability**: scanning the checkbox list is faster than
+  reading `git grep ObjFM` in the model source.
+* **Custom failure/repair-state names**: still typed in the two
+  Input fields below the checklist, since they're rarely customised
+  in practice.
+
+If your model has many ObjFM (10+), the checklist also scrolls and
+supports `↑` / `↓` to navigate — much easier than typing a long
+comma-separated string.
+
+#### Caveats
+
+* The factory must build the system **without simulating it** —
+  same contract as `cod3s-isimu --factory`. If it ran a Monte Carlo
+  internally, the PyCATSHOO singleton would be in a poisoned state
+  by the time `cod3s-seq` reaches the TUI mainloop.
+* PyCATSHOO is a process-level singleton; you cannot run
+  `cod3s-isimu` and `cod3s-seq --factory` in the same shell at the
+  same time. Open a second shell.
+* When ObjFM are discovered, the TUI marks live mode in the modal
+  header (`(live mode — N internal, M external discovered)`) so you
+  know which path you're on.
 
 ## Programmatic API
 

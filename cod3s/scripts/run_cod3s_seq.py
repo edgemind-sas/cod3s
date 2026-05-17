@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
-"""CLI entry-point for the post-mortem sequence analyser TUI (``cod3s-seq``).
+"""CLI entry-point for the sequence-analyser TUI (``cod3s-seq``).
 
-``cod3s-seq`` loads a PyCATSHOO sequence dump — either the raw XML
-written by ``PycSystem.setResultFileName`` or one of the JSON
-artefacts produced by ``run-cod3s-study`` (``sequences_all.json`` /
-``sequences_minimal.json``) — and lets the user interactively stack
-operations from the cod3s sequence-analysis pipeline:
+Two modes:
+
+* **Post-mortem** (default) — load a sequence dump file (raw XML
+  written by ``PycSystem.setResultFileName`` or one of the JSON
+  artefacts produced by ``run-cod3s-study``: ``sequences_all.json`` /
+  ``sequences_minimal.json``). The ObjFM names must be typed into the
+  ``filter_objfm_cycles`` modal as comma-separated lists.
+
+* **Live** (``--factory module:fn``) — also call the supplied factory
+  to build a populated :class:`PycSystem`, attach it to the analyser,
+  and pre-fill the configuration modals with the ObjFM names
+  discovered on the system. The user picks ObjFM via a checklist
+  instead of typing names. The factory **must not** simulate — it
+  just builds the model, like the ``cod3s-isimu`` factory contract.
+
+The TUI then lets the user interactively stack operations from the
+cod3s sequence-analysis pipeline:
 
 * ``group_sequences``
 * ``filter_objfm_cycles``
@@ -33,6 +45,10 @@ Examples
 
   # Re-apply a saved pipeline at startup, then drop into the TUI
   cod3s-seq results/sequences.xml --pipeline saved-pipe.yaml
+
+  # Live mode: ``mymodule:build`` returns a populated PycSystem so the
+  # filter modal shows ObjFM as a checklist
+  cod3s-seq results/sequences.xml --factory mymodule:build
 """
 
 from __future__ import annotations
@@ -92,6 +108,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Optional pipeline YAML to apply automatically at startup. "
             "Equivalent to launching the TUI and pressing `l` immediately."
+        ),
+    )
+    parser.add_argument(
+        "--factory",
+        type=str,
+        default=None,
+        help=(
+            "Live mode: Python factory of the form "
+            "'module.path:function_name'. The function must return a "
+            "populated PycSystem (without simulating). The system is "
+            "attached to the analyser so filter_objfm_cycles can "
+            "auto-discover ObjFM, and the configuration modal renders "
+            "them as a checklist."
         ),
     )
     parser.add_argument(
@@ -171,9 +200,34 @@ def main(argv: list[str] | None = None) -> int:
 
     from cod3s.pycatshoo.seq_tui.state import SeqTuiState
 
+    system = None
+    if args.factory is not None:
+        from cod3s.scripts._common import resolve_factory
+
+        try:
+            factory = resolve_factory(args.factory, flag_label="--factory")
+            system = factory()
+        except Exception as exc:
+            parser.error(f"failed to resolve --factory {args.factory!r}: {exc}")
+            return 2
+        logger.info(
+            "Live mode: system %r attached (%d components)",
+            getattr(system, "name", lambda: "?")(),
+            len(getattr(system, "comp", {}) or {}),
+        )
+
     state = SeqTuiState.from_initial(
-        analyser, source_path=source_path, source_format=source_format
+        analyser,
+        source_path=source_path,
+        source_format=source_format,
+        system=system,
     )
+    if system is not None:
+        logger.info(
+            "Discovered ObjFM: internal=%s, external=%s",
+            list(state.available_objfms_internal),
+            list(state.available_objfms_external),
+        )
 
     try:
         state = _apply_startup_pipeline(state, args.pipeline, logger)
