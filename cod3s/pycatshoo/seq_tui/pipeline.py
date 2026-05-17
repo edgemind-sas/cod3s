@@ -207,6 +207,15 @@ class Pipeline(pydantic.BaseModel):
     version: str = PIPELINE_SCHEMA_VERSION
     steps: list[PipelineStep] = pydantic.Field(default_factory=list)
 
+    def append(self, step) -> "Pipeline":
+        """Return a new :class:`Pipeline` with ``step`` appended.
+
+        The current instance is untouched — convenient for the
+        immutable ``SeqTuiState`` flow where each step application
+        produces a new state.
+        """
+        return Pipeline(version=self.version, steps=[*self.steps, step])
+
     def apply(self, analyser, *, progress=False):
         """Apply all steps in order, in-place.
 

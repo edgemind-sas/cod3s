@@ -20,23 +20,55 @@ user can compare states.
 The Textual layer (``app``, ``panels``, ``modals``) is loaded lazily
 so ``cod3s-seq --help`` works even when Textual is misconfigured. The
 pure-Python helpers (``loader``, ``exporter``, ``pipeline``) have no
-Textual dependency and are reusable as a library:
+Textual dependency and are reusable as a library::
 
     from cod3s.pycatshoo.seq_tui.loader import load_sequences_from_xml
     from cod3s.pycatshoo.seq_tui.pipeline import Pipeline
 
-The TUI carries its own minor version (parent ``cod3s`` package
-controls the major/minor; see ``CLAUDE.md`` versioning policy).
+The TUI version follows the parent ``cod3s`` package (see CLAUDE.md
+versioning policy).
 """
 
+from cod3s.pycatshoo.seq_tui.exporter import (
+    export_csv,
+    export_json_cod3s,
+    export_markdown,
+)
 from cod3s.pycatshoo.seq_tui.loader import (
+    SequenceLoadError,
     detect_format,
     load_sequences_from_json_cod3s,
     load_sequences_from_xml,
 )
+from cod3s.pycatshoo.seq_tui.pipeline import (
+    PIPELINE_SCHEMA_VERSION,
+    ComputeMinimalSequencesStep,
+    FilterObjFMCyclesStep,
+    GroupSequencesStep,
+    Pipeline,
+    PipelineStep,
+    RenameEventsStep,
+    RmEventsByObjStep,
+    RmEventsOrderedPatternStep,
+    STEP_CLASSES,
+)
 
 __all__ = [
+    "PIPELINE_SCHEMA_VERSION",
+    "ComputeMinimalSequencesStep",
+    "FilterObjFMCyclesStep",
+    "GroupSequencesStep",
+    "Pipeline",
+    "PipelineStep",
+    "RenameEventsStep",
+    "RmEventsByObjStep",
+    "RmEventsOrderedPatternStep",
+    "STEP_CLASSES",
+    "SequenceLoadError",
     "detect_format",
+    "export_csv",
+    "export_json_cod3s",
+    "export_markdown",
     "load_sequences_from_json_cod3s",
     "load_sequences_from_xml",
 ]
