@@ -1289,6 +1289,24 @@ class SequenceAnalyser(ObjCOD3S):
         result.group_sequences(inplace=True)
         return result
 
+    def discover_objfms(self) -> tuple[list[str], list[str]]:
+        """Return ``(internal_names, external_names)`` of the attached system's ObjFM.
+
+        Public wrapper around :meth:`_discover_objfm_specs` that drops
+        the per-ObjFM ``failure_state``/``repair_state`` triples and
+        keeps only the names — which is what the ``cod3s-seq``
+        configuration modal needs to populate its
+        ``SelectionList`` checklist.
+
+        Returns ``([], [])`` when no system is attached (post-mortem
+        path), so callers can branch on emptiness without having to
+        guard against ``None``.
+        """
+        internal_specs, external_specs = self._discover_objfm_specs()
+        internal_names = [comp_name for (comp_name, *_rest) in internal_specs]
+        external_names = [comp_name for (comp_name, *_rest) in external_specs]
+        return internal_names, external_names
+
     def _discover_objfm_specs(self):
         """Introspect the attached ``PycSystem`` to enumerate ObjFM
         components and partition them by behaviour.
