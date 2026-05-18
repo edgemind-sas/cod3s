@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any, Optional, Type, Union
 
@@ -711,7 +712,55 @@ def run_study(
             entry["instant"] if isinstance(entry, dict) and set(entry.keys()) == {"instant"} else entry
             for entry in sim_payload["schedule"]
         ]
-    system.simulate(sim_payload)
+
+    # Daemon thread emitting `[progress] current=K total=N` lines on
+    # stdout while `simulate()` runs. The cod3s-platform's run executor
+    # parses these via `_PROGRESS_LINE_RE` and drives the live progress
+    # bar from them. Without this poller, the executor only ever sees
+    # the synthetic "100%" emitted post-simulate, hence the stuck-at-0%
+    # symptom reported on 2026-05-18 (feedback #1).
+    #
+    # Failure modes :
+    #   - GIL held during simulate() : the daemon thread is starved,
+    #     no `[progress]` line is emitted mid-simulation, the platform
+    #     keeps showing 0% until the synthetic post-simulate 100% lands
+    #     — identical UX to the pre-fix behaviour.
+    #   - `nbSeqSimCurrent()` not exposed on this PyCATSHOO build :
+    #     the thread skips its `print` and exits silently. Same as above.
+    #   - Stdout buffered (no PYTHONUNBUFFERED) : the platform may see
+    #     bursts rather than continuous updates. Acceptable degradation.
+    nb_runs_total = int(getattr(study_obj.simulation, "nb_runs", 0)) or None
+    _progress_stop = threading.Event()
+
+    def _progress_reporter():
+        last_emitted = -1
+        while not _progress_stop.wait(1.0):
+            try:
+                if not hasattr(system, "nbSeqSimCurrent"):
+                    return
+                current = int(system.nbSeqSimCurrent())
+            except Exception:  # noqa: BLE001 — never fail simulation on a probe error
+                continue
+            if current == last_emitted:
+                continue
+            last_emitted = current
+            if nb_runs_total:
+                print(f"[progress] current={current} total={nb_runs_total}", flush=True)
+            else:
+                print(f"[progress] current={current}", flush=True)
+
+    _progress_thread = threading.Thread(
+        target=_progress_reporter, name="cod3s-progress-reporter", daemon=True
+    )
+    _progress_thread.start()
+    try:
+        system.simulate(sim_payload)
+    finally:
+        _progress_stop.set()
+        # Best-effort join : the daemon is set to daemon=True so it
+        # won't keep the process alive, but a clean exit avoids
+        # interleaving stdout with the next phase's logger output.
+        _progress_thread.join(timeout=2.0)
     duration = datetime.datetime.now() - start
     if logger:
         logger.info2(f"Simulation completed in: {duration}")
