@@ -558,22 +558,12 @@ def _resolve_study(study: Union[StudyYaml, Path, str, dict]) -> StudyYaml:
     return StudyYaml.model_validate(raw)
 
 
-#: Default PyCATSHOO ``monitorTransition`` pattern applied by
-#: :func:`run_study`. The ``#`` prefix tells PyCATSHOO to treat the rest
-#: as a Python regex, and ``.*`` matches every transition name —
-#: failures (``.occ*``), repairs (``.rep*``), and any user-defined
-#: transition. Callers can override via the ``monitor_patterns`` kwarg
-#: when a different selection is needed.
-DEFAULT_MONITOR_PATTERNS: tuple[str, ...] = ("#.*",)
-
-
 def run_study(
     *,
     system_builder: SystemBuilder,
     study: Union[StudyYaml, Path, str, dict],
     results_dir: Path | str,
     logger: Any = None,
-    monitor_patterns: Union[str, list[str], tuple[str, ...], None] = None,
 ) -> Any:
     """Run a COD3S study end-to-end.
 
@@ -586,14 +576,6 @@ def run_study(
             if missing.
         logger: Optional COD3SLogger or similar (must support
             ``info1``/``info2``/``info3``/``warning``/``error``).
-        monitor_patterns: Optional ``PycSystem.monitorTransition``
-            pattern(s) applied before simulation. Accepts a single
-            string or an iterable of strings (each one passed in turn).
-            When ``None`` (default) the runner uses
-            :data:`DEFAULT_MONITOR_PATTERNS` — currently ``("#.*",)``,
-            i.e. monitor every transition. Pass an explicit value to
-            restrict the trace (eg. ``"#.*\\.occ.*"`` to keep only
-            failure events, mirroring the pre-1.5.0 behaviour).
 
     Returns:
         The populated ``PycSystem`` post-simulation, for callers that
@@ -602,6 +584,13 @@ def run_study(
     Side effects:
         Writes files under ``results_dir`` according to
         ``study.results``.
+
+    Notes:
+        ``monitorTransition`` patterns are read from
+        ``study.simulation.monitor_patterns`` (default ``["#.*"]`` —
+        monitors every transition). See
+        :class:`cod3s.specs.study_yaml.SimulationConfig` for the field
+        contract.
     """
     study_obj = _resolve_study(study)
     results_path = Path(results_dir)
@@ -643,25 +632,26 @@ def run_study(
 
     # Step 7: monitor + simulate
     # ``monitorTransition`` exposes transitions in the sequences XML
-    # output. The default :data:`DEFAULT_MONITOR_PATTERNS` is the
-    # wildcard ``("#.*",)`` so the raw trace carries both failures
-    # (``.occ*``) and repairs (``.rep*``). The ``#`` prefix asks
-    # PyCATSHOO for a regex match.
+    # output. The patterns come from ``study.simulation.monitor_patterns``
+    # (default ``["#.*"]`` — wildcard, matches every transition name).
+    # PyCATSHOO is additive : each pattern is applied in turn, the
+    # union of matches gets traced. The ``#`` prefix asks for a regex
+    # match.
     #
-    # Why wildcard rather than ``.occ``-only :
+    # Why ``["#.*"]`` as the default (and not ``["#.*\.occ.*"]`` like
+    # cod3s ≤ 1.5.3) :
     #
-    # cod3s ≤ 1.4.1 applied ``#.*\.occ.*`` to drop repairs at the
-    # source, on the rationale that "a Monte-Carlo trajectory typically
-    # cycles through ``occ → rep → occ`` many times before the target
-    # fires, which makes each trace unique by the timing of those
-    # reversible events and destroys equivalence-class grouping"
-    # (87 % singletons observed on the RATP DIL FMDS instance at the
-    # time).
+    # The earlier ``.occ``-only default dropped repairs at the source,
+    # arguing that "a Monte-Carlo trajectory typically cycles through
+    # ``occ → rep → occ`` many times before the target fires, which
+    # makes each trace unique by the timing of those reversible events
+    # and destroys equivalence-class grouping" (87 % singletons
+    # observed on the RATP DIL FMDS instance at the time).
     #
-    # That observation was correct, but the conclusion was wrong : the
+    # The observation was correct, the conclusion was wrong : the
     # downstream pipeline already owns the right tool —
     # :meth:`SequenceAnalyser.filter_objfm_cycles` — which is designed
-    # precisely to drop those ``occ/rep`` pairs *after* grouping. The
+    # precisely to drop ``occ/rep`` pairs *after* grouping. The
     # equivalence is empirical (verified 2026-05-18 on the RATP
     # ``Lacune non sécurisée FMD`` study, 1000 trajectories, identical
     # seed) :
@@ -670,24 +660,15 @@ def run_study(
     #     monitor=``#.*`` + filter_objfm_cycles : 441 grouped → 75 →
     #                                              23 min
     #
-    # Same 23 minimal sequences. Dropping ``.rep`` at the source was a
-    # premature optimisation that cost us the ability to (a) audit the
-    # trace for debugging and (b) reason about repair-vs-failure
-    # cycles in interactive analysis tools (cod3s-seq).
+    # Same 23 minimal sequences, but the wildcard preserves (a) trace
+    # auditability for debugging and (b) the ability to reason about
+    # repair-vs-failure cycles in interactive tools (cod3s-seq).
     #
-    # Callers that want a different selection (eg. the pre-1.5.0
-    # ``.occ``-only behaviour) pass ``monitor_patterns=...`` to
-    # :func:`run_study`. A list/tuple applies each pattern in turn —
-    # PyCATSHOO is additive, so several calls cumulate.
-    if monitor_patterns is None:
-        patterns_to_apply: tuple[str, ...] = DEFAULT_MONITOR_PATTERNS
-    elif isinstance(monitor_patterns, str):
-        patterns_to_apply = (monitor_patterns,)
-    else:
-        patterns_to_apply = tuple(monitor_patterns)
-
-    if patterns_to_apply and hasattr(system, "monitorTransition"):
-        for pattern in patterns_to_apply:
+    # Restore the pre-1.6.0 behaviour per-study by setting
+    # ``simulation.monitor_patterns: ["#.*\\.occ.*"]`` in study.yaml.
+    patterns = study_obj.simulation.monitor_patterns
+    if patterns and hasattr(system, "monitorTransition"):
+        for pattern in patterns:
             if logger:
                 logger.info3(f"monitorTransition({pattern!r})")
             system.monitorTransition(pattern)
@@ -772,13 +753,9 @@ def run_study_from_yamls(
     results_dir: Path | str,
     namespace: Optional[dict] = None,
     logger: Any = None,
-    monitor_patterns: Union[str, list[str], tuple[str, ...], None] = None,
 ) -> Any:
     """Convenience wrapper: build with :class:`YamlModelBuilder` then
     :func:`run_study`. This is what the CLI uses by default.
-
-    ``monitor_patterns`` is forwarded as-is — see :func:`run_study` for
-    semantics.
     """
     from cod3s.scripts.builders import YamlModelBuilder
 
@@ -788,12 +765,10 @@ def run_study_from_yamls(
         study=Path(study_path),
         results_dir=results_dir,
         logger=logger,
-        monitor_patterns=monitor_patterns,
     )
 
 
 __all__ = [
-    "DEFAULT_MONITOR_PATTERNS",
     "register_fm_class",
     "add_failure_modes",
     "add_events",

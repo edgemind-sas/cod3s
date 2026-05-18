@@ -456,6 +456,18 @@ class SimulationConfig(pydantic.BaseModel):
         description="Observation schedule (list of ranges or instants).",
     )
     seed: int | None = pydantic.Field(None, description="RNG seed for reproducibility.")
+    monitor_patterns: list[str] = pydantic.Field(
+        default_factory=lambda: ["#.*"],
+        description=(
+            "PyCATSHOO ``monitorTransition`` patterns applied before "
+            "simulation. Each pattern is passed in turn — PyCATSHOO is "
+            "additive. The ``#`` prefix asks for a regex match. Default "
+            "``[\"#.*\"]`` monitors every transition (failures, repairs, "
+            "and user-defined). Restrict via eg. ``[\"#.*\\\\.occ.*\"]`` "
+            "for failures only (pre-1.6.0 behaviour). An empty list "
+            "disables monitoring entirely."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
