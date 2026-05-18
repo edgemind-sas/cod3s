@@ -153,5 +153,8 @@ class TestPipelinePanel:
             label = lv.children[0].query_one(Static)
             text = str(label.render())
             assert "group_sequences" in text
-            # The last-step annotation is in brackets.
-            assert "sigs" in text
+            # The last-step annotation is in brackets, format:
+            # `[N → M séqs, Δ ±k]`. cf. 1.5.2 toast wording change.
+            assert "séqs" in text
+            assert "Δ" in text
+            assert "→" in text

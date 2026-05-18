@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any, Optional, Type, Union
 
@@ -584,6 +585,13 @@ def run_study(
     Side effects:
         Writes files under ``results_dir`` according to
         ``study.results``.
+
+    Notes:
+        ``monitorTransition`` patterns are read from
+        ``study.simulation.monitor_patterns`` (default ``["#.*"]`` —
+        monitors every transition). See
+        :class:`cod3s.specs.study_yaml.SimulationConfig` for the field
+        contract.
     """
     study_obj = _resolve_study(study)
     results_path = Path(results_dir)
@@ -624,34 +632,47 @@ def run_study(
         apply_attribute_overrides(system, study_obj.attribute_overrides, logger=logger)
 
     # Step 7: monitor + simulate
-    # ``monitorTransition`` is required to expose transitions in the
-    # sequences XML output. We restrict monitoring to ``.occ``
-    # transitions (failure occurrences, including CCF variants like
-    # ``.occ__cc_3``) and drop the matching ``.rep`` /
-    # ``.step_to_repli`` / state-change transitions that PyCATSHOO
-    # records by default.
+    # ``monitorTransition`` exposes transitions in the sequences XML
+    # output. The patterns come from ``study.simulation.monitor_patterns``
+    # (default ``["#.*"]`` — wildcard, matches every transition name).
+    # PyCATSHOO is additive : each pattern is applied in turn, the
+    # union of matches gets traced. The ``#`` prefix asks for a regex
+    # match.
     #
-    # Pattern : ``#.*\.occ.*`` — the ``#`` prefix asks PyCATSHOO for a
-    # regex match, ``.*\.occ.*`` captures any transition whose name
-    # contains the literal ``.occ`` substring. We cannot anchor on
-    # ``.occ$`` because ObjFMExp emits CCF variants as ``.occ__cc_N``
-    # (one per element of the common-cause group), and a strict
-    # end-anchor would silently drop them — that was the bug that
-    # surfaced when only PC_DAME (which has no CCF) showed up in the
-    # recorded sequences.
+    # Why ``["#.*"]`` as the default (and not ``["#.*\.occ.*"]`` like
+    # cod3s ≤ 1.5.3) :
     #
-    # Rationale of the filter : a Monte-Carlo trajectory that reaches
-    # a target typically cycles through ``occ → rep → occ`` many
-    # times before the predicate fires. Including ``.rep`` in the
-    # recorded sequence makes every trajectory unique by timing of
-    # those reversible events, which destroys the equivalence-class
-    # grouping downstream (87 % singletons observed on the RATP DIL
-    # FMDS instance with the wildcard monitor). Filtering at the
-    # source costs nothing — PyCATSHOO simply doesn't store the
-    # excluded transitions — and gives the downstream tools a clean
-    # signal of *failure occurrences* in causal order.
-    if hasattr(system, "monitorTransition"):
-        system.monitorTransition("#.*\\.occ.*")
+    # The earlier ``.occ``-only default dropped repairs at the source,
+    # arguing that "a Monte-Carlo trajectory typically cycles through
+    # ``occ → rep → occ`` many times before the target fires, which
+    # makes each trace unique by the timing of those reversible events
+    # and destroys equivalence-class grouping" (87 % singletons
+    # observed on the RATP DIL FMDS instance at the time).
+    #
+    # The observation was correct, the conclusion was wrong : the
+    # downstream pipeline already owns the right tool —
+    # :meth:`SequenceAnalyser.filter_objfm_cycles` — which is designed
+    # precisely to drop ``occ/rep`` pairs *after* grouping. The
+    # equivalence is empirical (verified 2026-05-18 on the RATP
+    # ``Lacune non sécurisée FMD`` study, 1000 trajectories, identical
+    # seed) :
+    #
+    #     monitor=``#.*\.occ.*``                : 398 grouped → 23 min
+    #     monitor=``#.*`` + filter_objfm_cycles : 441 grouped → 75 →
+    #                                              23 min
+    #
+    # Same 23 minimal sequences, but the wildcard preserves (a) trace
+    # auditability for debugging and (b) the ability to reason about
+    # repair-vs-failure cycles in interactive tools (cod3s-seq).
+    #
+    # Restore the pre-1.6.0 behaviour per-study by setting
+    # ``simulation.monitor_patterns: ["#.*\\.occ.*"]`` in study.yaml.
+    patterns = study_obj.simulation.monitor_patterns
+    if patterns and hasattr(system, "monitorTransition"):
+        for pattern in patterns:
+            if logger:
+                logger.info3(f"monitorTransition({pattern!r})")
+            system.monitorTransition(pattern)
 
     # When at least one target is wired, ask PyCATSHOO to dump the
     # sequences (state trajectories that reached a target) as an XML
@@ -691,7 +712,55 @@ def run_study(
             entry["instant"] if isinstance(entry, dict) and set(entry.keys()) == {"instant"} else entry
             for entry in sim_payload["schedule"]
         ]
-    system.simulate(sim_payload)
+
+    # Daemon thread emitting `[progress] current=K total=N` lines on
+    # stdout while `simulate()` runs. The cod3s-platform's run executor
+    # parses these via `_PROGRESS_LINE_RE` and drives the live progress
+    # bar from them. Without this poller, the executor only ever sees
+    # the synthetic "100%" emitted post-simulate, hence the stuck-at-0%
+    # symptom reported on 2026-05-18 (feedback #1).
+    #
+    # Failure modes :
+    #   - GIL held during simulate() : the daemon thread is starved,
+    #     no `[progress]` line is emitted mid-simulation, the platform
+    #     keeps showing 0% until the synthetic post-simulate 100% lands
+    #     — identical UX to the pre-fix behaviour.
+    #   - `nbSeqSimCurrent()` not exposed on this PyCATSHOO build :
+    #     the thread skips its `print` and exits silently. Same as above.
+    #   - Stdout buffered (no PYTHONUNBUFFERED) : the platform may see
+    #     bursts rather than continuous updates. Acceptable degradation.
+    nb_runs_total = int(getattr(study_obj.simulation, "nb_runs", 0)) or None
+    _progress_stop = threading.Event()
+
+    def _progress_reporter():
+        last_emitted = -1
+        while not _progress_stop.wait(1.0):
+            try:
+                if not hasattr(system, "nbSeqSimCurrent"):
+                    return
+                current = int(system.nbSeqSimCurrent())
+            except Exception:  # noqa: BLE001 — never fail simulation on a probe error
+                continue
+            if current == last_emitted:
+                continue
+            last_emitted = current
+            if nb_runs_total:
+                print(f"[progress] current={current} total={nb_runs_total}", flush=True)
+            else:
+                print(f"[progress] current={current}", flush=True)
+
+    _progress_thread = threading.Thread(
+        target=_progress_reporter, name="cod3s-progress-reporter", daemon=True
+    )
+    _progress_thread.start()
+    try:
+        system.simulate(sim_payload)
+    finally:
+        _progress_stop.set()
+        # Best-effort join : the daemon is set to daemon=True so it
+        # won't keep the process alive, but a clean exit avoids
+        # interleaving stdout with the next phase's logger output.
+        _progress_thread.join(timeout=2.0)
     duration = datetime.datetime.now() - start
     if logger:
         logger.info2(f"Simulation completed in: {duration}")

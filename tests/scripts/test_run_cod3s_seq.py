@@ -132,8 +132,9 @@ def test_main_loads_json_cod3s_without_running_tui(
 
     captured = {}
 
-    def fake_run(state):
+    def fake_run(state, startup_pipeline=None):
         captured["state"] = state
+        captured["startup_pipeline"] = startup_pipeline
 
     monkeypatch.setattr("cod3s.pycatshoo.seq_tui.app.run_seq_tui", fake_run)
 
@@ -159,17 +160,103 @@ def test_main_applies_startup_pipeline(tmp_path: Path, monkeypatch) -> None:
 
     captured = {}
 
-    def fake_run(state):
+    def fake_run(state, startup_pipeline=None):
         captured["state"] = state
+        captured["startup_pipeline"] = startup_pipeline
 
     monkeypatch.setattr("cod3s.pycatshoo.seq_tui.app.run_seq_tui", fake_run)
 
     rc = main([str(seq_path), "--pipeline", str(pipe_path)])
     assert rc == 0
+    # The pipeline is NOT applied pre-mount anymore (cod3s 1.5.2) —
+    # it's handed off to the app, which replays it in the worker
+    # thread after on_mount so each step lands on the undo stack.
+    # The state passed to run_seq_tui is therefore the pre-pipeline
+    # state, and the pipeline is exposed via the new kwarg.
     state = captured["state"]
-    assert len(state.pipeline.steps) == 1
-    # No collapse because the two sequences have different signatures.
+    assert len(state.pipeline.steps) == 0
     assert len(state.analyser.sequences) == 2
+    pipe = captured["startup_pipeline"]
+    assert pipe is not None
+    assert len(pipe.steps) == 1
+    assert pipe.steps[0].op == "group_sequences"
+
+
+def test_parser_accepts_factory(tmp_path: Path) -> None:
+    parser = _build_parser()
+    ns = parser.parse_args(["x.xml", "--factory", "mod.path:fn"])
+    assert ns.factory == "mod.path:fn"
+
+
+def test_main_factory_invalid_module_errors_cleanly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An unknown factory module must surface a clean parser.error
+    rather than crashing somewhere deep in the loader."""
+    seq_path = tmp_path / "seq.json"
+    _write_synthetic_json_cod3s(seq_path)
+
+    # Stub the TUI so we never get there
+    monkeypatch.setattr(
+        "cod3s.pycatshoo.seq_tui.app.run_seq_tui",
+        lambda state, startup_pipeline=None: None,
+    )
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                str(seq_path),
+                "--factory",
+                "nonexistent_module_xyzzy:build_system",
+            ]
+        )
+
+
+def test_main_factory_resolves_and_attaches_system(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A valid factory builds a PycSystem-like object that gets attached.
+
+    We monkey-patch ``resolve_factory`` to return a stub system so this
+    test stays free of the PyCATSHOO singleton — the contract under test
+    is *the wiring between CLI and state*, not the PyCATSHOO API.
+    """
+    seq_path = tmp_path / "seq.json"
+    _write_synthetic_json_cod3s(seq_path)
+
+    class _FakeSystem:
+        def name(self) -> str:
+            return "fake-system"
+
+        comp: dict = {}
+
+        # Make discover_objfms a no-op by giving an empty comp dict —
+        # the real cod3s ObjFM check loops over comp.values().
+
+    fake_system = _FakeSystem()
+
+    def fake_resolve(spec, **kwargs):
+        return lambda: fake_system
+
+    monkeypatch.setattr(
+        "cod3s.scripts._common.resolve_factory", fake_resolve
+    )
+
+    captured = {}
+
+    def fake_run(state, startup_pipeline=None):
+        captured["state"] = state
+        captured["startup_pipeline"] = startup_pipeline
+
+    monkeypatch.setattr("cod3s.pycatshoo.seq_tui.app.run_seq_tui", fake_run)
+
+    rc = main([str(seq_path), "--factory", "fake:build"])
+    assert rc == 0
+    state = captured["state"]
+    # System attached to the analyser.
+    assert state.analyser._system is fake_system
+    # No ObjFM discovered (the fake has no .comp entries).
+    assert state.available_objfms_internal == ()
 
 
 def test_main_max_sequences_caps_load(tmp_path: Path, monkeypatch) -> None:
@@ -178,8 +265,9 @@ def test_main_max_sequences_caps_load(tmp_path: Path, monkeypatch) -> None:
 
     captured = {}
 
-    def fake_run(state):
+    def fake_run(state, startup_pipeline=None):
         captured["state"] = state
+        captured["startup_pipeline"] = startup_pipeline
 
     monkeypatch.setattr("cod3s.pycatshoo.seq_tui.app.run_seq_tui", fake_run)
 

@@ -171,6 +171,53 @@ class TestStepStacking:
 # ---------------------------------------------------------------------------
 
 
+class TestStartupPipeline:
+    """The CLI ``--pipeline`` flag forwards its YAML to the app, which
+    replays each step through the worker thread after mount so the
+    undo stack records the intermediate states. Pre-1.5.2 the pipeline
+    was applied in the CLI before the app was even constructed, and
+    pressing ``u`` right after startup notified 'Nothing to undo'."""
+
+    async def test_undo_works_after_startup_pipeline(self, sample_state) -> None:
+        startup = Pipeline(steps=[GroupSequencesStep()])
+        app = SeqTuiApp(initial_state=sample_state, startup_pipeline=startup)
+        async with app.run_test() as pilot:
+            # Wait for the on_mount worker to apply the single step.
+            await _wait_for(
+                lambda: len(app.state.pipeline.steps) == 1, pilot, attempts=50
+            )
+            # Press u → the undo stack must contain the pre-step state.
+            await pilot.press("u")
+            await pilot.pause()
+            assert len(app.state.pipeline.steps) == 0
+            assert app.state is sample_state
+
+    async def test_no_op_when_startup_pipeline_is_none(self, sample_state) -> None:
+        app = SeqTuiApp(initial_state=sample_state, startup_pipeline=None)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.state is sample_state
+            assert len(app.state.pipeline.steps) == 0
+
+    async def test_each_startup_step_lands_on_undo_stack(self, sample_state) -> None:
+        startup = Pipeline(
+            steps=[GroupSequencesStep(), GroupSequencesStep()]  # two no-op steps
+        )
+        app = SeqTuiApp(initial_state=sample_state, startup_pipeline=startup)
+        async with app.run_test() as pilot:
+            await _wait_for(
+                lambda: len(app.state.pipeline.steps) == 2, pilot, attempts=50
+            )
+            # Two undos must walk back through both steps.
+            await pilot.press("u")
+            await pilot.pause()
+            assert len(app.state.pipeline.steps) == 1
+            await pilot.press("u")
+            await pilot.pause()
+            assert len(app.state.pipeline.steps) == 0
+            assert app.state is sample_state
+
+
 class TestUndoRedo:
     async def test_undo_restores_previous_state(self, sample_state) -> None:
         app = SeqTuiApp(initial_state=sample_state)

@@ -15,7 +15,7 @@ import copy
 from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Deque, Literal, Optional
+from typing import TYPE_CHECKING, Any, Deque, Literal, Optional
 
 if TYPE_CHECKING:
     from cod3s.pycatshoo.sequence import SequenceAnalyser
@@ -32,6 +32,12 @@ class SeqTuiState:
     Frozen so the app can keep references in the undo stack without
     worrying about accidental mutation. Pipeline application is done
     via :meth:`with_step_applied`, which returns a *new* state.
+
+    The ``available_objfms_*`` fields are populated only in **live
+    mode** (``cod3s-seq --factory module:fn``). They power the
+    checklist UX of the :class:`ConfigFilterObjFMCyclesModal`. In
+    post-mortem mode (XML / JSON loaded without a system) they stay
+    empty and the modal falls back to its text-input UX.
     """
 
     analyser: "SequenceAnalyser"
@@ -40,6 +46,8 @@ class SeqTuiState:
     source_path: Optional[Path] = None
     source_format: Optional[SourceFormat] = None
     last_delta: Optional["StateDelta"] = None
+    available_objfms_internal: tuple[str, ...] = ()
+    available_objfms_external: tuple[str, ...] = ()
 
     # ------------------------------------------------------------------
     # Builders
@@ -51,20 +59,43 @@ class SeqTuiState:
         *,
         source_path: Optional[Path] = None,
         source_format: Optional[SourceFormat] = None,
+        system: Optional[Any] = None,
     ) -> "SeqTuiState":
         """Build the starting state from a freshly loaded analyser.
 
         An empty :class:`Pipeline` is attached. Tests typically use this
         builder rather than constructing the dataclass directly.
+
+        When a ``system`` (a populated :class:`PycSystem`) is provided
+        — the **live mode** — the analyser is attached to that system
+        (enabling ``filter_objfm_cycles`` auto-discovery) and the
+        ObjFM names are extracted into the
+        ``available_objfms_internal`` / ``available_objfms_external``
+        fields so the configuration modal can render a checklist
+        instead of a free-form text input.
         """
         # Local import to avoid a circular import at module load time.
         from cod3s.pycatshoo.seq_tui.pipeline import Pipeline
+
+        internal: tuple[str, ...] = ()
+        external: tuple[str, ...] = ()
+        if system is not None:
+            # Attach the system so SequenceAnalyser.filter_objfm_cycles
+            # can auto-discover ObjFM when called with no explicit
+            # lists. Mirrors what from_pyc_system does for the live
+            # ingestion path.
+            analyser._system = system
+            int_names, ext_names = analyser.discover_objfms()
+            internal = tuple(int_names)
+            external = tuple(ext_names)
 
         return cls(
             analyser=analyser,
             pipeline=Pipeline(),
             source_path=source_path,
             source_format=source_format,
+            available_objfms_internal=internal,
+            available_objfms_external=external,
         )
 
     def with_step_applied(self, step: "PipelineStep") -> "SeqTuiState":
@@ -89,6 +120,8 @@ class SeqTuiState:
             d_sequences=after_count - before_count,
             d_total_weight=after_weight - before_weight,
             step_summary=step.summary(),
+            before_sequences=before_count,
+            after_sequences=after_count,
         )
 
         new_pipeline = self.pipeline.append(step)
@@ -141,6 +174,13 @@ class StateDelta:
     d_sequences: int
     d_total_weight: int
     step_summary: str
+    # Absolute counts on either side of the step. Carried so the
+    # notification can render the explicit before → after transition
+    # (`10000 → 8544 séquences distinctes`), more readable than the
+    # raw delta in isolation. Default 0 keeps backward compat for
+    # call sites that don't populate them.
+    before_sequences: int = 0
+    after_sequences: int = 0
 
 
 # ---------------------------------------------------------------------------
