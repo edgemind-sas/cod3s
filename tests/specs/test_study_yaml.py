@@ -242,11 +242,25 @@ class TestSimulationConfig:
         cfg = SimulationConfig()
         assert cfg.nb_runs is None
         assert cfg.schedule == []
+        assert cfg.monitor_patterns == ["#.*"]
+        assert cfg.filter_objfm_in_sequences is True
 
     def test_extra_kwargs(self):
         """Simulator-specific knobs survive."""
         cfg = SimulationConfig(verbose=True)
         assert cfg.model_dump()["verbose"] is True
+
+    def test_filter_objfm_in_sequences_can_be_disabled(self):
+        """``False`` keeps the integral trace (audit / debugging)."""
+        cfg = SimulationConfig(filter_objfm_in_sequences=False)
+        assert cfg.filter_objfm_in_sequences is False
+
+    def test_filter_objfm_in_sequences_round_trip(self):
+        """Field survives ``model_dump`` ↔ ``model_validate`` cycle."""
+        dumped = SimulationConfig(filter_objfm_in_sequences=False).model_dump()
+        assert dumped["filter_objfm_in_sequences"] is False
+        rebuilt = SimulationConfig.model_validate(dumped)
+        assert rebuilt.filter_objfm_in_sequences is False
 
 
 # ---------------------------------------------------------------------------

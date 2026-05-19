@@ -468,6 +468,20 @@ class SimulationConfig(pydantic.BaseModel):
             "disables monitoring entirely."
         ),
     )
+    filter_objfm_in_sequences: bool = pydantic.Field(
+        default=True,
+        description=(
+            "When True (default), the ``study_runner`` pipeline calls "
+            "``SequenceAnalyser.filter_objfm_cycles(inplace=True)`` after "
+            "``group_sequences``. The filter is mode-aware (auto-discovery "
+            "via ``from_pyc_system``): in ``internal`` mode it drops paired "
+            "occ/rep cycles ; in ``external`` / ``external_rep_indep`` modes "
+            "it additionally drops every event whose ``obj == fm_name`` "
+            "and the paired ``{target}.{fm_name}__{occ,rep}`` events on "
+            "each target. Set to ``False`` to keep the integral trace "
+            "(audit / debugging)."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

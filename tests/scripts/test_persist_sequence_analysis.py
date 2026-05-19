@@ -31,7 +31,7 @@ from cod3s.scripts.study_runner import (
     SequenceAnalysisError,
     _persist_sequence_analysis_artifacts,
 )
-from cod3s.specs.study_yaml import StudyYaml, TargetSpec
+from cod3s.specs.study_yaml import SimulationConfig, StudyYaml, TargetSpec
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +52,23 @@ def _study_with_target() -> StudyYaml:
 
 def _study_no_target() -> StudyYaml:
     return StudyYaml(name="no-target", targets=[])
+
+
+def _study_with_target_no_objfm_filter() -> StudyYaml:
+    """Same as ``_study_with_target`` but with the ObjFM filter toggle off.
+
+    Used to assert that ``_persist_sequence_analysis_artifacts`` skips
+    ``analyser.filter_objfm_cycles`` when ``filter_objfm_in_sequences``
+    is ``False`` (integral trace preserved for audit / debugging).
+    """
+    return StudyYaml(
+        name="ccf-asymmetry-mock-no-filter",
+        targets=[TargetSpec(name="system_down")],
+        events=[],
+        indicators=[],
+        failure_modes=[],
+        simulation=SimulationConfig(filter_objfm_in_sequences=False),
+    )
 
 
 def _make_mock_analyser(sequence_count: int = 3):
@@ -151,6 +168,24 @@ class TestA1FilesWritten:
         all_ana.filter_objfm_cycles.assert_called_once_with(inplace=True)
         # Then minimal as a separate analyser:
         all_ana.compute_minimal_sequences.assert_called_once_with(inplace=False)
+
+    def test_pipeline_skips_filter_when_toggle_off(self, tmp_path, fake_sequence_analyser):
+        """``simulation.filter_objfm_in_sequences=False`` keeps the integral
+        trace : ``filter_objfm_cycles`` is NOT called, but ``group_sequences``
+        and ``compute_minimal_sequences`` still run and both artefacts are
+        still written.
+        """
+        system = MagicMock()
+        study = _study_with_target_no_objfm_filter()
+        _persist_sequence_analysis_artifacts(system, study, tmp_path, logger=None)
+
+        all_ana = fake_sequence_analyser["all"]
+        all_ana.group_sequences.assert_called_once_with(inplace=True)
+        all_ana.filter_objfm_cycles.assert_not_called()
+        all_ana.compute_minimal_sequences.assert_called_once_with(inplace=False)
+        # Both artefacts still on disk — toggle only changes content, not presence.
+        assert (tmp_path / "sequences_all.json").exists()
+        assert (tmp_path / "sequences_minimal.json").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -109,6 +109,13 @@ def _persist_sequence_analysis_artifacts(
     analyser as a *separate* object. This guarantees the ``all``
     serialisation is not mutated by any lazy iteration during the
     minimal pass.
+
+    The ``filter_objfm_cycles`` pass is gated by
+    ``study_obj.simulation.filter_objfm_in_sequences`` (default ``True``).
+    Setting it to ``False`` keeps the integral trace (ObjFM transitions
+    visible in both artefacts) for audit / debugging purposes. The
+    auto-discovery still happens (``from_pyc_system`` introspects every
+    ObjFM's ``behaviour``) but no filtering is applied.
     """
     has_targets = bool(getattr(study_obj, "targets", None))
     if not has_targets:
@@ -131,7 +138,8 @@ def _persist_sequence_analysis_artifacts(
 
         t1 = time.perf_counter()
         analyser.group_sequences(inplace=True)
-        analyser.filter_objfm_cycles(inplace=True)
+        if study_obj.simulation.filter_objfm_in_sequences:
+            analyser.filter_objfm_cycles(inplace=True)
         t_pipeline = time.perf_counter() - t1
 
         # sequences_all.json = post-filter snapshot (full detail).
