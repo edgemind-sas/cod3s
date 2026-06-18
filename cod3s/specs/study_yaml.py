@@ -482,6 +482,19 @@ class SimulationConfig(pydantic.BaseModel):
             "(audit / debugging)."
         ),
     )
+    filter_objevent_in_sequences: bool = pydantic.Field(
+        default=True,
+        description=(
+            "When True (default), the ``study_runner`` pipeline calls "
+            "``SequenceAnalyser.filter_objevent_cycles(inplace=True)`` "
+            "after ``filter_objfm_cycles``. It cancels paired "
+            "``{event}.occ`` / ``{event}.not_occ`` transitions of each "
+            "ObjEvent (auto-discovered via ``from_pyc_system``) — a "
+            "transient that nets back to nominal. A held ``occ`` (the "
+            "reached target) is unbalanced and survives. Set to "
+            "``False`` to keep the integral occ/not_occ trace."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

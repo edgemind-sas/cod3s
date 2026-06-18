@@ -841,6 +841,18 @@ class ObjEvent(PycComponent):
     ):
         super().__init__(name, **kwargs)
 
+        # Expose the automaton names so post-mortem sequence tooling
+        # (``SequenceAnalyser._discover_objevent_specs`` /
+        # ``filter_objevent_cycles``) can rebuild the occ/not_occ
+        # transition patterns by introspection rather than guessing.
+        # NOTE: a monitored transition's ``basename()`` equals these
+        # state names ONLY because the automaton below uses
+        # ``trans_name_12_fmt="{st2}"`` / ``trans_name_21_fmt="{st1}"``.
+        # Keep those formats in sync if you touch the filter.
+        self.event_aut_name = event_aut_name
+        self.occ_state_name = occ_state_name
+        self.not_occ_state_name = not_occ_state_name
+
         cond = sanitize_cond_format(cond)
 
         if isinstance(inner_logic, str):

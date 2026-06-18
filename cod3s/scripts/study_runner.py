@@ -116,6 +116,12 @@ def _persist_sequence_analysis_artifacts(
     visible in both artefacts) for audit / debugging purposes. The
     auto-discovery still happens (``from_pyc_system`` introspects every
     ObjFM's ``behaviour``) but no filtering is applied.
+
+    A second pass, ``filter_objevent_cycles`` (gated by
+    ``filter_objevent_in_sequences``, default ``True``), then cancels
+    paired ObjEvent ``occ`` / ``not_occ`` transients (auto-discovered
+    the same way). A held ``occ`` — the reached target — is unbalanced
+    and survives, so the snapshots below are taken post-both-filters.
     """
     has_targets = bool(getattr(study_obj, "targets", None))
     if not has_targets:
@@ -140,6 +146,8 @@ def _persist_sequence_analysis_artifacts(
         analyser.group_sequences(inplace=True)
         if study_obj.simulation.filter_objfm_in_sequences:
             analyser.filter_objfm_cycles(inplace=True)
+        if study_obj.simulation.filter_objevent_in_sequences:
+            analyser.filter_objevent_cycles(inplace=True)
         t_pipeline = time.perf_counter() - t1
 
         # sequences_all.json = post-filter snapshot (full detail).

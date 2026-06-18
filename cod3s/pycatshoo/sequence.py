@@ -1355,6 +1355,110 @@ class SequenceAnalyser(ObjCOD3S):
                 external.append((comp.name(), comp.fm_name, fail, rep))
         return internal, external
 
+    def _discover_objevent_specs(self):
+        """Introspect the attached ``PycSystem`` to enumerate ObjEvent
+        components.
+
+        Returns:
+            list: ``(comp_name, occ_state, not_occ_state)`` tuples, one
+            per :class:`~cod3s.pycatshoo.component.ObjEvent`. ``comp_name``
+            is what appears in ``SeqEvent.obj`` for the event's
+            transitions; the state names are read from each component so
+            a system mixing default ``occ`` / ``not_occ`` and custom
+            names is handled in one pass.
+
+            Returns ``[]`` when no system is attached (post-mortem path).
+        """
+        # Lazy import to avoid a cycle (component.py imports from
+        # ``pycatshoo`` which imports ``sequence``).
+        from cod3s.pycatshoo.component import ObjEvent
+
+        specs = []
+        if self._system is None:
+            return specs
+        for comp in self._system.comp.values():
+            if isinstance(comp, ObjEvent):
+                specs.append(
+                    (comp.name(), comp.occ_state_name, comp.not_occ_state_name)
+                )
+        return specs
+
+    def filter_objevent_cycles(self, objevents=None, inplace=False):
+        """Strip ``occ`` / ``not_occ`` cycles introduced by ObjEvent
+        transitions, mirroring :meth:`filter_objfm_cycles` for events.
+
+        An ObjEvent that fires (``occ``) and later un-fires (``not_occ``)
+        is a transient that nets back to nominal — it did not contribute
+        to the trajectory's final outcome. Keeping those pairs inflates
+        the number of distinct sequences and clutters the
+        minimal-sequence analysis (e.g. a ``Normal`` trajectory whose
+        observer events toggle on and off). We drop each paired
+        ``{event}.{occ}`` / ``{event}.{not_occ}`` (ordered: the
+        ``not_occ`` matched to the first later occurrence) and keep any
+        unbalanced ``occ`` — in particular the ``occ`` of a *reached*
+        target, which is never followed by its ``not_occ`` and therefore
+        survives.
+
+        Because an ObjEvent starts in ``not_occ`` and must end in ``occ``
+        to be the reached target, ``n_occ == n_not_occ + 1`` there, so
+        exactly one ``occ`` survives the pairing — the downstream target
+        highlighting stays correct.
+
+        **Auto-discovery** — if ``objevents`` is ``None`` and a system is
+        attached (analyser built via :meth:`from_pyc_system`), every
+        :class:`~cod3s.pycatshoo.component.ObjEvent` is discovered with
+        its own ``occ_state_name`` / ``not_occ_state_name``. Pass an
+        explicit list to override.
+
+        Args:
+            objevents (Iterable[tuple] | None): ``(name, occ_state,
+                not_occ_state)`` triples. ``None`` triggers auto-discovery
+                (when a system is attached) or means "no filtering"
+                (post-mortem path without a system).
+            inplace (bool): If True, modify this instance.
+
+        Returns:
+            SequenceAnalyser: The (modified or new) analyser with the
+            occ/not_occ cycles removed and signatures regrouped.
+        """
+        if not inplace:
+            result = SequenceAnalyser(
+                sequences=[s.model_copy(deep=True) for s in self.sequences]
+            )
+            # Keep the system ref so chained calls stay introspective.
+            result._system = self._system
+        else:
+            result = self
+
+        specs = objevents
+        if specs is None:
+            specs = (
+                self._discover_objevent_specs() if self._system is not None else []
+            )
+        specs = list(specs)
+
+        for seq in result.sequences:
+            for ev_name, occ_state, not_occ_state in specs:
+                ev_esc = re.escape(ev_name)
+                occ_esc = re.escape(occ_state)
+                not_occ_esc = re.escape(not_occ_state)
+                # An ObjEvent transition carries no order suffix (unlike
+                # an ObjFM ``__cc_X``), so the patterns are anchored exact
+                # matches on ``obj.attr``. ``re.escape`` guards against
+                # dot-capable event names (e.g. ``ER.XY``). No capture
+                # group is needed (one event per iteration).
+                seq.rm_events_ordered_pattern(
+                    name_pat1=rf"^{ev_esc}\.{occ_esc}$",
+                    name_pat2=rf"^{ev_esc}\.{not_occ_esc}$",
+                    inplace=True,
+                )
+
+        # Single regrouping at the end (mirrors filter_objfm_cycles):
+        # transient-only trajectories collapse onto a common empty
+        # signature and merge.
+        result.group_sequences(inplace=True)
+        return result
+
     def compute_minimal_sequences(self, inplace=False, progress=False):
         """Compute minimal sequences by removing sequences that are included in shorter ones.
 
