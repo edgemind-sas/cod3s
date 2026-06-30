@@ -82,7 +82,7 @@ def export_markdown(analyser, path) -> None:
 
         | t       | obj    | attr      | type |
         |---------|--------|-----------|------|
-        | 100.000 | fm     | occ__cc_12 | —   |
+        | 100.000 | fm     | occ__cc_1_2 | —   |
         | ...
 
     The top table is sorted by descending weight; each detail section

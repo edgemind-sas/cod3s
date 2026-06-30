@@ -98,7 +98,7 @@ def test_external_dependency_system():
     assert system.comp["T4"].v_flow_out.value() == 0
 
     # Verify Fireable Transitions
-    # CX__frun: 3 combos (cc_1, cc_2, cc_12)
+    # CX__frun: 3 combos (cc_1, cc_2, cc_1_2)
     # TXX__frun: 15 combos (4 order 1, 6 order 2, 4 order 3, 1 order 4) -> Total 18
     # 3 + 15 = 18 fireable transitions initially (all failures)
     # We verify some key ones

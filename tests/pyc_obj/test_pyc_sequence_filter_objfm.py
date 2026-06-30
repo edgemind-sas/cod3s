@@ -207,7 +207,7 @@ class TestFilterObjFMCyclesExternal:
             _ev("c1", "fm__occ"),     # target picks up the failure (prefixed)
             _ev("c1", "fm__rep"),     # target repaired (prefixed)
             _ev("fm", "rep__cc_1"),
-            _ev("fm", "occ__cc_12"),
+            _ev("fm", "occ__cc_1_2"),
             _ev("c1", "fm__occ"),     # both targets fail (unrepaired)
             _ev("c2", "fm__occ"),
             _ev("top", "occ"),
@@ -228,7 +228,7 @@ class TestFilterObjFMCyclesExternal:
     def test_objfm_external_with_no_target_pairs(self):
         """External-mode ObjFM where targets only fail without repair."""
         seq = _seq(
-            _ev("fm", "occ__cc_12"),
+            _ev("fm", "occ__cc_1_2"),
             _ev("c1", "fm__occ"),
             _ev("c2", "fm__occ"),
             _ev("top", "occ"),

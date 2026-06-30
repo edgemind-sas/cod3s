@@ -114,7 +114,7 @@ def test_system(the_system):
     # Ensure transitions are valid before proceeding
     transitions = the_system.isimu_fireable_transitions()
 
-    the_system.isimu_set_transition("CX__frun.occ__cc_12")
+    the_system.isimu_set_transition("CX__frun.occ__cc_1_2")
     the_system.isimu_step_forward()
 
     assert "C3__frun.occ" not in [
@@ -129,7 +129,7 @@ def test_system(the_system):
         tr._bkd.name() for tr in the_system.isimu_fireable_transitions()
     ]
 
-    the_system.isimu_set_transition("CX__frun.rep__cc_12")
+    the_system.isimu_set_transition("CX__frun.rep__cc_1_2")
     the_system.isimu_step_forward()
 
     assert "C3__frun.occ" not in [

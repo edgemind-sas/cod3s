@@ -109,14 +109,14 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions()
     assert len(transitions) == 18
 
-    the_system.isimu_set_transition("CX__frun.occ__cc_12") # targets : CA and CB
+    the_system.isimu_set_transition("CX__frun.occ__cc_1_2") # targets : CA and CB
 
     trans_fired = the_system.isimu_step_forward()
 
     assert len(trans_fired) == 1
     tf = trans_fired[0]
     assert tf._bkd.distLaw().parameter(0) == 0.2
-    assert tf._bkd.target(0).basename() == "occ__cc_12"
+    assert tf._bkd.target(0).basename() == "occ__cc_1_2"
     assert tf._bkd.parent().name() == "CX__frun"
     assert the_system.comp["CA"].v_flow_out.value() == 3
     assert the_system.comp["CA"].flow_available_out.value() is True
@@ -133,7 +133,7 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions() # get non-deterministic transitions that is active at the current time t=0
     assert len(transitions) == 18
 
-    the_system.isimu_set_transition("CX__frun.rep__cc_12")
+    the_system.isimu_set_transition("CX__frun.rep__cc_1_2")
     trans_fired = the_system.isimu_step_forward()
     transitions = the_system.isimu_fireable_transitions()
 
@@ -143,7 +143,7 @@ def test_system(the_system):
     assert the_system.comp["CB"].v_flow_out.value() == 3
     assert the_system.comp["CB"].flow_available_out.value() is True
 
-    the_system.isimu_set_transition("TXX__frun.occ__cc_134")
+    the_system.isimu_set_transition("TXX__frun.occ__cc_1_3_4")
     trans_fired = the_system.isimu_step_forward()
 
     for cname in ["T1", "T3", "T4"]:
@@ -154,7 +154,7 @@ def test_system(the_system):
         assert the_system.comp[cname].v_flow_out.value() == 6
         assert the_system.comp[cname].flow_available_out.value() is True
 
-    the_system.isimu_set_transition("TXX__frun.rep__cc_134")
+    the_system.isimu_set_transition("TXX__frun.rep__cc_1_3_4")
     trans_fired = the_system.isimu_step_forward()
 
     for cname in ["T1", "T3", "T4"]:

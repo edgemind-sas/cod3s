@@ -144,21 +144,21 @@ def test_external_multi_synchronization():
     system.isimu_start()
 
     # Initial state: all rep.
-    # Fireable: ObjFM failure transitions for cc_1, cc_2, cc_12.
+    # Fireable: ObjFM failure transitions for cc_1, cc_2, cc_1_2.
     # Factorized name for C1, C2 is CX
     fm_comp_name = "CX__frun"
 
     expected_init = {
         f"{fm_comp_name}.occ__cc_1",
         f"{fm_comp_name}.occ__cc_2",
-        f"{fm_comp_name}.occ__cc_12",
+        f"{fm_comp_name}.occ__cc_1_2",
     }
     assert_fireable(system, expected_init)
-    # Trigger common failure (cc_12)
-    fire_transition(system, f"{fm_comp_name}.occ__cc_12", date=10)
+    # Trigger common failure (cc_1_2)
+    fire_transition(system, f"{fm_comp_name}.occ__cc_1_2", date=10)
 
     # ObjFM state changed -> ctrl vars True for both C1 and C2
-    # ObjFM repair (rep__cc_12) not fireable yet (waits for targets).
+    # ObjFM repair (rep__cc_1_2) not fireable yet (waits for targets).
     # Single failures (cc_1, cc_2) still fireable (independent).
     # Targets C1 and C2 can fail.
     expected_step1 = {
@@ -174,11 +174,11 @@ def test_external_multi_synchronization():
     assert is_state_active(system.comp["C1"].automata_d["frun"], "frun__occ")
     assert is_state_active(system.comp["C2"].automata_d["frun"], "frun__occ")
 
-    expected_step2 = {f"{fm_comp_name}.rep__cc_12"}
+    expected_step2 = {f"{fm_comp_name}.rep__cc_1_2"}
     assert_fireable(system, expected_step2)
     # Fire C2 failure
-    fire_transition(system, f"{fm_comp_name}.rep__cc_12")
-    # Both failed. ObjFM can repair cc_12.
+    fire_transition(system, f"{fm_comp_name}.rep__cc_1_2")
+    # Both failed. ObjFM can repair cc_1_2.
     expected_step3 = {
         "C1.frun__rep",
         "C2.frun__rep",
@@ -188,7 +188,7 @@ def test_external_multi_synchronization():
     system.isimu_step_forward()
 
     assert_fireable(system, expected_init)
-    # Trigger common failure (cc_12)
+    # Trigger common failure (cc_1_2)
     fire_transition(system, f"{fm_comp_name}.occ__cc_2", date=15)
 
     assert_fireable(
@@ -196,7 +196,7 @@ def test_external_multi_synchronization():
         {
             "C2.frun__occ",
             f"{fm_comp_name}.occ__cc_1",
-            f"{fm_comp_name}.occ__cc_12",
+            f"{fm_comp_name}.occ__cc_1_2",
         },
     )
     system.isimu_step_forward()

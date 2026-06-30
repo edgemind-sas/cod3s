@@ -63,7 +63,7 @@ def test_external_effects_propagation():
 
     # Trigger common failure
     fm_comp_name = "CX__frun"
-    fire_transition(system, f"{fm_comp_name}.occ__cc_12", date=10)
+    fire_transition(system, f"{fm_comp_name}.occ__cc_1_2", date=10)
 
     # Step 1: ObjFM failed, targets not yet. Values should be unchanged.
     assert system.comp["C1"].flow_in_max.value() == 10.0
@@ -78,7 +78,7 @@ def test_external_effects_propagation():
     assert system.comp["C2"].flow_in_max.value() == 0.0
 
     # Trigger repair of ObjFM
-    fire_transition(system, f"{fm_comp_name}.rep__cc_12", date=20)
+    fire_transition(system, f"{fm_comp_name}.rep__cc_1_2", date=20)
     # Values still 0 (targets still in failure)
     assert system.comp["C1"].flow_in_max.value() == 0.0
     assert system.comp["C2"].flow_in_max.value() == 0.0

@@ -86,8 +86,8 @@ def build_ccf_order2_internal_system(name="CCF_O2_Internal"):
 def build_ccf_order3_internal_system(name="CCF_O3_Internal"):
     """3 pumps + 1 order-3 CCF in internal mode.
 
-    Generates 2^3 - 1 = 7 ObjFM automata: cc_1, cc_2, cc_3, cc_12,
-    cc_13, cc_23, cc_123. Top event: 2 of 3 pumps down.
+    Generates 2^3 - 1 = 7 ObjFM automata: cc_1, cc_2, cc_3, cc_1_2,
+    cc_1_3, cc_2_3, cc_1_2_3. Top event: 2 of 3 pumps down.
     """
     system = cod3s.PycSystem(name=name)
     for n in ("pump_1", "pump_2", "pump_3"):

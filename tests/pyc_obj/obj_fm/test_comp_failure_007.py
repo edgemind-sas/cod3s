@@ -115,14 +115,14 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions()
     assert len(transitions) == 8
 
-    the_system.isimu_set_transition("CX__frun.occ__cc_12")
+    the_system.isimu_set_transition("CX__frun.occ__cc_1_2")
     trans_fired = the_system.isimu_step_forward()
 
     assert len(trans_fired) == 1
     tf = trans_fired[0]
     assert tf.end_time == 0
     assert tf._bkd.distLaw().parameter(0) == 0.1
-    assert tf._bkd.target(0).basename() == "occ__cc_12"
+    assert tf._bkd.target(0).basename() == "occ__cc_1_2"
     assert tf._bkd.parent().name() == "CX__frun"
     for cname in ["CA", "CB"]:
         assert the_system.comp[cname].v_flow_out.value() == 1
@@ -144,7 +144,7 @@ def test_system(the_system):
     transitions = the_system.isimu_fireable_transitions()
 
     assert len(transitions) == 8
-    the_system.isimu_set_transition("CX__frun.rep__cc_12")
+    the_system.isimu_set_transition("CX__frun.rep__cc_1_2")
     trans_fired = the_system.isimu_step_forward()
     transitions = the_system.isimu_fireable_transitions()
 

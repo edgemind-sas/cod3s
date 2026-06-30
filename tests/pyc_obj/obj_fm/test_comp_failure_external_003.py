@@ -34,10 +34,10 @@ def fire_transition(system, name, date=None):
         ("cc_1", ["C1"]),
         ("cc_2", ["C2"]),
         ("cc_3", ["C3"]),
-        ("cc_12", ["C1", "C2"]),
-        ("cc_13", ["C1", "C3"]),
-        ("cc_23", ["C2", "C3"]),
-        ("cc_123", ["C1", "C2", "C3"]),
+        ("cc_1_2", ["C1", "C2"]),
+        ("cc_1_3", ["C1", "C3"]),
+        ("cc_2_3", ["C2", "C3"]),
+        ("cc_1_2_3", ["C1", "C2", "C3"]),
     ],
 )
 def test_external_3_targets_all_combos(combo, affected_targets):
