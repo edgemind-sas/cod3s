@@ -538,6 +538,32 @@ class ComponentInstance(ComponentClass):
         # Instantiate the component with the initialization parameters
         return comp
 
+    def to_bkd_raichu(self, system):
+        """Instantiate this component into a RAICHU system.
+
+        The RAICHU engine has no process singleton (deliberate
+        departure from PyCATSHOO): registration is explicit through the
+        ``system`` argument.
+
+        Args:
+            system (pyraichu.muscadet.System): The target RAICHU system.
+
+        Returns:
+            pyraichu.muscadet.ObjFlow: The instantiated component.
+        """
+        class_name = (self.class_name_bkd or {}).get("raichu")
+        if not class_name:
+            raise ValueError("No raichu backend class is specified in the template.")
+
+        cls = get_class_by_name(class_name)
+
+        if self.init_parameters:
+            raise NotImplementedError(
+                "init_parameters are not supported by the raichu backend yet"
+            )
+
+        return system.add_component(cls, self.name)
+
 
 class KB(ObjCOD3S):
     """
