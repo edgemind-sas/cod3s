@@ -347,3 +347,45 @@ class System(ObjCOD3S):
 
         # Instantiate the component with the initialization parameters
         return system
+
+    def to_bkd_raichu(self):
+        """Build a RAICHU system (``pyraichu.muscadet`` layer) from this
+        specification.
+
+        Unlike the PyCATSHOO backend (process-global singleton where
+        components self-register), the RAICHU backend is explicit: a
+        system object is created, components are added to it, and the
+        specification connections are wired onto same-named flows
+        (interface ``f_out`` / ``f_in`` maps to flow ``f``).
+
+        Returns:
+            pyraichu.muscadet.System: The RAICHU system, ready to
+            ``simulate(...)`` / ``monte_carlo(...)``.
+        """
+        class_name = (self.class_name_bkd or {}).get(
+            "raichu", "pyraichu.muscadet.System"
+        )
+        cls = get_class_by_name(class_name)
+
+        try:
+            system = cls(self.name, **self.init_parameters)
+        except Exception as e:
+            raise ValueError(f"RAICHU {cls.__name__} system instanciation failed: {e}")
+
+        for comp_name, comp in self.components.items():
+            comp.to_bkd_raichu(system)
+
+        def flow_name(interface, suffix):
+            return (
+                interface[: -len(suffix)] if interface.endswith(suffix) else interface
+            )
+
+        for connection in self.connections.values():
+            system.connect(
+                connection.component_source,
+                flow_name(connection.interface_source, "_out"),
+                connection.component_target,
+                flow_name(connection.interface_target, "_in"),
+            )
+
+        return system
