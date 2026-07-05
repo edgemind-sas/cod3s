@@ -74,8 +74,12 @@ class FailureModeBaseSpec(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="forbid")
 
-    fm_name: str = pydantic.Field(..., description="Failure mode name (must be unique across the study).")
-    targets: list[str] = pydantic.Field(..., description="Target component names affected by this failure mode.")
+    fm_name: str = pydantic.Field(
+        ..., description="Failure mode name (must be unique across the study)."
+    )
+    targets: list[str] = pydantic.Field(
+        ..., description="Target component names affected by this failure mode."
+    )
     target_name: str | None = pydantic.Field(
         None,
         description=(
@@ -84,7 +88,9 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         ),
     )
 
-    failure_state: str = pydantic.Field("occ", description="Failure state name in the automaton.")
+    failure_state: str = pydantic.Field(
+        "occ", description="Failure state name in the automaton."
+    )
     failure_cond: bool | str | list = pydantic.Field(
         True,
         description=(
@@ -98,8 +104,12 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         description="Effects applied on the failure transition (var_name → value).",
     )
 
-    repair_state: str = pydantic.Field("rep", description="Repair state name in the automaton.")
-    repair_cond: bool | str | list = pydantic.Field(True, description="Repair firing condition. Same shape as failure_cond.")
+    repair_state: str = pydantic.Field(
+        "rep", description="Repair state name in the automaton."
+    )
+    repair_cond: bool | str | list = pydantic.Field(
+        True, description="Repair firing condition. Same shape as failure_cond."
+    )
     repair_effects: dict[str, Any] = pydantic.Field(
         default_factory=dict,
         description="Effects applied on the repair transition.",
@@ -110,7 +120,8 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         description="ObjFM behaviour mode (cf. cod3s.ObjFM docstring).",
     )
     drop_inactive_automata: bool = pydantic.Field(
-        True, description="Whether to skip creating automata with inactive (zero-rate) occ laws."
+        True,
+        description="Whether to skip creating automata with inactive (zero-rate) occ laws.",
     )
 
     enabled: bool = pydantic.Field(
@@ -186,6 +197,48 @@ class ObjFMDelaySpec(FailureModeBaseSpec):
         return _coerce_param_array(v)
 
 
+class ObjFMInstSpec(FailureModeBaseSpec):
+    """On-demand failure mode. Mirror of ``cod3s.ObjFMInst``.
+
+    One Bernoulli draw per demand front (the demand is the inherited
+    ``failure_cond`` — no extra field). ``failure_param`` is a list of
+    ``gamma`` (failure probabilities per solicitation) indexed by
+    cc-order, symmetric to the ``lambda_k`` of ``ObjFMExpSpec``.
+    ``repair_param`` is a list of ``mu`` — the repair stays governed by
+    an **exponential** law.
+    """
+
+    cls: Literal["ObjFMInst"] = pydantic.Field(
+        "ObjFMInst",
+        description="Discriminator. Locks this spec to ObjFMInst.",
+    )
+
+    failure_param: list[float] = pydantic.Field(
+        default_factory=list,
+        description=(
+            "On-demand failure probabilities (gamma) per cc-order, "
+            "length ≤ len(targets)."
+        ),
+    )
+    repair_param: list[float] = pydantic.Field(
+        default_factory=list,
+        description="Repair rates (mu, exponential) per cc-order.",
+    )
+
+    @pydantic.field_validator("failure_param", "repair_param", mode="before")
+    @classmethod
+    def _accept_scalar(cls, v: Any) -> list[Any]:
+        return _coerce_param_array(v)
+
+    @pydantic.field_validator("failure_param")
+    @classmethod
+    def _probs_in_unit_interval(cls, v: list[float]) -> list[float]:
+        for gamma in v:
+            if not 0 <= gamma <= 1:
+                raise ValueError(f"gamma must be a probability in [0, 1], got {gamma}")
+        return v
+
+
 class ObjFMGenericSpec(FailureModeBaseSpec):
     """Forward-compatible generic ObjFM spec.
 
@@ -225,7 +278,7 @@ class ObjFMGenericSpec(FailureModeBaseSpec):
     @pydantic.field_validator("cls")
     @classmethod
     def _reject_known_classes(cls, v: str) -> str:
-        if v in {"ObjFMExp", "ObjFMDelay"}:
+        if v in {"ObjFMExp", "ObjFMDelay", "ObjFMInst"}:
             raise ValueError(
                 f"Use the typed spec ({v}Spec) instead of ObjFMGenericSpec for {v!r}."
             )
@@ -246,6 +299,8 @@ def _failure_mode_discriminator(v: Any) -> str:
         return "ObjFMExp"
     if cls == "ObjFMDelay":
         return "ObjFMDelay"
+    if cls == "ObjFMInst":
+        return "ObjFMInst"
     return "__generic__"
 
 
@@ -256,6 +311,7 @@ FailureModeSpec = Annotated[
     Union[
         Annotated[ObjFMExpSpec, pydantic.Tag("ObjFMExp")],
         Annotated[ObjFMDelaySpec, pydantic.Tag("ObjFMDelay")],
+        Annotated[ObjFMInstSpec, pydantic.Tag("ObjFMInst")],
         Annotated[ObjFMGenericSpec, pydantic.Tag("__generic__")],
     ],
     pydantic.Discriminator(_failure_mode_discriminator),
@@ -319,7 +375,9 @@ class IndicatorSpec(pydantic.BaseModel):
         ".*",
         description="Regex pattern for attribute names.",
     )
-    attr_type: str = pydantic.Field(..., description="Attribute type ('VAR', 'REF', etc.).")
+    attr_type: str = pydantic.Field(
+        ..., description="Attribute type ('VAR', 'REF', etc.)."
+    )
     stats: list[str] = pydantic.Field(default_factory=lambda: ["mean"])
     enabled: bool = True
 
@@ -344,7 +402,9 @@ class TargetSpec(pydantic.BaseModel):
         None,
         description="Variable expression (e.g. 'comp.attr.signal_out'). Leave None for ObjEvent-based targets.",
     )
-    var_type: Literal["ST", "VAR"] | None = pydantic.Field(None, description="'ST' = state, 'VAR' = variable.")
+    var_type: Literal["ST", "VAR"] | None = pydantic.Field(
+        None, description="'ST' = state, 'VAR' = variable."
+    )
     operator: Literal["==", "!=", "<", "<=", ">", ">="] | None = None
     value: Any = None
     enabled: bool = True
@@ -372,7 +432,9 @@ class AttributeOverride(pydantic.BaseModel):
         None,
         description="Optional role hint ('init', 'logic', etc.) — not used by the runtime.",
     )
-    source: str | None = pydantic.Field(None, description="Free-form provenance label (audit/debug).")
+    source: str | None = pydantic.Field(
+        None, description="Free-form provenance label (audit/debug)."
+    )
 
 
 class FailureModeParamOverride(pydantic.BaseModel):
@@ -380,12 +442,16 @@ class FailureModeParamOverride(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="forbid")
 
-    fm_name: str = pydantic.Field(..., description="Target failure mode name (must be unique).")
+    fm_name: str = pydantic.Field(
+        ..., description="Target failure mode name (must be unique)."
+    )
     field: Literal["failure_param", "repair_param"] = pydantic.Field(
         ...,
         description="Which array to override. The full array is replaced.",
     )
-    value: list[Any] = pydantic.Field(..., description="New parameter array (length must match cc-order count).")
+    value: list[Any] = pydantic.Field(
+        ..., description="New parameter array (length must match cc-order count)."
+    )
     source: str | None = None
 
 
@@ -398,7 +464,9 @@ class AttributeOverrides(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
     component_attr: list[AttributeOverride] = pydantic.Field(default_factory=list)
-    failure_mode_param: list[FailureModeParamOverride] = pydantic.Field(default_factory=list)
+    failure_mode_param: list[FailureModeParamOverride] = pydantic.Field(
+        default_factory=list
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +496,9 @@ class ScheduleEntry(pydantic.BaseModel):
     def _check_shape(self) -> "ScheduleEntry":
         if self.instant is not None:
             if any(x is not None for x in (self.start, self.end, self.nvalues)):
-                raise ValueError("ScheduleEntry: 'instant' is exclusive with start/end/nvalues.")
+                raise ValueError(
+                    "ScheduleEntry: 'instant' is exclusive with start/end/nvalues."
+                )
             return self
         if self.start is None or self.end is None or self.nvalues is None:
             raise ValueError(
@@ -450,7 +520,9 @@ class SimulationConfig(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="allow")
 
-    nb_runs: int | None = pydantic.Field(None, description="Monte-Carlo run count. None = simulator default.")
+    nb_runs: int | None = pydantic.Field(
+        None, description="Monte-Carlo run count. None = simulator default."
+    )
     schedule: list[ScheduleEntry] = pydantic.Field(
         default_factory=list,
         description="Observation schedule (list of ranges or instants).",
@@ -462,8 +534,8 @@ class SimulationConfig(pydantic.BaseModel):
             "PyCATSHOO ``monitorTransition`` patterns applied before "
             "simulation. Each pattern is passed in turn — PyCATSHOO is "
             "additive. The ``#`` prefix asks for a regex match. Default "
-            "``[\"#.*\"]`` monitors every transition (failures, repairs, "
-            "and user-defined). Restrict via eg. ``[\"#.*\\\\.occ.*\"]`` "
+            '``["#.*"]`` monitors every transition (failures, repairs, '
+            'and user-defined). Restrict via eg. ``["#.*\\\\.occ.*"]`` '
             "for failures only (pre-1.6.0 behaviour). An empty list "
             "disables monitoring entirely."
         ),
@@ -507,7 +579,9 @@ class ResultsIndicatorSpec(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="forbid")
 
-    id: str = pydantic.Field(..., description="Output file stem (used as 'output_dir/{id}.csv').")
+    id: str = pydantic.Field(
+        ..., description="Output file stem (used as 'output_dir/{id}.csv')."
+    )
     output: list[Literal["csv"]] = pydantic.Field(default_factory=lambda: ["csv"])
     comp_pattern: str = pydantic.Field(".*", description="Component name regex.")
     attr_pattern: str = pydantic.Field(".*", description="Attribute name regex.")
@@ -519,7 +593,9 @@ class PlotIndicatorSpec(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow")
 
     id: str = pydantic.Field(..., description="Output file stem.")
-    output: list[Literal["html", "png"]] = pydantic.Field(default_factory=lambda: ["html"])
+    output: list[Literal["html", "png"]] = pydantic.Field(
+        default_factory=lambda: ["html"]
+    )
     write_options: dict[str, Any] = pydantic.Field(default_factory=dict)
 
 

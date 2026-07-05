@@ -364,6 +364,7 @@ class PycComponent(pyc.CComponent):
                                 v = self.variable(var)
                                 if v.value() != value:
                                     v.setValue(value)
+
                     return _callback
 
                 callback = _make_callback(target_state_bkd, effects_dict)
@@ -382,6 +383,7 @@ class PycComponent(pyc.CComponent):
                             for elt in eff:
                                 if elt["var"].value() != elt["value"]:
                                     elt["var"].setValue(elt["value"])
+
                     return _callback
 
                 callback = _make_callback_records(target_state_bkd, effects_records)
@@ -1519,24 +1521,17 @@ class ObjFM(PycComponent):
                 else:
                     objfm_repair_law = self.set_occ_law_repair(repair_var_params_cur)
 
-                aut = self.add_aut2st(
-                    name=aut_name_cur,
-                    st1=repair_state_name_cur,
-                    st2=failure_state_name_cur,
-                    init_st2=False,
-                    trans_name_12_fmt="{st2}",
-                    cond_occ_12=failure_cond_cur,
-                    occ_law_12=self.set_occ_law_failure(failure_var_params_cur),
-                    occ_interruptible_12=True,
-                    effects_st2=failure_effects_cur,
-                    effects_st2_format="records",
-                    trans_name_21_fmt="{st1}",
-                    cond_occ_21=repair_cond_cur,
-                    occ_law_21=objfm_repair_law,
-                    occ_interruptible_21=True,
-                    effects_st1=repair_effects_cur,
-                    effects_st1_format="records",
-                    step=self.step,
+                aut = self._build_fm_automaton(
+                    aut_name=aut_name_cur,
+                    repair_state_name=repair_state_name_cur,
+                    failure_state_name=failure_state_name_cur,
+                    failure_cond=failure_cond_cur,
+                    repair_cond=repair_cond_cur,
+                    failure_var_params=failure_var_params_cur,
+                    repair_var_params=repair_var_params_cur,
+                    failure_effects=failure_effects_cur,
+                    repair_effects=repair_effects_cur,
+                    repair_law=objfm_repair_law,
                 )
 
                 # Record impacting automata for centralized control
@@ -1612,6 +1607,55 @@ class ObjFM(PycComponent):
                     failure_effects=self.failure_effects,
                     repair_effects=self.repair_effects,
                 )
+
+    def _build_fm_automaton(
+        self,
+        aut_name,
+        repair_state_name,
+        failure_state_name,
+        failure_cond,
+        repair_cond,
+        failure_var_params,
+        repair_var_params,
+        failure_effects,
+        repair_effects,
+        repair_law,
+    ):
+        """Build the automaton for one cc-combination of this failure mode.
+
+        Extension hook: ``__init__`` calls this once per active
+        cc-combination, after having resolved the combination-specific
+        names, conditions, parameter variables, effects (records format)
+        and repair law. The default implementation builds the classic
+        two-state occ/rep automaton via :meth:`add_aut2st` — the exact
+        behaviour of ``ObjFMExp`` / ``ObjFMDelay``.
+
+        Subclasses whose occurrence model does not fit a two-state
+        single-target automaton (e.g. :class:`ObjFMInst` and its 3-state
+        probabilistic-branching automaton) override this method. They
+        must return the built :class:`PycAutomaton` (already registered
+        in ``self.automata_d``) whose ``failure_state_name`` state is
+        queryable by name — the external behaviours rely on it.
+        """
+        return self.add_aut2st(
+            name=aut_name,
+            st1=repair_state_name,
+            st2=failure_state_name,
+            init_st2=False,
+            trans_name_12_fmt="{st2}",
+            cond_occ_12=failure_cond,
+            occ_law_12=self.set_occ_law_failure(failure_var_params),
+            occ_interruptible_12=True,
+            effects_st2=failure_effects,
+            effects_st2_format="records",
+            trans_name_21_fmt="{st1}",
+            cond_occ_21=repair_cond,
+            occ_law_21=repair_law,
+            occ_interruptible_21=True,
+            effects_st1=repair_effects,
+            effects_st1_format="records",
+            step=self.step,
+        )
 
     def _resolve_target_effects(
         self,
@@ -2014,3 +2058,250 @@ class ObjFMDelay(ObjFM):
     def set_occ_law_repair(self, params):
         return {"cls": "delay", "time": params[self.repair_param_name[0]]}
 
+
+class ObjFMInst(ObjFM):
+    """On-demand failure mode: one Bernoulli draw per demand front.
+
+    Models a failure *on solicitation*: whenever the demand
+    (``failure_cond``) becomes true, the mode fails with probability
+    ``gamma`` — instantaneously, via a PyCATSHOO ``inst`` law with
+    probabilistic branching. The repair transition stays governed by an
+    **exponential** law (``mu``), exactly like ``ObjFMExp``.
+
+    Automaton (3 states, per cc-combination)::
+
+                     inst, guard = failure_cond
+        rep ──────────────────────────────────────► occ      (prob gamma)
+         ▲  └───────────────────────────────────► not_occ   (prob 1-gamma)
+         │                                            │
+         │   exp(mu), guard = repair_cond             │ inst p=1,
+         └────────────────────────── occ ◄────────────┘ guard = NOT failure_cond
+
+    Design (ADR 2026-07-05, cod3s-specs):
+
+    * ``not_occ`` absorbs the demand front: while ``failure_cond`` stays
+      true the automaton waits there (no re-draw — anti-Zeno). It
+      returns to ``rep`` through an **inst p=1** transition guarded by
+      ``NOT failure_cond``: inst transitions drain before any timed
+      transition of the same instant, so a demand that falls and rises
+      at the same simulated date is re-armed and drawn, not missed.
+      One front = one draw.
+    * If the repair completes while the demand still holds, the
+      automaton re-draws immediately (the repaired component is
+      re-solicited). Model "one failure per demand, never repaired
+      within the demand" with ``mu = 0``.
+    * CC combinations follow the ``ObjFM`` structure unchanged:
+      ``failure_param = [gamma_1, ..., gamma_n]`` (probability of the
+      order-k event on solicitation, symmetric to ``lambda_k``). Each
+      combination automaton draws **independently** on a shared front;
+      distinct subsets may both land in ``occ`` at the same instant
+      (probability = product of gammas, second order) — same
+      independence structure as the exp CCF processes.
+    * Sequence monitoring: the draw transition is named after the
+      failure state (``occ`` [+ ``__cc_`` suffix]) so recorded events
+      match the ObjFMExp convention. The success branch and the re-arm
+      transition are masked out of monitoring via
+      ``setMonitoredOutStateMask`` — see :meth:`reapply_monitor_masks`.
+    """
+
+    #: Out-state mask that matches no state — used to fully silence the
+    #: re-arm transition in the sequence monitoring ("#" prefix = regex,
+    #: "$^" matches nothing).
+    _NEVER_MATCH_MASK = "#$^"
+
+    def __init__(self, *args, **kwargs):
+        # Populated by _build_fm_automaton (called from super().__init__).
+        self._monitor_masks = []
+        super().__init__(*args, **kwargs)
+
+    def set_default_failure_param_name(self):
+        if not self.failure_param_name:
+            self.failure_param_name = ["gamma"]
+
+    def set_default_repair_param_name(self):
+        if not self.repair_param_name:
+            self.repair_param_name = ["mu"]
+
+    def set_default_failure_param(self):
+        failure_param_diff = len(self.targets) - len(self.failure_param)
+        if failure_param_diff > 0:
+            self.failure_param += [(0,)] * failure_param_diff
+
+    def set_default_repair_param(self):
+        repair_param_diff = len(self.targets) - len(self.repair_param)
+        if repair_param_diff > 0:
+            self.repair_param += [(0,)] * repair_param_diff
+
+    def is_occ_law_failure_active(self, params):
+        return params[self.failure_param_name[0]].value() > 0
+
+    def is_occ_law_repair_active(self, params):
+        return params[self.repair_param_name[0]].value() > 0
+
+    def set_occ_law_failure(self, params):
+        raise NotImplementedError(
+            "ObjFMInst builds its draw transition directly in "
+            "_build_fm_automaton (inst law + probabilistic branching); "
+            "set_occ_law_failure has no meaning here."
+        )
+
+    def set_occ_law_repair(self, params):
+        # Repair stays exponential — never inst (ADR decision).
+        return {"cls": "exp", "rate": params[self.repair_param_name[0]]}
+
+    def get_failure_cond(self, target_comps, param, **kwrds):
+        parent_failure_cond_fun = super().get_failure_cond(target_comps)
+
+        def failure_cond_fun():
+            return (
+                param[self.failure_param_name[0]].bValue() and parent_failure_cond_fun()
+            )
+
+        return failure_cond_fun
+
+    def get_repair_cond(self, target_comps, param, **kwrds):
+        parent_repair_cond_fun = super().get_repair_cond(target_comps)
+
+        def repair_cond_fun():
+            return (
+                param[self.repair_param_name[0]].bValue() and parent_repair_cond_fun()
+            )
+
+        return repair_cond_fun
+
+    def _build_fm_automaton(
+        self,
+        aut_name,
+        repair_state_name,
+        failure_state_name,
+        failure_cond,
+        repair_cond,
+        failure_var_params,
+        repair_var_params,
+        failure_effects,
+        repair_effects,
+        repair_law,
+    ):
+        gamma_var = failure_var_params[self.failure_param_name[0]]
+        not_occ_state_name = f"not_{failure_state_name}"
+        # Transition names: the draw is named after the failure state
+        # (sequence-trace convention shared with ObjFMExp: NAME == ST on
+        # the failure branch); the repair after the repair state; the
+        # re-arm after the not_occ state (its source) since naming it
+        # "rep" would collide with the repair transition.
+        draw_name = failure_state_name
+        rearm_name = not_occ_state_name
+        repair_name = repair_state_name
+
+        aut = self.add_automaton(
+            name=aut_name,
+            states=[repair_state_name, failure_state_name, not_occ_state_name],
+            init_state=repair_state_name,
+            transitions=[
+                {
+                    "name": draw_name,
+                    "source": repair_state_name,
+                    # Model probs are display/serialization floats; the
+                    # backend law parameter is re-bound to the gamma
+                    # *variable* right after update_bkd (below) so that
+                    # runtime parameter overrides keep working, exactly
+                    # like ObjFMExp binds its law to the lambda variable.
+                    "target": [
+                        {
+                            "state": failure_state_name,
+                            "prob": float(gamma_var.value()),
+                        },
+                        # Complement branch (1 - gamma).
+                        {"state": not_occ_state_name},
+                    ],
+                },
+                {
+                    "name": rearm_name,
+                    "source": not_occ_state_name,
+                    "target": repair_state_name,
+                    # inst p=1 (single target): drains with priority over
+                    # timed transitions at the same instant — a same-date
+                    # fall-and-rise of the demand is re-armed and drawn
+                    # instead of being missed (delay(0) would go through
+                    # the timed queue where same-date ordering is
+                    # arbitrary and the guard could cancel the return).
+                    "occ_law": {"cls": "inst", "probs": [1]},
+                },
+                {
+                    "name": repair_name,
+                    "source": failure_state_name,
+                    "target": repair_state_name,
+                    "occ_law": repair_law,
+                },
+            ],
+        )
+
+        # Conditions (callables compiled by get_failure_cond/get_repair_cond).
+        aut.get_transition_by_name(draw_name)._bkd.setCondition(failure_cond)
+        aut.get_transition_by_name(repair_name)._bkd.setCondition(repair_cond)
+
+        def rearm_cond():
+            return not failure_cond()
+
+        aut.get_transition_by_name(rearm_name)._bkd.setCondition(rearm_cond)
+
+        # Re-bind the draw law's parameter to the gamma variable (the
+        # PycAutomaton path baked the float value in).
+        draw_bkd = aut.get_transition_by_name(draw_name)._bkd
+        draw_bkd.distLaw().setParameter(gamma_var, 0)
+
+        # State-entry effects (records format), mirroring add_aut2st.
+        self._wire_state_effects(
+            aut, failure_state_name, failure_effects, trans_name=draw_name
+        )
+        self._wire_state_effects(
+            aut, repair_state_name, repair_effects, trans_name=repair_name
+        )
+
+        # Sequence-monitoring masks: only the occ branch of the draw is
+        # recorded; the re-arm transition is fully silenced. Registered
+        # for re-application because ``CSystem.monitorTransition`` (run
+        # later, at study time) may reset per-transition masks.
+        rearm_bkd = aut.get_transition_by_name(rearm_name)._bkd
+        self._monitor_masks.append((draw_bkd, f"#{failure_state_name}$"))
+        self._monitor_masks.append((rearm_bkd, self._NEVER_MATCH_MASK))
+        self.reapply_monitor_masks()
+
+        return aut
+
+    def _wire_state_effects(self, aut, state_name, effects_records, trans_name):
+        """Register a state-entry sensitive method applying ``effects_records``.
+
+        Same pattern as ``add_aut2st``'s records branch — kept local
+        because ``add_aut2st`` is structurally two-state and cannot host
+        the 3-state automaton.
+        """
+        if not effects_records:
+            return
+        st_bkd = aut.get_state_by_name(state_name)._bkd
+
+        def sensitive_method():
+            if st_bkd.isActive():
+                for elt in effects_records:
+                    if elt["var"].value() != elt["value"]:
+                        elt["var"].setValue(elt["value"])
+
+        method_name = f"effect__{self.name()}_{aut.name}_{trans_name}"
+        aut._bkd.addSensitiveMethod(method_name, sensitive_method)
+        for elt in effects_records:
+            elt["var"].addSensitiveMethod(method_name, sensitive_method)
+        self.addStartMethod(method_name, sensitive_method)
+        if self.step:
+            self.step.addMethod(self, method_name)
+
+    def reapply_monitor_masks(self):
+        """(Re-)apply the out-state monitoring masks of this FM.
+
+        Called at construction, and again by the study runner *after*
+        ``monitorTransition`` patterns are applied — monitoring a
+        transition may reset its out-state mask, and the masks are what
+        keeps the success branch (``not_occ``) and the re-arm transition
+        out of the recorded sequences.
+        """
+        for trans_bkd, mask in self._monitor_masks:
+            trans_bkd.setMonitoredOutStateMask(mask)

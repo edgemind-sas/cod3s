@@ -9,7 +9,7 @@ from .automaton import (
 from .system import PycSystem, PycMCSimulationParam
 from .sequence import PycSequence, Sequence, SeqEvent, SequenceAnalyser
 
-from .component import PycComponent, ObjEvent, ObjFM, ObjFMDelay, ObjFMExp
+from .component import PycComponent, ObjEvent, ObjFM, ObjFMDelay, ObjFMExp, ObjFMInst
 from ..utils import remove_key_from_dict
 
 

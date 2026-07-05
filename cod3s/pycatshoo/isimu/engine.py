@@ -183,11 +183,22 @@ class ISimuEngine:
         pending, PyCATSHOO hides timed transitions from ``fireable``, so
         callers can safely treat a non-empty ``pending_inst`` as the *only*
         thing the user needs to resolve before time can advance.
+
+        **Deterministic (single-branch) inst transitions are excluded**:
+        an inst law with one target (e.g. the p=1 re-arm transition of
+        ``ObjFMInst``) offers no choice — PyCATSHOO "samples" it trivially
+        during the next ``stepForward`` drain. Surfacing it in the panel
+        would force the operator to submit a one-option pick at every
+        re-arm. Note ``PycTransition.from_bkd`` rebuilds *every* inst-law
+        transition with a list-typed target (even single-target ones), so
+        filtering on the branch count here is the only reliable test.
         """
         return [
             trans
             for trans in self.fireable()
-            if trans is not None and isinstance(trans.target, list)
+            if trans is not None
+            and isinstance(trans.target, list)
+            and len(trans.target) > 1
         ]
 
     def resolve_inst(self, choices: Dict[int, int]) -> FiredEvent:
@@ -214,9 +225,7 @@ class ISimuEngine:
         transitions to be sampled by PyCATSHOO's RNG.
         """
         for trans_id, state_index in choices.items():
-            self.system.isimu_set_transition(
-                trans_id=trans_id, state_index=state_index
-            )
+            self.system.isimu_set_transition(trans_id=trans_id, state_index=state_index)
         return self._step_and_capture()
 
     # ------------------------------------------------------------------
