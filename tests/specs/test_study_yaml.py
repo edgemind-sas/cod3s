@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pydantic
 import pytest
 import yaml
 from pathlib import Path
@@ -20,7 +21,6 @@ from cod3s.specs.study_yaml import (
     TargetSpec,
     STUDY_YAML_VERSION,
 )
-
 
 # ---------------------------------------------------------------------------
 # Failure mode specs
@@ -48,7 +48,9 @@ class TestObjFMExpSpec:
 
     def test_scalar_param_promoted_to_list(self):
         """Legacy YAML with scalar param must be coerced to a list."""
-        spec = ObjFMExpSpec(fm_name="m", targets=["C"], failure_param=1.5e-5, repair_param=0.2)
+        spec = ObjFMExpSpec(
+            fm_name="m", targets=["C"], failure_param=1.5e-5, repair_param=0.2
+        )
         assert spec.failure_param == [1.5e-5]
         assert spec.repair_param == [0.2]
 
@@ -68,7 +70,9 @@ class TestObjFMDelaySpec:
         assert spec.cls == "ObjFMDelay"
 
     def test_with_params(self):
-        spec = ObjFMDelaySpec(fm_name="m", targets=["C"], failure_param=[10.0], repair_param=[2.0])
+        spec = ObjFMDelaySpec(
+            fm_name="m", targets=["C"], failure_param=[10.0], repair_param=[2.0]
+        )
         assert spec.failure_param == [10.0]
         assert spec.repair_param == [2.0]
 
@@ -140,7 +144,12 @@ class TestLegacyOccLaw:
         study = StudyYaml(
             name="s",
             failure_modes=[
-                {"fm_name": "m", "targets": ["C"], "occ_law": "exp", "failure_param": 1e-5}
+                {
+                    "fm_name": "m",
+                    "targets": ["C"],
+                    "occ_law": "exp",
+                    "failure_param": 1e-5,
+                }
             ],
         )
         fm = study.failure_modes[0]
@@ -152,7 +161,12 @@ class TestLegacyOccLaw:
         study = StudyYaml(
             name="s",
             failure_modes=[
-                {"fm_name": "m", "targets": ["C"], "occ_law": "delay", "failure_param": 10.0}
+                {
+                    "fm_name": "m",
+                    "targets": ["C"],
+                    "occ_law": "delay",
+                    "failure_param": 10.0,
+                }
             ],
         )
         fm = study.failure_modes[0]
@@ -163,7 +177,12 @@ class TestLegacyOccLaw:
         study = StudyYaml(
             name="s",
             failure_modes=[
-                {"fm_name": "m", "targets": ["C"], "cls": "ObjFMExp", "occ_law": "delay"}
+                {
+                    "fm_name": "m",
+                    "targets": ["C"],
+                    "cls": "ObjFMExp",
+                    "occ_law": "delay",
+                }
             ],
         )
         # cls=ObjFMExp wins, occ_law is preserved as extra (rejected by ObjFMExpSpec)
@@ -206,7 +225,9 @@ class TestTargetSpec:
         assert spec.var is None
 
     def test_var_based(self):
-        spec = TargetSpec(name="t", var="C.attr.signal", var_type="VAR", operator="==", value=2)
+        spec = TargetSpec(
+            name="t", var="C.attr.signal", var_type="VAR", operator="==", value=2
+        )
         assert spec.var_type == "VAR"
 
 
@@ -349,3 +370,50 @@ class TestLoadFromExistingFixture:
         assert s.failure_modes[0].cls == "ObjFMDelay"
         assert s.failure_modes[0].fm_name == "df_H2O"
         assert s.failure_modes[0].failure_param == [1.0]  # scalar coerced
+
+
+class TestObjFMInstSpec:
+    """Wire-format contract of the on-demand failure mode spec."""
+
+    def test_defaults_and_scalar_coercion(self):
+        from cod3s.specs.study_yaml import ObjFMInstSpec
+
+        spec = ObjFMInstSpec(
+            fm_name="miss", targets=["C1"], failure_param=0.3, repair_param=0.1
+        )
+        assert spec.cls == "ObjFMInst"
+        assert spec.failure_param == [0.3]
+        assert spec.repair_param == [0.1]
+        # The solicitation is the inherited failure_cond — no extra field.
+        assert spec.failure_cond is True
+
+    def test_gamma_must_be_a_probability(self):
+        from cod3s.specs.study_yaml import ObjFMInstSpec
+
+        with pytest.raises(pydantic.ValidationError, match=r"\[0, 1\]"):
+            ObjFMInstSpec(fm_name="miss", targets=["C1"], failure_param=[1.5])
+
+    def test_union_discrimination(self):
+        from cod3s.specs.study_yaml import ObjFMInstSpec
+
+        study = StudyYaml.model_validate(
+            {
+                "name": "s",
+                "failure_modes": [
+                    {
+                        "cls": "ObjFMInst",
+                        "fm_name": "miss",
+                        "targets": ["C1"],
+                        "failure_param": [0.3, 0.2],
+                        "repair_param": [0.1, 0.1],
+                    }
+                ],
+            }
+        )
+        assert isinstance(study.failure_modes[0], ObjFMInstSpec)
+
+    def test_generic_spec_rejects_objfm_inst(self):
+        from cod3s.specs.study_yaml import ObjFMGenericSpec
+
+        with pytest.raises(pydantic.ValidationError, match="typed spec"):
+            ObjFMGenericSpec(cls="ObjFMInst", fm_name="miss", targets=["C1"])

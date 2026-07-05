@@ -214,7 +214,9 @@ def _apply_sequence_filtering(
     # ``extra="allow"`` exposes unknown keys via model_extra ; fall back
     # to attribute access for older Pydantic builds.
     extras = getattr(sim_cfg, "model_extra", None) or {}
-    filtering = extras.get("sequence_filtering") or getattr(sim_cfg, "sequence_filtering", None)
+    filtering = extras.get("sequence_filtering") or getattr(
+        sim_cfg, "sequence_filtering", None
+    )
     if not filtering:
         return
 
@@ -231,12 +233,16 @@ def _apply_sequence_filtering(
         analyser = Pyc.CAnalyser(system)
         analyser.keepFilteredSeq(True)
 
-        condition = filtering.get("condition_filter") if isinstance(filtering, dict) else getattr(filtering, "condition_filter", None)
+        condition = (
+            filtering.get("condition_filter")
+            if isinstance(filtering, dict)
+            else getattr(filtering, "condition_filter", None)
+        )
         if condition:
             cond = condition if isinstance(condition, dict) else condition.model_dump()
             try:
                 f = Pyc.IFilterFct.newConditionFilter(
-                    cond["variable_path"],   # → C++ arg `object`
+                    cond["variable_path"],  # → C++ arg `object`
                     float(cond["time"]),
                     cond["op"],
                     float(cond["val"]),
@@ -249,12 +255,18 @@ def _apply_sequence_filtering(
                         "Continuing without condition filter (raw sequences will be filtered by top% only)."
                     )
 
-        raw_pct = filtering.get("top_sequences_pct") if isinstance(filtering, dict) else getattr(filtering, "top_sequences_pct", None)
+        raw_pct = (
+            filtering.get("top_sequences_pct")
+            if isinstance(filtering, dict)
+            else getattr(filtering, "top_sequences_pct", None)
+        )
         pct = _clamp_top_pct(raw_pct)
         analyser.printFilteredSeq(pct, str(seq_path), "PySeq.xsl")
 
         if logger:
-            logger.info2(f"Sequence filtering applied (top_pct={pct}, condition={'yes' if condition else 'no'})")
+            logger.info2(
+                f"Sequence filtering applied (top_pct={pct}, condition={'yes' if condition else 'no'})"
+            )
 
         # Capture filtering effectiveness for downstream observability.
         try:
@@ -262,7 +274,9 @@ def _apply_sequence_filtering(
                 "total_sequences": int(analyser.totalSeqCount()),
                 "filtered_sequences": int(analyser.filteredSeqCount()),
             }
-            (results_path / "sequence_filtering_metrics.json").write_text(json.dumps(metrics))
+            (results_path / "sequence_filtering_metrics.json").write_text(
+                json.dumps(metrics)
+            )
         except AttributeError:
             # Older PyCATSHOO builds may not expose these counters ; skip.
             pass
@@ -293,13 +307,14 @@ def _populate_default_fm_registry() -> None:
     """
     if _FM_REGISTRY:
         return
-    from cod3s.pycatshoo.component import ObjFM, ObjFMDelay, ObjFMExp
+    from cod3s.pycatshoo.component import ObjFM, ObjFMDelay, ObjFMExp, ObjFMInst
 
     _FM_REGISTRY.update(
         {
             "ObjFM": ObjFM,
             "ObjFMExp": ObjFMExp,
             "ObjFMDelay": ObjFMDelay,
+            "ObjFMInst": ObjFMInst,
         }
     )
 
@@ -395,7 +410,9 @@ def add_events(system: Any, specs: list[EventSpec], *, logger: Any = None) -> in
     return sum(1 for s in specs if s.enabled)
 
 
-def add_indicators(system: Any, specs: list[IndicatorSpec], *, logger: Any = None) -> int:
+def add_indicators(
+    system: Any, specs: list[IndicatorSpec], *, logger: Any = None
+) -> int:
     """Wire indicators via ``system.add_indicators``."""
     payload = [spec.model_dump() for spec in specs]
     system.add_indicators(payload, logger=logger)
@@ -448,9 +465,7 @@ def _apply_component_attr_override(
     comp = system.comp.get(ov.component) if hasattr(system, "comp") else None
     if comp is None:
         if logger:
-            logger.warning(
-                f"override: component {ov.component!r} not found, skipping"
-            )
+            logger.warning(f"override: component {ov.component!r} not found, skipping")
         return
     try:
         if hasattr(comp, "set_attribute"):
@@ -464,9 +479,7 @@ def _apply_component_attr_override(
             )
     except Exception as e:
         if logger:
-            logger.error(
-                f"override: {ov.component}.{ov.attribute} failed: {e}"
-            )
+            logger.error(f"override: {ov.component}.{ov.attribute} failed: {e}")
 
 
 def _apply_failure_mode_param_override(
@@ -478,21 +491,15 @@ def _apply_failure_mode_param_override(
     fm = system.comp.get(ov.fm_name) if hasattr(system, "comp") else None
     if fm is None:
         if logger:
-            logger.warning(
-                f"override: failure mode {ov.fm_name!r} not found, skipping"
-            )
+            logger.warning(f"override: failure mode {ov.fm_name!r} not found, skipping")
         return
     try:
         setattr(fm, ov.field, ov.value)
         if logger:
-            logger.info3(
-                f"override: {ov.fm_name}.{ov.field} = {ov.value!r}"
-            )
+            logger.info3(f"override: {ov.fm_name}.{ov.field} = {ov.value!r}")
     except Exception as e:
         if logger:
-            logger.error(
-                f"override: {ov.fm_name}.{ov.field} failed: {e}"
-            )
+            logger.error(f"override: {ov.fm_name}.{ov.field} failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +539,9 @@ def write_results(
 
     for plot_spec in results.plot_indicators:
         try:
-            plot_kwargs = plot_spec.model_dump(exclude={"id", "output", "write_options"})
+            plot_kwargs = plot_spec.model_dump(
+                exclude={"id", "output", "write_options"}
+            )
             fig = system.indic_px_line(**plot_kwargs)
             for fmt in plot_spec.output:
                 fmt_lower = fmt.lower()
@@ -690,6 +699,15 @@ def run_study(
                 logger.info3(f"monitorTransition({pattern!r})")
             system.monitorTransition(pattern)
 
+        # ``monitorTransition`` may reset per-transition out-state masks.
+        # Components that rely on them (e.g. ObjFMInst masks its success
+        # branch and its re-arm transition out of the sequences) expose a
+        # ``reapply_monitor_masks`` hook — honour it after the patterns.
+        for comp in getattr(system, "comp", {}).values():
+            reapply = getattr(comp, "reapply_monitor_masks", None)
+            if callable(reapply):
+                reapply()
+
     # When at least one target is wired, ask PyCATSHOO to dump the
     # sequences (state trajectories that reached a target) as an XML
     # file alongside the run artefacts. Without this call the sequences
@@ -713,9 +731,7 @@ def run_study(
             logger.info2(f"Sequences XML will be written to: {seq_path}")
 
     if logger:
-        logger.info1(
-            f"Starting simulation [nb_runs={study_obj.simulation.nb_runs}]"
-        )
+        logger.info1(f"Starting simulation [nb_runs={study_obj.simulation.nb_runs}]")
     start = datetime.datetime.now()
     # Normalise the schedule for ``PycMCSimulationParam``: that runtime
     # accepts plain floats (single instant) or ``InstantLinearRange`` dicts
@@ -725,7 +741,11 @@ def run_study(
     sim_payload = study_obj.simulation.model_dump(exclude_none=True)
     if isinstance(sim_payload.get("schedule"), list):
         sim_payload["schedule"] = [
-            entry["instant"] if isinstance(entry, dict) and set(entry.keys()) == {"instant"} else entry
+            (
+                entry["instant"]
+                if isinstance(entry, dict) and set(entry.keys()) == {"instant"}
+                else entry
+            )
             for entry in sim_payload["schedule"]
         ]
 
