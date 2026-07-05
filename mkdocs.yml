@@ -53,6 +53,7 @@ nav:
     - Systems: user-guide/systems.md
     - Simulation: user-guide/simulation.md
     - Interactive Simulation: user-guide/interactive-simulation.md
+    - On-Demand Failure Modes (ObjFMInst): user-guide/objfm-inst.md
     - Indicators: user-guide/indicators.md
     - Sequence Analysis: user-guide/sequence-analysis.md
     - Interactive Sequence TUI (cod3s-seq): user-guide/cod3s-seq.md
