@@ -56,7 +56,11 @@ import pydantic
 #:
 #: Validators check ``major`` matches what they expect; minor/patch
 #: drift is tolerated.
-STUDY_YAML_VERSION = "1.0.0"
+#:
+#: - 1.0.1: added optional ``failure_effects_trans`` /
+#:   ``repair_effects_trans`` (trans-based one-shot effects) on
+#:   ``FailureModeBaseSpec`` — patch (optional fields defaulting to {}).
+STUDY_YAML_VERSION = "1.0.1"
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +107,15 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         default_factory=dict,
         description="Effects applied on the failure transition (var_name → value).",
     )
+    failure_effects_trans: dict[str, Any] = pydantic.Field(
+        default_factory=dict,
+        description=(
+            "Trans-based effects applied **once** at the instant the failure "
+            "transition fires (var_name → value), as opposed to the "
+            "state-clamped ``failure_effects``. Only supported with "
+            "behaviour='internal'. Empty by default."
+        ),
+    )
 
     repair_state: str = pydantic.Field(
         "rep", description="Repair state name in the automaton."
@@ -113,6 +126,14 @@ class FailureModeBaseSpec(pydantic.BaseModel):
     repair_effects: dict[str, Any] = pydantic.Field(
         default_factory=dict,
         description="Effects applied on the repair transition.",
+    )
+    repair_effects_trans: dict[str, Any] = pydantic.Field(
+        default_factory=dict,
+        description=(
+            "Trans-based effects applied **once** at the instant the repair "
+            "transition fires (var_name → value). Only supported with "
+            "behaviour='internal'. Empty by default."
+        ),
     )
 
     behaviour: Literal["internal", "external", "external_rep_indep"] = pydantic.Field(
