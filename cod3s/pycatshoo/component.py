@@ -1559,6 +1559,21 @@ class ObjFM(PycComponent):
                 else:
                     objfm_repair_law = self.set_occ_law_repair(repair_var_params_cur)
 
+                # Only forward the trans-effect kwargs when non-empty, so a
+                # third-party ObjFM subclass that overrides _build_fm_automaton
+                # with the pre-feature signature keeps working as long as it
+                # never opts into trans effects (it would otherwise raise
+                # TypeError on unexpected kwargs). With the CCF guard in
+                # _validate_trans_effects_supported these lists are non-empty
+                # only for single-target internal FMs.
+                trans_kwargs = (
+                    {
+                        "failure_effects_trans": failure_effects_trans_cur,
+                        "repair_effects_trans": repair_effects_trans_cur,
+                    }
+                    if (failure_effects_trans_cur or repair_effects_trans_cur)
+                    else {}
+                )
                 aut = self._build_fm_automaton(
                     aut_name=aut_name_cur,
                     repair_state_name=repair_state_name_cur,
@@ -1570,8 +1585,7 @@ class ObjFM(PycComponent):
                     failure_effects=failure_effects_cur,
                     repair_effects=repair_effects_cur,
                     repair_law=objfm_repair_law,
-                    failure_effects_trans=failure_effects_trans_cur,
-                    repair_effects_trans=repair_effects_trans_cur,
+                    **trans_kwargs,
                 )
 
                 # Record impacting automata for centralized control
@@ -1777,13 +1791,30 @@ class ObjFM(PycComponent):
                 f"effects on the target automata, where a transition-edge "
                 f"callback would be lost."
             )
+        if len(self.targets) > 1:
+            raise ValueError(
+                f"Trans-based effects (failure_effects_trans / "
+                f"repair_effects_trans) are not supported with CCF order > 1 "
+                f"(len(targets)={len(self.targets)}) for FM {self.fm_name!r} "
+                f"(persistent-gate both-pulse desync across combinations): "
+                f"the 2^N-1 combination automata share each target's "
+                f"persistent gate, so one combination's CLEAR on rep would "
+                f"reset the gate while another combination is still in occ "
+                f"on the same target — deferred (needs a cross-automaton "
+                f"guard with its own MC-symmetry phase)."
+            )
 
     def _resolve_target_effects(
         self,
         target_comp,
         target_name,
         effects,
-        kind: typing.Literal["failure_effects", "repair_effects"],
+        kind: typing.Literal[
+            "failure_effects",
+            "repair_effects",
+            "failure_effects_trans",
+            "repair_effects_trans",
+        ],
     ):
         """Resolve a user-supplied ``effects`` dict against a target component.
 
@@ -2320,12 +2351,11 @@ class ObjFMInst(ObjFM):
         failure_effects,
         repair_effects,
         repair_law,
-        failure_effects_trans=None,
-        repair_effects_trans=None,
     ):
-        # Trans-based effects are rejected upfront for ObjFMInst
-        # (_validate_trans_effects_supported), so these params are always
-        # empty here; accepted only to match the base call signature.
+        # No trans-effect kwargs here: trans-based effects are rejected
+        # upfront for ObjFMInst (_validate_trans_effects_supported), so the
+        # shared call-site never forwards them (pre-feature signature kept,
+        # which also exercises the subclass-compat path of that call-site).
         gamma_var = failure_var_params[self.failure_param_name[0]]
         not_occ_state_name = f"not_{failure_state_name}"
         # Transition names: the draw is named after the failure state
