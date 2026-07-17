@@ -1194,11 +1194,13 @@ class ObjFM(PycComponent):
         failure_state="occ",
         failure_cond=True,
         failure_effects=None,
+        failure_effects_trans=None,
         failure_param_name=None,
         failure_param=None,
         repair_state="rep",
         repair_cond=True,
         repair_effects=None,
+        repair_effects_trans=None,
         repair_param_name=None,
         repair_param=None,
         param_name_order_prefix="__{order}_o_{order_max}",
@@ -1216,12 +1218,16 @@ class ObjFM(PycComponent):
             targets = []
         if failure_effects is None:
             failure_effects = {}
+        if failure_effects_trans is None:
+            failure_effects_trans = {}
         if failure_param_name is None:
             failure_param_name = []
         if failure_param is None:
             failure_param = []
         if repair_effects is None:
             repair_effects = {}
+        if repair_effects_trans is None:
+            repair_effects_trans = {}
         if repair_param_name is None:
             repair_param_name = []
         if repair_param is None:
@@ -1274,6 +1280,13 @@ class ObjFM(PycComponent):
         self.var_params = {}
         self.failure_effects = copy.deepcopy(failure_effects)
         self.repair_effects = copy.deepcopy(repair_effects)
+        # Trans-based effects (mode="trans_based"): applied once at the
+        # instant the occ / rep transition fires, via a transition-edge
+        # sensitive method (see ``_wire_transition_effects``), unlike the
+        # state-clamped ``failure_effects`` / ``repair_effects``.
+        self.failure_effects_trans = copy.deepcopy(failure_effects_trans)
+        self.repair_effects_trans = copy.deepcopy(repair_effects_trans)
+        self._validate_trans_effects_supported()
         self.failure_param_name = (
             [failure_param_name]
             if isinstance(failure_param_name, str)
@@ -1385,6 +1398,13 @@ class ObjFM(PycComponent):
                 # external_rep_indep: trigger model — ObjFM.occ sets ctrl=True
                 #   directly on the transition; ObjFM.rep does NOT touch ctrl
                 #   (target owns the reset on its own repair transition).
+                # Trans-based effects (``failure_effects_trans`` /
+                # ``repair_effects_trans``) are internal-only — they are
+                # rejected upfront for the external behaviours by
+                # ``_validate_trans_effects_supported`` so these lists stay
+                # empty there.
+                failure_effects_trans_cur = []
+                repair_effects_trans_cur = []
                 if self.behaviour == "external":
                     failure_effects_cur = []
                     repair_effects_cur = []
@@ -1426,6 +1446,24 @@ class ObjFM(PycComponent):
                                     f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
                                 )
                             repair_effects_cur.append({"var": comp_var, "value": value})
+
+                    # Trans-based effects, resolved the same way (var_name →
+                    # target variable). Wired on the occ / rep transition edge
+                    # rather than the state (see ``_wire_transition_effects``).
+                    for target_idx in target_set_idx:
+                        comp_cur = self.system().component(self.targets[target_idx])
+                        failure_effects_trans_cur += self._resolve_target_effects(
+                            comp_cur,
+                            self.targets[target_idx],
+                            self.failure_effects_trans,
+                            kind="failure_effects_trans",
+                        )
+                        repair_effects_trans_cur += self._resolve_target_effects(
+                            comp_cur,
+                            self.targets[target_idx],
+                            self.repair_effects_trans,
+                            kind="repair_effects_trans",
+                        )
 
                 failure_state_name_cur = self.failure_state
                 repair_state_name_cur = self.repair_state
@@ -1532,6 +1570,8 @@ class ObjFM(PycComponent):
                     failure_effects=failure_effects_cur,
                     repair_effects=repair_effects_cur,
                     repair_law=objfm_repair_law,
+                    failure_effects_trans=failure_effects_trans_cur,
+                    repair_effects_trans=repair_effects_trans_cur,
                 )
 
                 # Record impacting automata for centralized control
@@ -1620,6 +1660,8 @@ class ObjFM(PycComponent):
         failure_effects,
         repair_effects,
         repair_law,
+        failure_effects_trans=None,
+        repair_effects_trans=None,
     ):
         """Build the automaton for one cc-combination of this failure mode.
 
@@ -1636,8 +1678,16 @@ class ObjFM(PycComponent):
         must return the built :class:`PycAutomaton` (already registered
         in ``self.automata_d``) whose ``failure_state_name`` state is
         queryable by name — the external behaviours rely on it.
+
+        ``failure_effects_trans`` / ``repair_effects_trans`` (records
+        format) are trans-based (mode="trans_based") effects wired on the
+        occ / rep transition edge — fired once per crossing — instead of
+        clamped on the state. ``add_aut2st`` names the failure transition
+        after the failure state (``trans_name_12_fmt="{st2}"``) and the
+        repair transition after the repair state (``trans_name_21_fmt=
+        "{st1}"``), so those two names are the wiring targets below.
         """
-        return self.add_aut2st(
+        aut = self.add_aut2st(
             name=aut_name,
             st1=repair_state_name,
             st2=failure_state_name,
@@ -1656,6 +1706,77 @@ class ObjFM(PycComponent):
             effects_st1_format="records",
             step=self.step,
         )
+        # Trans-based effects: one-shot edge callbacks (no-op when empty).
+        self._wire_transition_effects(
+            aut,
+            failure_state_name,
+            failure_effects_trans,
+            target_state=failure_state_name,
+        )
+        self._wire_transition_effects(aut, repair_state_name, repair_effects_trans)
+        return aut
+
+    def _wire_transition_effects(
+        self, aut, trans_name, effects_records, target_state=None
+    ):
+        """Register a transition-edge sensitive method applying ``effects_records``
+        once, at the instant ``trans_name`` fires (mode="trans_based").
+
+        Unlike ``add_aut2st``'s state-effect wiring (a level clamp
+        re-applied while the target state is active), this fires exactly
+        once per firing — ``ITransition.addSensitiveMethod`` is a true edge
+        callback (verified: once per firing, post-transition, re-armable).
+        Registered ONLY on the transition: no re-apply on every fixpoint
+        pass, no firing at t=0, no standing value (no write-war). A pulse
+        only "sticks" on a persistent gate (muscadet ``fed_available_reset=
+        False``), written by pulses only on both set and clear sides
+        (both-pulse).
+
+        ``target_state`` guards multi-branch transitions (e.g. an
+        ObjFMInst Bernoulli draw: failure vs not_occ) so the pulse fires
+        only on the branch that landed there. For single-target occ/rep —
+        including every CCF combination transition — the occ side passes
+        its own failure state (harmless: it is always active post-firing)
+        and the rep side passes ``None``.
+        """
+        if not effects_records:
+            return
+        trans_bkd = aut.get_transition_by_name(trans_name)._bkd
+        st_bkd = aut.get_state_by_name(target_state)._bkd if target_state else None
+
+        def sensitive_method():
+            if st_bkd is not None and not st_bkd.isActive():
+                return
+            for elt in effects_records:
+                if elt["var"].value() != elt["value"]:
+                    elt["var"].setValue(elt["value"])
+
+        trans_bkd.addSensitiveMethod(
+            f"effect_trans__{self.name()}_{aut.name}_{trans_name}", sensitive_method
+        )
+
+    def _validate_trans_effects_supported(self):
+        """Reject trans-based effects on behaviours that cannot host a
+        one-shot edge callback correctly (MVP: only ``internal``).
+
+        ``external`` / ``external_rep_indep`` wire their effects on the
+        *target* automata (or centralised ``ctrl_vars``), where an edge
+        callback registered on the ObjFM's own occ / rep transition would
+        be lost. ``ObjFMInst`` overrides this to also reject: its draw
+        transition wires branch effects through a start method that would
+        fire the one-shot effect at t=0.
+        """
+        if not (self.failure_effects_trans or self.repair_effects_trans):
+            return
+        if self.behaviour != "internal":
+            raise ValueError(
+                f"Trans-based effects (failure_effects_trans / "
+                f"repair_effects_trans) are only supported with "
+                f"behaviour='internal' for FM {self.fm_name!r}, got "
+                f"behaviour={self.behaviour!r}. External behaviours wire "
+                f"effects on the target automata, where a transition-edge "
+                f"callback would be lost."
+            )
 
     def _resolve_target_effects(
         self,
@@ -2169,6 +2290,24 @@ class ObjFMInst(ObjFM):
 
         return repair_cond_fun
 
+    def _validate_trans_effects_supported(self):
+        """Reject trans-based effects for ObjFMInst (on-demand law).
+
+        The inst draw transition wires its branch effects through a start
+        method (fires at t=0), so a one-shot trans-based effect has no
+        correct home here (MVP). Overrides ``ObjFM`` to reject regardless
+        of ``behaviour``.
+        """
+        if self.failure_effects_trans or self.repair_effects_trans:
+            raise ValueError(
+                f"Trans-based effects (failure_effects_trans / "
+                f"repair_effects_trans) are not supported for ObjFMInst "
+                f"(on-demand law) for FM {self.fm_name!r}. The inst draw "
+                f"transition wires its branch effects with a start method "
+                f"that would fire the one-shot effect at t=0. Use "
+                f"behaviour='internal' with an exp/delay law."
+            )
+
     def _build_fm_automaton(
         self,
         aut_name,
@@ -2181,7 +2320,12 @@ class ObjFMInst(ObjFM):
         failure_effects,
         repair_effects,
         repair_law,
+        failure_effects_trans=None,
+        repair_effects_trans=None,
     ):
+        # Trans-based effects are rejected upfront for ObjFMInst
+        # (_validate_trans_effects_supported), so these params are always
+        # empty here; accepted only to match the base call signature.
         gamma_var = failure_var_params[self.failure_param_name[0]]
         not_occ_state_name = f"not_{failure_state_name}"
         # Transition names: the draw is named after the failure state
