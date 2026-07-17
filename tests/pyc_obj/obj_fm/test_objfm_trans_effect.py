@@ -199,17 +199,20 @@ def test_trans_effect_coexists_with_state_effect():
     assert working == [1.0, 0.0, 1.0]
 
 
-def test_spec_without_trans_effects_byte_identical():
-    """An ObjFM with empty/absent trans dicts is inert (non-regression).
+def test_empty_trans_effects_no_wiring():
+    """Empty/absent trans dicts wire nothing (inert).
 
-    Two identical ObjFMExp built with a shared seed produce byte-identical
+    This case is partly tautological on its own (empty records → the
+    ``if not effects_records: return`` early-out fires on both sides); the
+    real byte-identity non-regression is carried by the whole existing
+    ObjFM suite passing unchanged. Kept here as an explicit, cheap guard:
+    two identical ObjFMExp built with a shared seed produce byte-identical
     MC results whether the (empty) trans dicts are passed or omitted, and
-    the built automaton keeps the same occ/rep two-state structure —
-    passing ``failure_effects_trans = {}`` / ``repair_effects_trans = {}``
-    wires nothing. (Full ``describe()`` equality is not asserted: the occ
-    law binds a backend variable object whose repr carries a per-build
-    memory address, so it differs across separate ``PycSystem`` builds
-    regardless of this feature.)
+    the built automaton keeps the same occ/rep two-state structure.
+    (Full ``describe()`` equality is not asserted: the occ law binds a
+    backend variable object whose repr carries a per-build memory address,
+    so it differs across separate ``PycSystem`` builds regardless of this
+    feature.)
     """
     sim = dict(nb_runs=200, schedule=[0, 25, 75, 150], seed=98765)
 
@@ -335,3 +338,104 @@ def test_trans_effect_rejected_in_external_behaviour():
             repair_param=0.1,
             failure_effects_trans={"gate": True},
         )
+
+
+def test_trans_effect_rejected_with_ccf():
+    """Behaviour matrix (A3): trans effects rejected under CCF (order > 1).
+
+    With 2+ targets the 2^N-1 combination automata share each target's
+    persistent gate; one combination's CLEAR (rep) would reset the gate
+    while another is still in occ on the same target (both-pulse desync).
+    Rejected as a deferred concern rather than wired wrongly. A single
+    target (order 1, the rail case) is unaffected — every other test in
+    this module builds single-target FMs with trans effects and passes.
+    """
+    system = PycSystem(name="SysTransCcf")
+    system.add_component(name="C1", cls="GateComp")
+    system.add_component(name="C2", cls="GateComp")
+
+    with pytest.raises(ValueError, match="CCF order"):
+        system.add_component(
+            cls="ObjFMExp",
+            fm_name="fccf",
+            targets=["C1", "C2"],
+            failure_param=[0.1, 0.05],
+            repair_param=[0.2, 0.1],
+            failure_effects_trans={"gate": True},
+        )
+
+    with pytest.raises(ValueError, match="CCF order"):
+        system.add_component(
+            cls="ObjFMDelay",
+            fm_name="fccf_delay",
+            targets=["C1", "C2"],
+            failure_param=[10, 20],
+            repair_param=[5, 5],
+            repair_effects_trans={"gate": False},
+        )
+
+
+def test_trans_effect_single_target_passes_ccf_guard():
+    """The rail case (order_max == 1) is not caught by the CCF guard.
+
+    Explicit companion to ``test_trans_effect_rejected_with_ccf``: a
+    single-target internal FM with trans effects builds and wires the
+    pulse end-to-end.
+    """
+    system = PycSystem(name="SysTransSingle")
+    system.add_component(name="C1", cls="GateComp")
+    objfm = system.add_component(
+        cls="ObjFMDelay",
+        fm_name="frun",
+        targets=["C1"],  # order_max == 1
+        failure_param=10,
+        repair_param=5,
+        failure_effects_trans={"gate": True},
+        repair_effects_trans={"gate": False},
+    )
+    assert len(objfm.targets) == 1
+    gate_ind = system.add_indicator_var(
+        component="C1", var="gate", stats=["mean"], name="gate"
+    )[0]
+    system.simulate(PycMCSimulationParam(nb_runs=1, schedule=[0, 12], seed=1))
+    _, gate = _series(gate_ind)
+    assert gate == [0.0, 1.0]
+
+
+def test_spec_roundtrip_preserves_trans_effects():
+    """study_runner plumbing: spec → model_dump(exclude=...) → ObjFM keeps
+    the trans fields.
+
+    Locks the exact call made by ``study_runner._add_failure_modes``
+    (``spec.model_dump(exclude={"cls", "enabled"})`` then
+    ``fm_cls(**kwargs)``). A future widened ``exclude=`` that dropped the
+    trans fields would silently strip the effect — this test fails loudly.
+    """
+    from cod3s.pycatshoo.component import ObjFMDelay
+    from cod3s.specs.study_yaml import ObjFMDelaySpec
+
+    spec = ObjFMDelaySpec(
+        fm_name="frun",
+        targets=["C1"],
+        failure_param=10,
+        repair_param=5,
+        failure_effects_trans={"gate": True},
+        repair_effects_trans={"gate": False},
+    )
+    kwargs = spec.model_dump(exclude={"cls", "enabled"})
+    assert kwargs["failure_effects_trans"] == {"gate": True}
+    assert kwargs["repair_effects_trans"] == {"gate": False}
+
+    system = PycSystem(name="SysSpecRoundtrip")
+    system.add_component(name="C1", cls="GateComp")
+    objfm = ObjFMDelay(**kwargs)  # mirrors study_runner's fm_cls(**kwargs)
+    assert objfm.failure_effects_trans == {"gate": True}
+    assert objfm.repair_effects_trans == {"gate": False}
+
+    # End-to-end: the pulse is actually wired through the spec path.
+    gate_ind = system.add_indicator_var(
+        component="C1", var="gate", stats=["mean"], name="gate"
+    )[0]
+    system.simulate(PycMCSimulationParam(nb_runs=1, schedule=[0, 12], seed=1))
+    _, gate = _series(gate_ind)
+    assert gate == [0.0, 1.0]
