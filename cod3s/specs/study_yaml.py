@@ -112,8 +112,10 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         description=(
             "Trans-based effects applied **once** at the instant the failure "
             "transition fires (var_name → value), as opposed to the "
-            "state-clamped ``failure_effects``. Only supported with "
-            "behaviour='internal'. Empty by default."
+            "state-clamped ``failure_effects``. Supported with "
+            "behaviour='internal' and behaviour='external' (order 1); rejected "
+            "for behaviour='external_rep_indep', CCF (order > 1), and ObjFMInst "
+            "('inst' occurrence law). Empty by default."
         ),
     )
 
@@ -131,8 +133,10 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         default_factory=dict,
         description=(
             "Trans-based effects applied **once** at the instant the repair "
-            "transition fires (var_name → value). Only supported with "
-            "behaviour='internal'. Empty by default."
+            "transition fires (var_name → value). Supported with "
+            "behaviour='internal' and behaviour='external' (order 1); rejected "
+            "for behaviour='external_rep_indep', CCF (order > 1), and ObjFMInst "
+            "('inst' occurrence law). Empty by default."
         ),
     )
 
