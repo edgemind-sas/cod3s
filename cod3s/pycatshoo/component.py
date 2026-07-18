@@ -1805,6 +1805,13 @@ class ObjFM(PycComponent):
 
         Rejected:
 
+        - Same variable driven by BOTH a level (state) effect and a
+          trans-based (pulse) effect: the maintained level clamp re-applies
+          on every fixpoint pass while the source state is active and silently
+          overwrites the one-shot pulse (in external the target's state clamp
+          is still active at the ObjFM rep instant, so a CLEAR pulse is lost
+          and the gate stays stuck). Checked first, for BOTH behaviours, so
+          internal and external share one semantics.
         - ``external_rep_indep``: trigger model whose repair is an
           instantaneous ``delay(0)`` with independent target self-repair, so
           it has no symmetric occ / rep edge pair to carry a both-pulse.
@@ -1818,6 +1825,23 @@ class ObjFM(PycComponent):
         """
         if not (self.failure_effects_trans or self.repair_effects_trans):
             return
+        # A level clamp and a one-shot pulse on the SAME variable conflict: the
+        # clamp wins (re-applied every fixpoint pass while its state is active)
+        # and the pulse is silently overwritten. This produces a divergent,
+        # undiagnosed result between internal and external, so reject it upfront
+        # for every behaviour rather than let it slip through.
+        level_vars = set(self.failure_effects) | set(self.repair_effects)
+        trans_vars = set(self.failure_effects_trans) | set(self.repair_effects_trans)
+        overlap = level_vars & trans_vars
+        if overlap:
+            raise ValueError(
+                f"FM {self.fm_name!r}: variables {sorted(overlap)} are driven by "
+                f"BOTH state-based (failure_effects/repair_effects) and "
+                f"trans-based (failure_effects_trans/repair_effects_trans) "
+                f"effects. A level clamp and a one-shot pulse on the same "
+                f"variable conflict (the pulse is silently overwritten). Use "
+                f"distinct variables."
+            )
         if self.behaviour not in ("internal", "external"):
             raise ValueError(
                 f"Trans-based effects (failure_effects_trans / "

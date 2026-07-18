@@ -587,3 +587,84 @@ def test_trans_effect_external_ccf_still_rejected():
             repair_param=[0.2, 0.1],
             failure_effects_trans={"gate": True},
         )
+
+
+def test_trans_effect_level_pulse_same_var_rejected():
+    """Same variable driven by a level effect AND a trans pulse → ValueError.
+
+    A maintained level clamp re-applies on every fixpoint pass while its state
+    is active and silently overwrites the one-shot pulse on the same variable.
+    In external this bit hardest (the target's state clamp is still active at
+    the ObjFM rep instant, so a CLEAR pulse was lost and the gate stuck True
+    forever) but the declaration is contradictory in internal too, so it is
+    rejected upfront for BOTH behaviours with an explicit message.
+    """
+    system = PycSystem(name="SysLevelPulseClash")
+    system.add_component(name="C1", cls="GateComp")
+
+    # internal: failure level + failure pulse on the same variable.
+    with pytest.raises(ValueError, match="silently overwritten"):
+        system.add_component(
+            cls="ObjFMExp",
+            fm_name="fint",
+            targets=["C1"],
+            failure_param=0.1,
+            repair_param=0.1,
+            failure_effects={"working": False},
+            failure_effects_trans={"working": True},
+        )
+
+    # external: repair level + repair pulse on the same variable (also caught,
+    # the check is not conditioned on the effect side nor on the behaviour).
+    with pytest.raises(ValueError, match="silently overwritten"):
+        system.add_component(
+            cls="ObjFMExp",
+            fm_name="fext",
+            targets=["C1"],
+            behaviour="external",
+            failure_param=0.1,
+            repair_param=0.1,
+            repair_effects={"working": True},
+            repair_effects_trans={"working": False},
+        )
+
+
+def test_trans_effect_external_level_and_pulse_distinct_vars():
+    """External: level clamp and pulse on DISTINCT variables coexist cleanly.
+
+    Realistic muscadet usage: the target's ``working`` is level-clamped False
+    while failed (auto-restored on repair, reinitialised) and its persistent
+    ``gate`` receives the both-pulse. Distinct variables, so the intersection
+    guard does NOT fire (no false positive) and both effects apply.
+    ObjFMDelay(ttf=10, ttr=5) → occ at 10 / 25, rep at 15; sampled failed
+    (12), repaired (17), failed (27).
+    """
+    system = PycSystem(name="SysExtDistinct")
+    system.add_component(name="C1", cls="GateComp")
+    system.add_component(
+        cls="ObjFMDelay",
+        fm_name="frun",
+        targets=["C1"],
+        behaviour="external",
+        failure_param=10,  # ttf
+        repair_param=5,  # ttr
+        failure_effects={"working": False},  # level clamp on the target
+        failure_effects_trans={"gate": True},  # pulse SET on the target gate
+        repair_effects_trans={"gate": False},  # pulse CLEAR on the target gate
+    )
+
+    gate_ind = system.add_indicator_var(
+        component="C1", var="gate", stats=["mean"], name="gate"
+    )[0]
+    work_ind = system.add_indicator_var(
+        component="C1", var="working", stats=["mean"], name="work"
+    )[0]
+
+    system.simulate(PycMCSimulationParam(nb_runs=1, schedule=[0, 12, 17, 27], seed=7))
+
+    _, gate = _series(gate_ind)
+    _, working = _series(work_ind)
+    # both-pulse gate SET on occ (12, 27) / CLEAR on rep (17); level clamp
+    # mirrors it on working (auto-restored on repair) — distinct, no clash.
+    assert gate == [0.0, 1.0, 0.0, 1.0]
+    assert working == [1.0, 0.0, 1.0, 0.0]
