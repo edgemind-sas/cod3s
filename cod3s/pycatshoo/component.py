@@ -1411,27 +1411,6 @@ class ObjFM(PycComponent):
                 if self.behaviour == "external":
                     failure_effects_cur = []
                     repair_effects_cur = []
-                    # Trans-based (one-shot edge) effects: resolve the same way
-                    # as internal (var_name -> target variable). Wired on the
-                    # ObjFM occ / rep transition by ``_wire_transition_effects``;
-                    # the pulse writes the TARGET's persistent gate, coexisting
-                    # with the level ctrl_var (both-pulse inter-component).
-                    # Empty dicts resolve to [] (inert), so this is a no-op when
-                    # no trans effects are declared.
-                    for target_idx in target_set_idx:
-                        comp_cur = self.system().component(self.targets[target_idx])
-                        failure_effects_trans_cur += self._resolve_target_effects(
-                            comp_cur,
-                            self.targets[target_idx],
-                            self.failure_effects_trans,
-                            kind="failure_effects_trans",
-                        )
-                        repair_effects_trans_cur += self._resolve_target_effects(
-                            comp_cur,
-                            self.targets[target_idx],
-                            self.repair_effects_trans,
-                            kind="repair_effects_trans",
-                        )
                 elif self.behaviour == "external_rep_indep":
                     failure_effects_cur = [
                         {"var": self.ctrl_vars[self.targets[idx]], "value": True}
@@ -1471,23 +1450,30 @@ class ObjFM(PycComponent):
                                 )
                             repair_effects_cur.append({"var": comp_var, "value": value})
 
-                    # Trans-based effects, resolved the same way (var_name →
-                    # target variable). Wired on the occ / rep transition edge
-                    # rather than the state (see ``_wire_transition_effects``).
-                    for target_idx in target_set_idx:
-                        comp_cur = self.system().component(self.targets[target_idx])
-                        failure_effects_trans_cur += self._resolve_target_effects(
-                            comp_cur,
-                            self.targets[target_idx],
-                            self.failure_effects_trans,
-                            kind="failure_effects_trans",
-                        )
-                        repair_effects_trans_cur += self._resolve_target_effects(
-                            comp_cur,
-                            self.targets[target_idx],
-                            self.repair_effects_trans,
-                            kind="repair_effects_trans",
-                        )
+                # Trans-based (one-shot edge) effects: resolved IDENTICALLY for
+                # internal and external (var_name -> target variable), wired on
+                # the ObjFM occ / rep transition edge by
+                # ``_wire_transition_effects`` rather than on the state. For
+                # external the pulse writes the TARGET's persistent gate,
+                # coexisting with the level ctrl_var (both-pulse inter-component).
+                # Hoisted out of the behaviour branches (was duplicated in the
+                # internal and external branches). external_rep_indep keeps the
+                # trans dicts empty via ``_validate_trans_effects_supported``, so
+                # this loop is an inert no-op there (empty dicts resolve to []).
+                for target_idx in target_set_idx:
+                    comp_cur = self.system().component(self.targets[target_idx])
+                    failure_effects_trans_cur += self._resolve_target_effects(
+                        comp_cur,
+                        self.targets[target_idx],
+                        self.failure_effects_trans,
+                        kind="failure_effects_trans",
+                    )
+                    repair_effects_trans_cur += self._resolve_target_effects(
+                        comp_cur,
+                        self.targets[target_idx],
+                        self.repair_effects_trans,
+                        kind="repair_effects_trans",
+                    )
 
                 failure_state_name_cur = self.failure_state
                 repair_state_name_cur = self.repair_state
