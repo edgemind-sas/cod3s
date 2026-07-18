@@ -1393,21 +1393,45 @@ class ObjFM(PycComponent):
             for target_set_idx in itertools.combinations(range(order_max), order):
 
                 # Prepare effects based on behaviour.
-                # external: centralized management via the sensitive method below;
-                #   ObjFM transitions carry no direct effects on ctrl_vars.
-                # external_rep_indep: trigger model — ObjFM.occ sets ctrl=True
-                #   directly on the transition; ObjFM.rep does NOT touch ctrl
-                #   (target owns the reset on its own repair transition).
-                # Trans-based effects (``failure_effects_trans`` /
-                # ``repair_effects_trans``) are internal-only — they are
-                # rejected upfront for the external behaviours by
-                # ``_validate_trans_effects_supported`` so these lists stay
-                # empty there.
+                # external: level (state) effects on the target are handled by
+                #   the centralized ctrl_var sensitive method below (ObjFM
+                #   transitions carry no direct level effects on ctrl_vars);
+                #   trans-based one-shot effects DO apply, wired on the ObjFM's
+                #   OWN occ / rep transition and writing the target's persistent
+                #   gate once per crossing (both-pulse inter-component), resolved
+                #   against the targets exactly like the internal branch.
+                # external_rep_indep: trigger model (ObjFM.occ sets ctrl=True
+                #   directly on the transition; ObjFM.rep does NOT touch ctrl,
+                #   the target owns the reset on its own repair transition).
+                #   Trans-based effects are rejected upfront for it (and for
+                #   CCF / ObjFMInst) by ``_validate_trans_effects_supported``,
+                #   so those lists stay empty in the paths that never opt in.
                 failure_effects_trans_cur = []
                 repair_effects_trans_cur = []
                 if self.behaviour == "external":
                     failure_effects_cur = []
                     repair_effects_cur = []
+                    # Trans-based (one-shot edge) effects: resolve the same way
+                    # as internal (var_name -> target variable). Wired on the
+                    # ObjFM occ / rep transition by ``_wire_transition_effects``;
+                    # the pulse writes the TARGET's persistent gate, coexisting
+                    # with the level ctrl_var (both-pulse inter-component).
+                    # Empty dicts resolve to [] (inert), so this is a no-op when
+                    # no trans effects are declared.
+                    for target_idx in target_set_idx:
+                        comp_cur = self.system().component(self.targets[target_idx])
+                        failure_effects_trans_cur += self._resolve_target_effects(
+                            comp_cur,
+                            self.targets[target_idx],
+                            self.failure_effects_trans,
+                            kind="failure_effects_trans",
+                        )
+                        repair_effects_trans_cur += self._resolve_target_effects(
+                            comp_cur,
+                            self.targets[target_idx],
+                            self.repair_effects_trans,
+                            kind="repair_effects_trans",
+                        )
                 elif self.behaviour == "external_rep_indep":
                     failure_effects_cur = [
                         {"var": self.ctrl_vars[self.targets[idx]], "value": True}
@@ -1565,7 +1589,7 @@ class ObjFM(PycComponent):
                 # never opts into trans effects (it would otherwise raise
                 # TypeError on unexpected kwargs). With the CCF guard in
                 # _validate_trans_effects_supported these lists are non-empty
-                # only for single-target internal FMs.
+                # only for single-target internal or external FMs.
                 trans_kwargs = (
                     {
                         "failure_effects_trans": failure_effects_trans_cur,
@@ -1771,25 +1795,39 @@ class ObjFM(PycComponent):
 
     def _validate_trans_effects_supported(self):
         """Reject trans-based effects on behaviours that cannot host a
-        one-shot edge callback correctly (MVP: only ``internal``).
+        one-shot edge callback correctly.
 
-        ``external`` / ``external_rep_indep`` wire their effects on the
-        *target* automata (or centralised ``ctrl_vars``), where an edge
-        callback registered on the ObjFM's own occ / rep transition would
-        be lost. ``ObjFMInst`` overrides this to also reject: its draw
-        transition wires branch effects through a start method that would
-        fire the one-shot effect at t=0.
+        Supported: ``internal`` (edge callback on the FM's own occ / rep
+        transition, target == carrier) and ``external`` (same edge callback,
+        but writing the *target* component's persistent gate once per crossing,
+        a both-pulse inter-component effect; the level effect stays with the
+        centralised ``ctrl_vars`` sensitive method).
+
+        Rejected:
+
+        - ``external_rep_indep``: trigger model whose repair is an
+          instantaneous ``delay(0)`` with independent target self-repair, so
+          it has no symmetric occ / rep edge pair to carry a both-pulse.
+        - CCF (``len(targets) > 1``): the 2^N-1 combination automata share
+          each target's persistent gate, so one combination's CLEAR on rep
+          would reset the gate while another is still in occ on the same
+          target (both-pulse desync across combinations).
+        - ``ObjFMInst`` (overridden below): its draw transition wires branch
+          effects through a start method that would fire the one-shot effect
+          at t=0.
         """
         if not (self.failure_effects_trans or self.repair_effects_trans):
             return
-        if self.behaviour != "internal":
+        if self.behaviour not in ("internal", "external"):
             raise ValueError(
                 f"Trans-based effects (failure_effects_trans / "
                 f"repair_effects_trans) are only supported with "
-                f"behaviour='internal' for FM {self.fm_name!r}, got "
-                f"behaviour={self.behaviour!r}. External behaviours wire "
-                f"effects on the target automata, where a transition-edge "
-                f"callback would be lost."
+                f"behaviour='internal' or behaviour='external' for FM "
+                f"{self.fm_name!r}, got behaviour={self.behaviour!r}. "
+                f"behaviour='external_rep_indep' is a trigger model whose "
+                f"repair is an instantaneous delay(0) with independent target "
+                f"self-repair, so it has no symmetric occ/rep edge pair to "
+                f"carry a both-pulse one-shot effect."
             )
         if len(self.targets) > 1:
             raise ValueError(
