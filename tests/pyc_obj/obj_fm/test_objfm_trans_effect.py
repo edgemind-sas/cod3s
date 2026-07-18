@@ -298,25 +298,16 @@ def test_trans_effect_multi_target_guard():
     assert gate2 == [0.0, 0.0]  # guard skipped the pulse
 
 
-def test_trans_effect_rejected_in_external_behaviour():
-    """Behaviour matrix (A3): trans effects rejected outside internal law.
+def test_trans_effect_rejected_in_unsupported_behaviour():
+    """Behaviour matrix: trans effects supported on internal + external only.
 
-    ``external`` / ``external_rep_indep`` and ``ObjFMInst`` cannot host a
-    one-shot occ/rep edge callback correctly → explicit ValueError (MVP).
+    ``external_rep_indep`` (trigger model, delay(0) repair) and ``ObjFMInst``
+    (on-demand draw) cannot host a symmetric one-shot occ/rep edge callback
+    correctly → explicit ValueError. ``external`` is now supported (see
+    ``test_trans_effect_external_*``).
     """
     system = PycSystem(name="SysTransReject")
     system.add_component(name="C1", cls="GateComp")
-
-    with pytest.raises(ValueError, match="internal"):
-        system.add_component(
-            cls="ObjFMExp",
-            fm_name="fext",
-            targets=["C1"],
-            behaviour="external",
-            failure_param=0.1,
-            repair_param=0.1,
-            failure_effects_trans={"gate": True},
-        )
 
     with pytest.raises(ValueError, match="internal"):
         system.add_component(
@@ -439,3 +430,160 @@ def test_spec_roundtrip_preserves_trans_effects():
     system.simulate(PycMCSimulationParam(nb_runs=1, schedule=[0, 12], seed=1))
     _, gate = _series(gate_ind)
     assert gate == [0.0, 1.0]
+
+
+def test_trans_effect_external_both_pulse_mc():
+    """MC both-pulse in ``behaviour='external'``: the pulse crosses components.
+
+    An external ObjFM carries its occ / rep transitions on its OWN carrier
+    component (``C1__frun``); the trans-based pulse, wired on those edges,
+    writes the TARGET (``C1``) persistent gate once per crossing. This is the
+    inter-component both-pulse: SET on the ObjFM occ, CLEAR on the ObjFM rep,
+    the level failure of the target being driven independently by the
+    centralised ``ctrl_vars`` sensitive method.
+
+    exp λ=0.1 μ=0.2 → P(occ) steady = λ/(λ+μ) = 0.333. Over 5000 sequences,
+    mean(gate on the target) must track the ObjFM occ-state probability at
+    every instant, with no hang (write-war) and no MC leak (gate@t0 == 0).
+    """
+    system = PycSystem(name="SysExtBothPulse")
+    system.add_component(name="C1", cls="GateComp")
+    system.add_component(
+        cls="ObjFMExp",
+        fm_name="frun",
+        targets=["C1"],
+        behaviour="external",
+        failure_param=0.1,
+        repair_param=0.2,
+        failure_effects_trans={"gate": True},  # SET on ObjFM occ → target gate
+        repair_effects_trans={"gate": False},  # CLEAR on ObjFM rep → target gate
+    )
+
+    # ObjFM occ state lives on the carrier component C1__frun.
+    occ_ind = system.add_indicator_state(
+        component="C1__frun", state="occ", stats=["mean"], name="occ"
+    )[0]
+    # The gate lives on the TARGET component C1.
+    gate_ind = system.add_indicator_var(
+        component="C1", var="gate", stats=["mean"], name="gate"
+    )[0]
+
+    t0 = time.time()
+    system.simulate(
+        PycMCSimulationParam(nb_runs=5000, schedule=[0, 50, 100, 200], seed=12345)
+    )
+    elapsed = time.time() - t0
+
+    instants, p_occ = _series(occ_ind)
+    _, gate = _series(gate_ind)
+
+    # no-hang: an opposite-level maintained write-war would loop stepForward.
+    assert elapsed < 30.0, f"simulate took {elapsed:.1f}s (possible write-war hang)"
+    # no-leak MC: persistent gate reset between sequences.
+    assert gate[0] == pytest.approx(0.0, abs=0.005)
+    # both-pulse tracking of the ObjFM occ probability at every observed t>0.
+    for i in range(1, len(instants)):
+        assert gate[i] == pytest.approx(p_occ[i], abs=0.02)
+    # sanity: steady-state around the analytic 0.333.
+    assert p_occ[-1] == pytest.approx(1 / 3, abs=0.03)
+
+
+def test_trans_effect_external_edge_semantics():
+    """Deterministic external edge: one pulse per crossing, on the TARGET.
+
+    ObjFMDelay(ttf=10, ttr=5), behaviour='external'. The ObjFM occ crosses at
+    10 / 25 / 40 and rep at 15 / 30 (target repair is a delay(0) follow so the
+    ObjFM cycle drives the timing). The pulse is wired on the ObjFM's own occ /
+    rep transition and writes the TARGET gate — the carrier component carries
+    no ``gate`` variable at all, proving the write crosses to the target.
+    """
+    system = PycSystem(name="SysExtEdge")
+    system.add_component(name="C1", cls="GateComp")
+    objfm = system.add_component(
+        cls="ObjFMDelay",
+        fm_name="frun",
+        targets=["C1"],
+        behaviour="external",
+        failure_param=10,  # ttf
+        repair_param=5,  # ttr
+        failure_effects_trans={"gate": True},
+        repair_effects_trans={"gate": False},
+    )
+
+    # The pulse writes the target, not the carrier: the carrier has no `gate`.
+    carrier_vars = {v.basename() for v in objfm.variables()}
+    assert "gate" not in carrier_vars
+    assert "gate" in {v.basename() for v in system.comp["C1"].variables()}
+
+    aut = objfm.automata_d["frun"]
+    occ_calls, rep_calls = [], []
+    aut.get_transition_by_name("occ")._bkd.addSensitiveMethod(
+        "spy_occ", lambda: occ_calls.append(round(system.currentTime(), 3))
+    )
+    aut.get_transition_by_name("rep")._bkd.addSensitiveMethod(
+        "spy_rep", lambda: rep_calls.append(round(system.currentTime(), 3))
+    )
+
+    gate_ind = system.add_indicator_var(
+        component="C1", var="gate", stats=["mean"], name="gate"
+    )[0]
+
+    system.simulate(
+        PycMCSimulationParam(nb_runs=1, schedule=[0, 12, 17, 27, 42], seed=42)
+    )
+
+    # Edge semantics: one call per crossing, at the deterministic instants.
+    assert occ_calls == [10.0, 25.0, 40.0]
+    assert rep_calls == [15.0, 30.0]
+
+    instants, gate = _series(gate_ind)
+    assert instants == [0.0, 12.0, 17.0, 27.0, 42.0]
+    # SET at occ (12, 27, 42 failed), CLEAR at rep (17 repaired), 0 at start.
+    assert gate == [0.0, 1.0, 0.0, 1.0, 1.0]
+
+
+def test_trans_effect_external_rep_indep_still_rejected():
+    """``external_rep_indep`` + trans effects → ValueError (clear message).
+
+    The trigger model repairs instantly via delay(0) with independent target
+    self-repair, so there is no symmetric occ / rep edge pair to carry a
+    both-pulse one-shot effect — rejected with an explicit message naming the
+    behaviour.
+    """
+    system = PycSystem(name="SysExtRepIndepReject")
+    system.add_component(name="C1", cls="GateComp")
+
+    with pytest.raises(ValueError, match="external_rep_indep"):
+        system.add_component(
+            cls="ObjFMExp",
+            fm_name="frepindep",
+            targets=["C1"],
+            behaviour="external_rep_indep",
+            failure_param=0.1,
+            repair_param=0.1,
+            failure_effects_trans={"gate": True},
+        )
+
+
+def test_trans_effect_external_ccf_still_rejected():
+    """``external`` + CCF (2 targets) + trans effects → ValueError.
+
+    Even though single-target external is now supported, CCF stays rejected:
+    the 2^N-1 combination automata share each target's persistent gate, so
+    one combination's CLEAR on rep would reset a gate another combination is
+    still holding in occ (both-pulse desync across combinations).
+    """
+    system = PycSystem(name="SysExtCcfReject")
+    system.add_component(name="C1", cls="GateComp")
+    system.add_component(name="C2", cls="GateComp")
+
+    with pytest.raises(ValueError, match="CCF order"):
+        system.add_component(
+            cls="ObjFMExp",
+            fm_name="fccf",
+            targets=["C1", "C2"],
+            behaviour="external",
+            failure_param=[0.1, 0.05],
+            repair_param=[0.2, 0.1],
+            failure_effects_trans={"gate": True},
+        )
