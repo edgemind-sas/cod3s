@@ -96,9 +96,11 @@ each target by default).
 active (self-healing). When the state is left, the clamp simply stops:
 on a bare variable nothing rewrites the value (it keeps the clamped
 value in a continuous Monte-Carlo run, and falls back to its init value
-after an isimu replay). Model an explicit release with
-`rep_effects_trans` (one-shot pulse on the repair edge) or use a
-recomputed (flow) variable.
+after an isimu replay). A release pulse on the **same** variable is
+rejected at construction (clamp/pulse overlap): derive the observable
+from `<fm_name>_level`, or use a recomputed (flow) variable whose
+fixpoint computation provides the release. `occ/rep_effects_trans`
+pulses are for **distinct** notification variables (persistent gates).
 
 **Interruptibility.** Transitions are interruptible (ObjFM default): a
 `delay` progression whose guard drops and comes back **restarts from
@@ -160,6 +162,21 @@ Parameters are exposed as carrier variables for runtime overrides:
 `lambda_<state1>__<k>_o_<N>` (per CC order; bare `lambda_<state1>` for a
 single target), then `lambda_/ttf_<state>` per progression and
 `mu_/ttr_<state>` per repair.
+
+!!! warning "Overrides and deactivated CC orders"
+    With `drop_inactive_automata` (default `true`), a CC order declared
+    with rate `0` builds **no combination automaton**: overriding its
+    `lambda_<state1>__<k>_o_<N>` variable at runtime is then a silent
+    no-op. For sensitivity studies over initially-zero orders, set
+    `drop_inactive_automata: false` in the spec.
+
+!!! warning "Sequence filtering (known limitation)"
+    `filter_objfm_in_sequences` / the `SequenceAnalyser` auto-discovery
+    only collapse `ObjFM` occ/rep cycles: `ObjDegMode` degradation and
+    repair transients are **not** collapsed yet. A repairable mode under
+    wildcard monitoring will inflate the sequence set with reversible
+    transients — restrict `monitor_patterns`, or post-process, until the
+    multi-state cycle filter lands (downstream chantier).
 
 ## Full example
 

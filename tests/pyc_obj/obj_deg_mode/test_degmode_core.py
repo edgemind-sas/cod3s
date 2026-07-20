@@ -87,8 +87,9 @@ class TestProgressionAndRepair:
         # clamp stops maintaining the variable; nothing rewrites it. Under
         # isimu (replay from t0 at every step) a reinitialized bare variable
         # therefore falls back to its INIT value; in a continuous MC run it
-        # would keep the last clamped value. Model an explicit release with
-        # rep_effects_trans or a recomputed (muscadet-flow) variable.
+        # would keep the last clamped value. Derive observables from the
+        # level variable or a recomputed (muscadet-flow) variable (a
+        # same-variable release pulse is rejected by the overlap check).
         assert r1.broken.value() is False
         system.isimu_stop()
 

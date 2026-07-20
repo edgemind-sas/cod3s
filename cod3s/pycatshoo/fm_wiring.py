@@ -154,6 +154,15 @@ class FmWiringMixin:
         the automaton AND on each written variable AND as a start method
         (self-healing clamp: a value overwritten elsewhere, or reset by an
         isimu replay, is re-clamped as long as the state is active).
+
+        ``trans_name`` must be unique across every ``_wire_state_effects``
+        call of the host component: PyCATSHOO keys start/step
+        registrations by name per element, so a duplicated name silently
+        replaces the previous clamp.
+
+        The host must define ``self.step`` (``None`` allowed) before
+        wiring — a missing attribute raises instead of silently skipping
+        the top-step registration.
         """
         if not effects_records:
             return
@@ -170,6 +179,12 @@ class FmWiringMixin:
         for elt in effects_records:
             elt["var"].addSensitiveMethod(method_name, sensitive_method)
         self.addStartMethod(method_name, sensitive_method)
-        step = getattr(self, "step", None)
+        try:
+            step = self.step
+        except AttributeError:
+            raise TypeError(
+                f"{type(self).__name__} must define self.step (None allowed) "
+                f"before wiring state effects (FmWiringMixin host contract)."
+            ) from None
         if step:
             step.addMethod(self, method_name)

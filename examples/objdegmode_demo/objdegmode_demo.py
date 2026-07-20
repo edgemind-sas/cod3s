@@ -10,9 +10,11 @@ states ``O -> X1 -> X2`` (X2 absorbing except repair):
 * every repair jumps straight back to the healthy state (full renewal);
 * each rail exposes ``Fissure_level`` (0..3) for indicators.
 
-Conventions: the observed variable is declared ``setReinitialized(True)``
-and the healthy state carries no effects (state effects only on degraded
-states).
+Observability goes through the maintained level variable
+``Fissure_level`` (0..3): a binary service state derived from it belongs
+to a recomputed (flow) variable in a full model — a bare clamped boolean
+would keep its value after repair (documented clamp semantics), so the
+demo does not model one.
 
 Launch
 ------
@@ -37,20 +39,16 @@ Expected sequence events (grammar)
 
 from __future__ import annotations
 
-import Pycatshoo as Pyc
-
 import cod3s
 from cod3s import DegState, ObjDegMode
 from cod3s.pycatshoo.system import PycMCSimulationParam, PycSystem
 
 
 class Rail(cod3s.PycComponent):
-    """A rail with a boolean service flag clamped by the degradation."""
+    """A rail; its degradation is observed through ``Fissure_level``."""
 
     def __init__(self, name: str, **kwargs) -> None:
         super().__init__(name, **kwargs)
-        self.in_service = self.addVariable("in_service", Pyc.TVarType.t_bool, True)
-        self.in_service.setReinitialized(True)
 
 
 def build_system() -> PycSystem:
@@ -72,14 +70,12 @@ def build_system() -> PycSystem:
             DegState(
                 "X1",
                 occ_law={"cls": "exp", "rate": 0.08},
-                effects={"in_service": False},
                 rep_law={"cls": "exp", "rate": 0.2},
             ),
             DegState(
                 "X2",
                 # Deterministic ageing to the broken state.
                 occ_law={"cls": "delay", "time": 20.0},
-                effects={"in_service": False},
                 rep_law={"cls": "delay", "time": 10.0},
             ),
         ],

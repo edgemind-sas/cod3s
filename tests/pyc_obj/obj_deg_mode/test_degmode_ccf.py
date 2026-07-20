@@ -184,7 +184,7 @@ class TestCcfSemantics:
 
 @pytest.mark.slow
 class TestCcfMonteCarloSymmetry:
-    def test_order2_symmetry_and_target_occupation(self):
+    def test_order2_symmetry_and_target_occupation(self, tmp_path):
         """With only order 2 active on N=3, the three pair combos must
         fire with equal frequencies, and the three targets must show the
         same degradation occupation (any asymmetry beyond a few sigma =
@@ -209,8 +209,7 @@ class TestCcfMonteCarloSymmetry:
                 component=tn, var="Fissure_level", stats=["mean"], name=f"lv{i}"
             )
 
-        seq_path = Path("/tmp/cod3s-debug/degmode-ccf-mc.xml")
-        seq_path.parent.mkdir(parents=True, exist_ok=True)
+        seq_path = tmp_path / "degmode-ccf-mc.xml"
         system.monitorTransition("#.*occ_O.*")
         # Re-apply masks after monitorTransition (study-runner contract).
         for comp in [system.component("RX__Fissure")]:

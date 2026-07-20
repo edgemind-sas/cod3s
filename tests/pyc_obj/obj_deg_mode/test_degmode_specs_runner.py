@@ -137,7 +137,7 @@ class TestEventGrammarContract:
     a byte-level golden sequences.xml: seeds/timings/ordering churn must
     not break the lock, only NAME grammar changes may)."""
 
-    def test_event_name_set_on_seeded_run(self):
+    def test_event_name_set_on_seeded_run(self, tmp_path):
         system = fresh_system("DegWire5")
         Rail("R1"), Rail("R2")
         ObjDegMode = cod3s.ObjDegMode
@@ -157,8 +157,7 @@ class TestEventGrammarContract:
                 ),
             ],
         )
-        seq_path = Path("/tmp/cod3s-debug/degmode-grammar.xml")
-        seq_path.parent.mkdir(parents=True, exist_ok=True)
+        seq_path = tmp_path / "degmode-grammar.xml"
         system.monitorTransition("#.*")
         system.component("RX__Fissure").reapply_monitor_masks()
         system.setResultFileName(str(seq_path), False)

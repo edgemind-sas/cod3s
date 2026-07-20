@@ -611,6 +611,29 @@ class ObjDegMode(FmWiringMixin, PycComponent):
         order_max = len(self.targets)
         self.carrier_automata = []
 
+        # One compiled guard per TARGET (healthy AND global occ_cond AND
+        # first-state local cond), shared by every combination the target
+        # belongs to (2^(N-1) combos otherwise recompile the same trees).
+        per_target_guard = {}
+        for tn, comp in target_comps.items():
+            per_target_guard[tn] = _and_conds(
+                self._make_healthy_cond(comp),
+                compile_condition(
+                    self.occ_cond,
+                    comp,
+                    self.system(),
+                    inner_logic=self.cond_inner_logic,
+                    outer_logic=self.cond_outer_logic,
+                ),
+                compile_condition(
+                    first.occ_cond,
+                    comp,
+                    self.system(),
+                    inner_logic=self.cond_inner_logic,
+                    outer_logic=self.cond_outer_logic,
+                ),
+            )
+
         for order in range(1, order_max + 1):
             lambda_var = self.lambda_vars_by_order[order - 1]
             if self.drop_inactive_automata and lambda_var.value() == 0:
@@ -649,35 +672,15 @@ class ObjDegMode(FmWiringMixin, PycComponent):
                 )
 
                 combo_targets = [self.targets[i] for i in target_set_idx]
-                combo_comps = [target_comps[tn] for tn in combo_targets]
 
                 # Guard: all combo targets healthy AND global occ_cond AND
                 # first-state local occ_cond — everything evaluated HERE,
                 # once, at fire time (the target edge only tests ctrl).
-                healthy_conds = []
-                for comp in combo_comps:
-                    healthy_conds.append(self._make_healthy_cond(comp))
-                global_conds = [
-                    compile_condition(
-                        self.occ_cond,
-                        comp,
-                        self.system(),
-                        inner_logic=self.cond_inner_logic,
-                        outer_logic=self.cond_outer_logic,
-                    )
-                    for comp in combo_comps
-                ] + [
-                    compile_condition(
-                        first.occ_cond,
-                        comp,
-                        self.system(),
-                        inner_logic=self.cond_inner_logic,
-                        outer_logic=self.cond_outer_logic,
-                    )
-                    for comp in combo_comps
-                ]
+                # Closures compiled once per TARGET (not per combination:
+                # a target belongs to 2^(N-1) combos) via per_target_guard.
+                combo_conds = [per_target_guard[tn] for tn in combo_targets]
                 fire_bkd = aut.get_transition_by_name(fire_name)._bkd
-                fire_bkd.setCondition(_and_conds(*healthy_conds, *global_conds))
+                fire_bkd.setCondition(_and_conds(*combo_conds))
 
                 # Re-bind the exp law to the per-order lambda variable.
                 fire_bkd.distLaw().setParameter(lambda_var, 0)
@@ -871,7 +874,12 @@ class ObjDegMode(FmWiringMixin, PycComponent):
                     aut,
                     prefixed(st.name),
                     records,
-                    trans_name=f"{self.fm_name}__occ_{st.name}",
+                    # The target name MUST be part of the wiring name: the
+                    # start/step registrations land on the shared carrier
+                    # component and PyCATSHOO keys them by name — without
+                    # the discriminator every target but the last would
+                    # silently lose its self-healing clamp (review finding).
+                    trans_name=f"{self.fm_name}__occ_{st.name}__{tn}",
                 )
             if st.occ_effects_trans:
                 records = self._resolve_target_effects(

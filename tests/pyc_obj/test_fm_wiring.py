@@ -82,6 +82,8 @@ class WiringHost(FmWiringMixin, cod3s.PycComponent):
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
+        # FmWiringMixin host contract: self.step must exist (None allowed).
+        self.step = None
         self.gate = self.addVariable("gate", Pyc.TVarType.t_bool, False)
         self.gate.setReinitialized(True)
         self.level = self.addVariable("level", Pyc.TVarType.t_int, 0)
