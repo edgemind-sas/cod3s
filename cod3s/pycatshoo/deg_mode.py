@@ -88,6 +88,18 @@ class DegLawExp(pydantic.BaseModel):
         ),
     )
 
+    @pydantic.field_validator("rate")
+    @classmethod
+    def _rate_non_negative(cls, v):
+        rates = v if isinstance(v, list) else [v]
+        for r in rates:
+            if r < 0:
+                raise ValueError(
+                    f"exp law rate must be >= 0, got {r} (sign mistake in the "
+                    f"lambda/mu configuration?)"
+                )
+        return v
+
 
 class DegLawDelay(pydantic.BaseModel):
     """Deterministic delay occurrence law."""
@@ -173,11 +185,16 @@ def compile_condition(cond, target_comp, system, inner_logic=all, outer_logic=an
     * ``bool`` — constant;
     * callable — used as-is (Python API only, not wire-serialisable);
     * structured tree (list of lists of ``{"attr", "value", "ope",
-      "obj"?}`` dicts) — outer level ORed (``outer_logic``), inner level
-      ANDed (``inner_logic``), attributes resolved on ``target_comp`` by
-      default.
+      "obj"?}`` dicts, or a bare dict normalised by
+      ``sanitize_cond_format``) — outer level ORed (``outer_logic``),
+      inner level ANDed (``inner_logic``), attributes resolved on
+      ``target_comp`` by default.
+
+    Any other shape (notably the string condition names announced by the
+    ObjFM wire type but never resolved by the runner) raises: a
+    silently-true condition would let the model build and simulate wrong.
     """
-    if isinstance(cond, list):
+    if isinstance(cond, (list, dict)):
         tree = prepare_attr_tree(
             sanitize_cond_format(cond), obj_default=target_comp, system=system
         )
@@ -199,7 +216,14 @@ def compile_condition(cond, target_comp, system, inner_logic=all, outer_logic=an
     if callable(cond):
         return cond
 
-    return (lambda: True) if cond else (lambda: False)
+    if isinstance(cond, bool):
+        return (lambda: True) if cond else (lambda: False)
+
+    raise ValueError(
+        f"Unsupported condition shape {type(cond).__name__}: {cond!r}. "
+        f"Expected bool, callable (Python API only) or a structured "
+        f"condition tree."
+    )
 
 
 def _and_conds(*conds):
@@ -427,6 +451,15 @@ class ObjDegMode(FmWiringMixin, PycComponent):
                 f"while its state is active silently overwrites a one-shot "
                 f"pulse. Use distinct variables."
             )
+        # The internally maintained level variable is off-limits to user
+        # effects (write-war with the internal level clamps).
+        internal_level_name = f"{fm_name}_level"
+        if internal_level_name in (clamp_vars | pulse_vars):
+            raise ValueError(
+                f"ObjDegMode {fm_name!r}: {internal_level_name!r} is the "
+                f"internally maintained level variable; it cannot be driven "
+                f"by user effects."
+            )
 
         self.fm_name = fm_name
         self.targets = targets
@@ -476,6 +509,33 @@ class ObjDegMode(FmWiringMixin, PycComponent):
                     f"same name?)."
                 )
             target_comps[tn] = comp
+
+        # ---- dry-run resolution: ALL effects and conditions of ALL
+        # states against ALL targets, BEFORE creating any variable or
+        # automaton. A typo present on one target only would otherwise
+        # raise after part of the mode is wired; on the study-yaml path
+        # the runner swallows the error and the simulation would run
+        # with a half-built mode, silently. ----
+        for tn, comp in target_comps.items():
+            compile_condition(self.occ_cond, comp, self.system())
+            for st in self.states:
+                self._resolve_target_effects(
+                    comp, tn, st.effects, kind=f"effects[{st.name}]"
+                )
+                self._resolve_target_effects(
+                    comp,
+                    tn,
+                    st.occ_effects_trans,
+                    kind=f"occ_effects_trans[{st.name}]",
+                )
+                self._resolve_target_effects(
+                    comp,
+                    tn,
+                    st.rep_effects_trans,
+                    kind=f"rep_effects_trans[{st.name}]",
+                )
+                compile_condition(st.occ_cond, comp, self.system())
+                compile_condition(st.rep_cond, comp, self.system())
 
         # ---- ctrl latches + per-target level variables ----
         self.ctrl_vars = {}
@@ -642,15 +702,20 @@ class ObjDegMode(FmWiringMixin, PycComponent):
         (this mode's) is in the healthy state."""
         aut_name = self.fm_name
         healthy_full = f"{self.fm_name}__{self.healthy_state}"
+        cache = {}
 
         def cond():
-            aut = comp.automata_d.get(aut_name)
-            if aut is None:
-                # Target automata are built after the carrier: during
-                # construction this guard is never evaluated (no
-                # simulation yet), so a defensive False keeps semantics.
-                return False
-            return aut.get_state_by_name(healthy_full)._bkd.isActive()
+            bkd = cache.get("bkd")
+            if bkd is None:
+                aut = comp.automata_d.get(aut_name)
+                if aut is None:
+                    # Target automata are built after the carrier: during
+                    # construction this guard is never evaluated (no
+                    # simulation yet), so a defensive False keeps semantics.
+                    return False
+                bkd = aut.get_state_by_name(healthy_full)._bkd
+                cache["bkd"] = bkd
+            return bkd.isActive()
 
         return cond
 

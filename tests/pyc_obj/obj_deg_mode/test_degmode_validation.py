@@ -255,3 +255,73 @@ class TestMutableDefaultIsolation:
         assert dm1.states[0] is not dm2.states[0]
         dm1.states[0].effects["extra"] = 1
         assert "extra" not in dm2.states[0].effects
+
+
+class TestSilentFailureHardening:
+    """Review follow-ups: shapes that would previously build a model
+    that simulates wrong must now fail at construction."""
+
+    def test_string_condition_rejected(self, system):
+        # The ObjFM wire type announces `str` conditions but the runner
+        # never resolves them: silently-true is forbidden here.
+        with pytest.raises(ValueError, match="condition shape"):
+            make(system, "v60", occ_cond="some_callable_name")
+
+    def test_bare_dict_condition_accepted(self, system):
+        # sanitize_cond_format normalises a bare dict to [[dict]].
+        dm = make(system, "v61", occ_cond={"attr": "broken", "value": False})
+        assert dm.occ_cond == {"attr": "broken", "value": False}
+
+    def test_negative_rate_rejected(self, system):
+        with pytest.raises(Exception, match=">= 0"):
+            make(
+                system,
+                "v62",
+                states=[DegState("O", occ_law={"cls": "exp", "rate": -0.1})],
+            )
+
+    def test_negative_rate_in_vector_rejected(self, system):
+        with pytest.raises(Exception, match=">= 0"):
+            make(
+                system,
+                "v63",
+                targets=["R1", "R2"],
+                states=[DegState("O", occ_law={"cls": "exp", "rate": [0.1, -0.2]})],
+            )
+
+    def test_level_variable_off_limits_to_user_effects(self, system):
+        with pytest.raises(ValueError, match="level variable"):
+            make(
+                system,
+                "v64",
+                states=[DegState("O", occ_law=EXP, effects={"v64_level": 3})],
+            )
+
+    def test_effect_typo_on_second_target_fails_before_any_build(self, system):
+        # R2 lacks the variable: the dry-run must raise BEFORE anything
+        # is wired (no half-built mode on the swallowing runner path).
+        class Special(cod3s.PycComponent):
+            def __init__(self, name, **kwargs):
+                super().__init__(name, **kwargs)
+                self.only_here = self.addVariable(
+                    "only_here", Pyc.TVarType.t_bool, False
+                )
+
+        Special("S1")
+        with pytest.raises(ValueError, match="only_here"):
+            make(
+                system,
+                "v65",
+                targets=["S1", "R2"],
+                states=[
+                    DegState(
+                        "O",
+                        occ_law={"cls": "exp", "rate": [0.1, 0.0]},
+                        effects={"only_here": True},
+                    )
+                ],
+            )
+        # Nothing was built on either side: no level var, no automaton.
+        r2 = system.component("R2")
+        assert "v65_level" not in [v.basename() for v in r2.variables()]
+        assert "v65" not in [a.basename() for a in r2.automata()]
