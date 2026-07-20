@@ -83,13 +83,25 @@ class TestStatesValidation:
 
 
 class TestLawValidation:
-    def test_first_state_delay_law_rejected(self, system):
-        with pytest.raises(ValueError, match="exponential"):
+    def test_first_state_delay_law_rejected_for_multi_target(self, system):
+        # Behaviour change (ObjFMDelay parity): a delay entry is legal for
+        # a single target (one combination, no same-date tie possible) and
+        # still rejected for N >= 2.
+        with pytest.raises(ValueError, match="single target"):
             make(
                 system,
                 "v10",
+                targets=["R1", "R2"],
                 states=[DegState("O", occ_law={"cls": "delay", "time": 5})],
             )
+
+    def test_first_state_delay_law_accepted_for_single_target(self, system):
+        dm = make(
+            system,
+            "v10b",
+            states=[DegState("O", occ_law={"cls": "delay", "time": 5})],
+        )
+        assert "ttf_O" in {v.basename() for v in dm.variables()}
 
     def test_lambda_vector_wrong_length_rejected(self, system):
         with pytest.raises(ValueError, match="length"):

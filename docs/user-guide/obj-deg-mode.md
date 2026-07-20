@@ -54,11 +54,14 @@ ObjDegMode(
 
 Key rules (enforced at construction, fail-fast):
 
-* the **first state's entry law is exponential only**. Deterministic
-  delays are rejected there: two combinations eligible at the exact
-  same date both fire in one PyCATSHOO batch without guard
-  re-evaluation, so the common-cause entry relies on same-date ties
-  having probability zero (true for exp, false for delay). Deeper
+* the **first state's entry law is exponential for multi-target
+  modes**. Deterministic delays are rejected there: two combinations
+  eligible at the exact same date both fire in one PyCATSHOO batch
+  without guard re-evaluation, so the common-cause entry relies on
+  same-date ties having probability zero (true for exp, false for
+  delay). With a **single target** (one combination, no possible tie) a
+  `delay` entry is allowed — `ObjDegMode` then represents `ObjFMDelay`
+  in `external_rep_indep` exactly (parameter `ttf_<state1>`). Deeper
   progressions and repairs accept `exp` or `delay`;
 * a `lambda_k` list must have **exactly one rate per common-cause
   order** (`len == len(targets)`); a scalar means "order 1 only". Use
@@ -94,9 +97,10 @@ each target by default).
 
 **Effects.** `effects` are level clamps re-applied while the state is
 active (self-healing). When the state is left, the clamp simply stops:
-on a bare variable nothing rewrites the value (it keeps the clamped
-value in a continuous Monte-Carlo run, and falls back to its init value
-after an isimu replay). A release pulse on the **same** variable is
+a variable declared `setReinitialized(True)` then falls back to its
+initial value (observed in isimu and in Monte-Carlo indicator
+sampling), while a non-reinitialized variable (persistent gate) keeps
+the last written value. A release pulse on the **same** variable is
 rejected at construction (clamp/pulse overlap): derive the observable
 from `<fm_name>_level`, or use a recomputed (flow) variable whose
 fixpoint computation provides the release. `occ/rep_effects_trans`

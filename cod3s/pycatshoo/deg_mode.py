@@ -21,12 +21,15 @@ degradation chain ``healthy -> D1 -> ... -> Dn``:
   combination guard; re-testing it on the target edge would strand
   latches when a co-target's D1 effects flip the condition within the
   same fixpoint pass);
-* the first-state entry law is exponential ONLY. Two distinct
-  combinations eligible at the exact same date both fire in the same
-  PyCATSHOO batch without guard re-evaluation between them (spike
-  2026-07-20), so correctness relies on same-date ties having measure
-  zero — true for exp, false for delay. Deeper transitions accept exp
-  or delay.
+* the first-state entry law is exponential for multi-target modes.
+  Two distinct combinations eligible at the exact same date both fire
+  in the same PyCATSHOO batch without guard re-evaluation between them
+  (spike 2026-07-20), so CC correctness relies on same-date ties having
+  measure zero — true for exp, false for delay. With a SINGLE target
+  there is exactly one combination (no tie possible): a delay entry is
+  allowed there, making ObjDegMode a strict generalisation of both
+  ObjFMExp and ObjFMDelay in ``external_rep_indep``. Deeper transitions
+  accept exp or delay.
 
 Event grammar (the downstream sequence-parsing contract):
 
@@ -382,30 +385,37 @@ class ObjDegMode(FmWiringMixin, PycComponent):
 
         order_max = len(targets)
 
-        # First state: exp only, lambda_k vector strict.
+        # First state: exp with a strict lambda_k vector for multi-target
+        # modes. For a SINGLE target a delay entry is also allowed (there
+        # is exactly one combination, so the same-date batch-tie hazard
+        # that mandates exp cannot occur) — this is what makes ObjDegMode
+        # a strict generalisation of ObjFMDelay in external_rep_indep.
         first = states[0]
-        if not isinstance(first.occ_law, DegLawExp):
-            raise ValueError(
-                f"ObjDegMode {fm_name!r}: the first state's occ_law must be "
-                f"exponential (got {first.occ_law.cls!r}). Two combinations "
-                f"eligible at the exact same date both fire (no guard "
-                f"re-evaluation inside a PyCATSHOO batch): correctness of the "
-                f"CC entry relies on same-date ties having measure zero, "
-                f"which only holds for exp."
-            )
-        rate = first.occ_law.rate
-        if isinstance(rate, list):
-            if len(rate) != order_max:
+        if isinstance(first.occ_law, DegLawDelay):
+            if order_max > 1:
                 raise ValueError(
-                    f"ObjDegMode {fm_name!r}: lambda_k vector of the first "
-                    f"state has length {len(rate)}, expected exactly "
-                    f"{order_max} (one rate per CC order, no silent padding). "
-                    f"Use 0 to deactivate an order explicitly."
+                    f"ObjDegMode {fm_name!r}: a delay occ_law on the first "
+                    f"state is only supported with a single target (got "
+                    f"{order_max}). Two combinations eligible at the exact "
+                    f"same date both fire (no guard re-evaluation inside a "
+                    f"PyCATSHOO batch): the CC entry relies on same-date "
+                    f"ties having measure zero, which only holds for exp."
                 )
-            lambda_by_order = [float(v) for v in rate]
+            lambda_by_order = [float(first.occ_law.time)]
         else:
-            # Scalar = order 1 only, higher orders explicitly inactive.
-            lambda_by_order = [float(rate)] + [0.0] * (order_max - 1)
+            rate = first.occ_law.rate
+            if isinstance(rate, list):
+                if len(rate) != order_max:
+                    raise ValueError(
+                        f"ObjDegMode {fm_name!r}: lambda_k vector of the first "
+                        f"state has length {len(rate)}, expected exactly "
+                        f"{order_max} (one rate per CC order, no silent padding). "
+                        f"Use 0 to deactivate an order explicitly."
+                    )
+                lambda_by_order = [float(v) for v in rate]
+            else:
+                # Scalar = order 1 only, higher orders explicitly inactive.
+                lambda_by_order = [float(rate)] + [0.0] * (order_max - 1)
 
         # Deeper states: scalar laws only (progression and repair are
         # strictly individual).
@@ -559,12 +569,15 @@ class ObjDegMode(FmWiringMixin, PycComponent):
             self.level_vars[tn] = level
 
         # ---- parameter variables (all hosted on the carrier) ----
-        # First state (CC entry): lambda_<state1>[__<k>_o_<N>] per order.
+        # First state (CC entry): lambda_<state1>[__<k>_o_<N>] per order
+        # (ttf_<state1> for the single-target delay entry).
         self.var_params = {}
         first_name = first.name
+        self._entry_law_cls = first.occ_law.cls
+        entry_prefix = "ttf" if self._entry_law_cls == "delay" else "lambda"
         self.lambda_vars_by_order = []
         for order in range(1, order_max + 1):
-            pname = order_param_name(f"lambda_{first_name}", order, order_max)
+            pname = order_param_name(f"{entry_prefix}_{first_name}", order, order_max)
             var = self.addVariable(
                 pname, pyc.TVarType.t_double, lambda_by_order[order - 1]
             )
@@ -654,9 +667,15 @@ class ObjDegMode(FmWiringMixin, PycComponent):
                             "name": fire_name,
                             "source": ready,
                             "target": fired,
-                            # Float baked here; re-bound to the lambda
+                            # Float baked here; re-bound to the parameter
                             # variable right after (runtime overrides).
-                            "occ_law": {"cls": "exp", "rate": lambda_var.value()},
+                            # delay only reachable with a single target
+                            # (validated), where no combination tie exists.
+                            "occ_law": (
+                                {"cls": "delay", "time": lambda_var.value()}
+                                if self._entry_law_cls == "delay"
+                                else {"cls": "exp", "rate": lambda_var.value()}
+                            ),
                         },
                         {
                             "name": f"rearm{suffix}",

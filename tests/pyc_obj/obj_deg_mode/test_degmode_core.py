@@ -84,12 +84,13 @@ class TestProgressionAndRepair:
         assert system.currentTime() == pytest.approx(13.0)
         assert level.value() == 0
         # Clamp release semantics (documented): once the state is left the
-        # clamp stops maintaining the variable; nothing rewrites it. Under
-        # isimu (replay from t0 at every step) a reinitialized bare variable
-        # therefore falls back to its INIT value; in a continuous MC run it
-        # would keep the last clamped value. Derive observables from the
-        # level variable or a recomputed (muscadet-flow) variable (a
-        # same-variable release pulse is rejected by the overlap check).
+        # clamp stops maintaining the variable. A setReinitialized(True)
+        # variable falls back to its INIT value (verified in isimu here and
+        # in MC indicator sampling by the ObjFM parity suite); only a
+        # NON-reinitialized variable (persistent gate) keeps the last
+        # written value. Derive observables from the level variable or a
+        # recomputed (muscadet-flow) variable (a same-variable release
+        # pulse is rejected by the overlap check).
         assert r1.broken.value() is False
         system.isimu_stop()
 
