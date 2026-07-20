@@ -308,6 +308,7 @@ def _populate_default_fm_registry() -> None:
     if _FM_REGISTRY:
         return
     from cod3s.pycatshoo.component import ObjFM, ObjFMDelay, ObjFMExp, ObjFMInst
+    from cod3s.pycatshoo.deg_mode import ObjDegMode
 
     _FM_REGISTRY.update(
         {
@@ -315,6 +316,10 @@ def _populate_default_fm_registry() -> None:
             "ObjFMExp": ObjFMExp,
             "ObjFMDelay": ObjFMDelay,
             "ObjFMInst": ObjFMInst,
+            # Multi-state degradation mode: routed through
+            # ObjFMGenericSpec on the wire (extra fields: states,
+            # occ_cond), so it needs no dedicated spec class.
+            "ObjDegMode": ObjDegMode,
         }
     )
 

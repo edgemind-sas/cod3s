@@ -54,6 +54,7 @@ nav:
     - Simulation: user-guide/simulation.md
     - Interactive Simulation: user-guide/interactive-simulation.md
     - On-Demand Failure Modes (ObjFMInst): user-guide/objfm-inst.md
+    - Multi-State Degradation Modes (ObjDegMode): user-guide/obj-deg-mode.md
     - Indicators: user-guide/indicators.md
     - Sequence Analysis: user-guide/sequence-analysis.md
     - Interactive Sequence TUI (cod3s-seq): user-guide/cod3s-seq.md

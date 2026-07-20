@@ -204,10 +204,10 @@ def compile_condition(cond, target_comp, system, inner_logic=all, outer_logic=an
 
 def _and_conds(*conds):
     """AND a list of zero-arg callables (short-circuiting)."""
-    conds = [c for c in conds if c is not None]
+    active = [c for c in conds if c is not None]
 
     def combined():
-        return all(c() for c in conds)
+        return all(c() for c in active)
 
     return combined
 
@@ -221,7 +221,7 @@ def _and_conds(*conds):
 # ObjFMGenericSpec wire path — ``model_dump`` emits defaults), rejected
 # with a clear error on any explicit non-default value (never silently
 # ignored).
-_BASESPEC_PASSTHROUGH_DEFAULTS = {
+_BASESPEC_PASSTHROUGH_DEFAULTS: dict[str, tuple] = {
     "failure_state": ("occ",),
     "repair_state": ("rep",),
     "failure_effects": (None, {}),
