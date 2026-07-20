@@ -10,8 +10,8 @@ from .system import PycSystem, PycMCSimulationParam
 from .sequence import PycSequence, Sequence, SeqEvent, SequenceAnalyser
 
 from .component import PycComponent, ObjEvent, ObjFM, ObjFMDelay, ObjFMExp, ObjFMInst
+from .deg_mode import DegLawDelay, DegLawExp, DegState, ObjDegMode
 from ..utils import remove_key_from_dict
-
 
 # from .kb import PycKB
 # from .study import PycStudy
