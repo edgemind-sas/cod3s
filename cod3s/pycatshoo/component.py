@@ -7,6 +7,7 @@ from ..core import ObjCOD3S
 from ..utils import get_operator_function
 from .automaton import PycAutomaton, PycState
 from .common import prepare_attr_tree, sanitize_cond_format
+from .fm_wiring import FmWiringMixin, cc_comb_suffix, order_param_name
 import Pycatshoo as pyc
 import copy
 import re
@@ -931,7 +932,7 @@ class ObjEvent(PycComponent):
     #     return cond
 
 
-class ObjFM(PycComponent):
+class ObjFM(FmWiringMixin, PycComponent):
     """
     A component that models failure modes affecting multiple target components.
 
@@ -1347,11 +1348,12 @@ class ObjFM(PycComponent):
             for failure_param_name_cur, param_value in zip(
                 self.failure_param_name, failure_param_cur
             ):
-                failure_param_name_cur_tmp = failure_param_name_cur
-                if order_max > 1:
-                    failure_param_name_cur_tmp += self.param_name_order_prefix.format(
-                        order=order, order_max=order_max
-                    )
+                failure_param_name_cur_tmp = order_param_name(
+                    failure_param_name_cur,
+                    order,
+                    order_max,
+                    fmt=self.param_name_order_prefix,
+                )
 
                 failure_var_param = self.addVariable(
                     failure_param_name_cur_tmp, pyc.TVarType.t_double, param_value
@@ -1368,11 +1370,12 @@ class ObjFM(PycComponent):
             for repair_param_name_cur, param_value in zip(
                 self.repair_param_name, repair_param_cur
             ):
-                repair_param_name_cur_tmp = repair_param_name_cur
-                if order_max > 1:
-                    repair_param_name_cur_tmp += self.param_name_order_prefix.format(
-                        order=order, order_max=order_max
-                    )
+                repair_param_name_cur_tmp = order_param_name(
+                    repair_param_name_cur,
+                    order,
+                    order_max,
+                    fmt=self.param_name_order_prefix,
+                )
 
                 repair_var_param = self.addVariable(
                     repair_param_name_cur_tmp, pyc.TVarType.t_double, param_value
@@ -1479,28 +1482,12 @@ class ObjFM(PycComponent):
                 repair_state_name_cur = self.repair_state
                 aut_name_cur = fm_name
                 if order_max > 1:
-                    target_comb = "".join([str(i + 1) for i in target_set_idx])
-                    target_comb_u = "_".join([str(i + 1) for i in target_set_idx])
-                    target_binary = "".join(
-                        ["1" if i in target_set_idx else "0" for i in range(order_max)]
+                    trans_name_prefix_cur = cc_comb_suffix(
+                        target_set_idx,
+                        order_max,
+                        trans_name_prefix=self.trans_name_prefix,
+                        trans_name_prefix_fun=self.trans_name_prefix_fun,
                     )
-                    if callable(self.trans_name_prefix_fun):
-                        trans_name_prefix_cur = self.trans_name_prefix_fun(
-                            target_set_idx=target_set_idx,
-                            target_comb=target_comb,
-                            target_binary=target_binary,
-                            target_comb_u=target_comb_u,
-                            order=order,
-                            order_max=order_max,
-                        )
-                    else:
-                        trans_name_prefix_cur = self.trans_name_prefix.format(
-                            target_comb=target_comb,
-                            target_binary=target_binary,
-                            target_comb_u=target_comb_u,
-                            order=order,
-                            order_max=order_max,
-                        )
                     aut_name_cur += trans_name_prefix_cur
                     failure_state_name_cur += trans_name_prefix_cur
                     repair_state_name_cur += trans_name_prefix_cur
@@ -1740,44 +1727,8 @@ class ObjFM(PycComponent):
         self._wire_transition_effects(aut, repair_state_name, repair_effects_trans)
         return aut
 
-    def _wire_transition_effects(
-        self, aut, trans_name, effects_records, target_state=None
-    ):
-        """Register a transition-edge sensitive method applying ``effects_records``
-        once, at the instant ``trans_name`` fires (mode="trans_based").
-
-        Unlike ``add_aut2st``'s state-effect wiring (a level clamp
-        re-applied while the target state is active), this fires exactly
-        once per firing — ``ITransition.addSensitiveMethod`` is a true edge
-        callback (verified: once per firing, post-transition, re-armable).
-        Registered ONLY on the transition: no re-apply on every fixpoint
-        pass, no firing at t=0, no standing value (no write-war). A pulse
-        only "sticks" on a persistent gate (muscadet ``fed_available_reset=
-        False``), written by pulses only on both set and clear sides
-        (both-pulse).
-
-        ``target_state`` guards multi-branch transitions (e.g. an
-        ObjFMInst Bernoulli draw: failure vs not_occ) so the pulse fires
-        only on the branch that landed there. For single-target occ/rep —
-        including every CCF combination transition — the occ side passes
-        its own failure state (harmless: it is always active post-firing)
-        and the rep side passes ``None``.
-        """
-        if not effects_records:
-            return
-        trans_bkd = aut.get_transition_by_name(trans_name)._bkd
-        st_bkd = aut.get_state_by_name(target_state)._bkd if target_state else None
-
-        def sensitive_method():
-            if st_bkd is not None and not st_bkd.isActive():
-                return
-            for elt in effects_records:
-                if elt["var"].value() != elt["value"]:
-                    elt["var"].setValue(elt["value"])
-
-        trans_bkd.addSensitiveMethod(
-            f"effect_trans__{self.name()}_{aut.name}_{trans_name}", sensitive_method
-        )
+    # ``_wire_transition_effects`` and ``_resolve_target_effects`` are
+    # inherited from ``FmWiringMixin`` (cod3s/pycatshoo/fm_wiring.py).
 
     def _validate_trans_effects_supported(self):
         """Reject trans-based effects on behaviours that cannot host a
@@ -1851,48 +1802,6 @@ class ObjFM(PycComponent):
                 f"on the same target — deferred (needs a cross-automaton "
                 f"guard with its own MC-symmetry phase)."
             )
-
-    def _resolve_target_effects(
-        self,
-        target_comp,
-        target_name,
-        effects,
-        kind: typing.Literal[
-            "failure_effects",
-            "repair_effects",
-            "failure_effects_trans",
-            "repair_effects_trans",
-        ],
-    ):
-        """Resolve a user-supplied ``effects`` dict against a target component.
-
-        Each ``{var_name: value}`` entry is mapped to a PyCATSHOO variable
-        handle. ``var_name`` is resolved by trying ``getattr(target_comp, var)``
-        first (matches Python attributes added via ``self.var = self.addVariable(...)``)
-        then falling back to a basename lookup against ``target_comp.variables()``
-        (covers variables added with names that differ from the Python attribute).
-
-        ``kind`` is the user-facing label ("failure_effects" or "repair_effects")
-        injected into the error message — that is all the parameter is for.
-
-        Raises ``ValueError`` if any ``var_name`` cannot be resolved. A
-        misspelled key used to be silently dropped, producing simulations with
-        no effect at all and no diagnostic.
-        """
-        resolved = []
-        for var, value in effects.items():
-            if hasattr(target_comp, var):
-                comp_var = getattr(target_comp, var)
-            elif var in [v.basename() for v in target_comp.variables()]:
-                comp_var = target_comp.variable(var)
-            else:
-                raise ValueError(
-                    f"{kind}: variable {var!r} not found on target "
-                    f"{target_name!r} (ObjFM {self.fm_name!r}). Check the "
-                    f"spelling against the target's declared variables."
-                )
-            resolved.append({"var": comp_var, "value": value})
-        return resolved
 
     def _create_target_automaton(
         self, target_name, repair_occ_law, failure_effects=None, repair_effects=None
@@ -2491,30 +2400,10 @@ class ObjFMInst(ObjFM):
 
         return aut
 
-    def _wire_state_effects(self, aut, state_name, effects_records, trans_name):
-        """Register a state-entry sensitive method applying ``effects_records``.
-
-        Same pattern as ``add_aut2st``'s records branch — kept local
-        because ``add_aut2st`` is structurally two-state and cannot host
-        the 3-state automaton.
-        """
-        if not effects_records:
-            return
-        st_bkd = aut.get_state_by_name(state_name)._bkd
-
-        def sensitive_method():
-            if st_bkd.isActive():
-                for elt in effects_records:
-                    if elt["var"].value() != elt["value"]:
-                        elt["var"].setValue(elt["value"])
-
-        method_name = f"effect__{self.name()}_{aut.name}_{trans_name}"
-        aut._bkd.addSensitiveMethod(method_name, sensitive_method)
-        for elt in effects_records:
-            elt["var"].addSensitiveMethod(method_name, sensitive_method)
-        self.addStartMethod(method_name, sensitive_method)
-        if self.step:
-            self.step.addMethod(self, method_name)
+    # ``_wire_state_effects`` is inherited from ``FmWiringMixin``
+    # (cod3s/pycatshoo/fm_wiring.py) — same pattern as ``add_aut2st``'s
+    # records branch, hosted there because ``add_aut2st`` is structurally
+    # two-state and cannot host the 3-state automaton.
 
     def reapply_monitor_masks(self):
         """(Re-)apply the out-state monitoring masks of this FM.
