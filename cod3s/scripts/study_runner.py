@@ -500,30 +500,53 @@ def _apply_component_attr_override(
 
 
 def _propagate_param_override_to_variables(fm: Any, direction: str, values) -> None:
-    """Best-effort push of per-order values into the backend parameter
-    variables.
+    """Push every per-order value into the backend parameter variables.
 
-    The occurrence laws are bound to those *variables* — a bare
+    The occurrence laws are bound to those *variables*: a bare
     ``setattr`` on the Python-side list alone changes nothing in the
-    simulation (historical silent no-op). Only runs when the component
-    exposes the real two-state surface (param-name list + targets);
-    silently skipped otherwise (e.g. mocks or exotic modes).
+    simulation. Anything that would make the push partial or impossible
+    raises — the caller turns that into an error log and leaves the
+    Python-side attributes untouched, so the two sides never disagree
+    and a no-op is never reported as a success.
     """
     param_names = getattr(fm, f"{direction}_param_name", None)
     targets = getattr(fm, "targets", None)
     if not isinstance(param_names, list) or not param_names:
-        return
+        raise ValueError(
+            f"mode exposes no {direction}_param_name list — its laws are "
+            f"not bound to overridable parameter variables"
+        )
     if not isinstance(targets, list) or not targets:
-        return
+        raise ValueError(
+            "mode has no targets — it carries no per-order parameter "
+            "variables to override"
+        )
     n_orders = len(targets)
     if len(values) != n_orders:
         raise ValueError(f"expected {n_orders} per-order entries, got {len(values)}")
-    from cod3s.pycatshoo.fm_wiring import order_param_name
 
-    base = param_names[0]
+    from cod3s.pycatshoo.fm_wiring import DEFAULT_ORDER_PARAM_PREFIX, order_param_name
+
+    # Variables were created with the mode's OWN suffix format; using the
+    # default here would silently target names that do not exist.
+    fmt = getattr(fm, "param_name_order_prefix", None) or DEFAULT_ORDER_PARAM_PREFIX
+
+    # Resolve every variable before writing any of them: a half-applied
+    # multi-parameter law is worse than a rejected override.
+    writes = []
     for order, val in enumerate(values, start=1):
-        scalar = val[0] if isinstance(val, (tuple, list)) else val
-        fm.variable(order_param_name(base, order, n_orders)).setValue(scalar)
+        scalars = list(val) if isinstance(val, (tuple, list)) else [val]
+        if len(scalars) != len(param_names):
+            raise ValueError(
+                f"order {order}: expected {len(param_names)} value(s) for "
+                f"parameters {param_names}, got {len(scalars)}"
+            )
+        for base, scalar in zip(param_names, scalars):
+            var_name = order_param_name(base, order, n_orders, fmt=fmt)
+            writes.append((fm.variable(var_name), scalar))
+
+    for var, scalar in writes:
+        var.setValue(scalar)
 
 
 def _apply_failure_mode_param_override(
@@ -549,11 +572,14 @@ def _apply_failure_mode_param_override(
             )
         return
     try:
+        # Backend FIRST: if the values cannot reach the simulation, the
+        # Python-side attributes must stay on the baseline rather than
+        # advertise an override that never took effect.
+        _propagate_param_override_to_variables(fm, direction, ov.value)
         if hasattr(fm, ov.field):
             setattr(fm, ov.field, list(ov.value))
         if hasattr(fm, generic_attr) and generic_attr != ov.field:
             setattr(fm, generic_attr, list(ov.value))
-        _propagate_param_override_to_variables(fm, direction, ov.value)
         if logger:
             logger.info3(f"override: {ov.fm_name}.{ov.field} = {ov.value!r}")
     except Exception as e:

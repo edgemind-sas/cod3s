@@ -29,7 +29,6 @@ from cod3s.specs.study_yaml import (
     StudyYaml,
 )
 
-
 # ---------------------------------------------------------------------------
 # FM class registry
 # ---------------------------------------------------------------------------
@@ -38,6 +37,7 @@ from cod3s.specs.study_yaml import (
 class TestFMRegistry:
     def test_register_custom_class(self):
         """register_fm_class adds a name → class mapping accessible via _resolve_fm_class."""
+
         class FakeWeibull:
             def __init__(self, **kwargs):
                 self.kwargs = kwargs
@@ -48,6 +48,7 @@ class TestFMRegistry:
             assert cls is FakeWeibull
         finally:
             from cod3s.scripts.study_runner import _FM_REGISTRY
+
             _FM_REGISTRY.pop("FakeWeibull", None)
 
     def test_unknown_class_raises(self):
@@ -90,6 +91,7 @@ class TestAddFailureModes:
         finally:
             # Restore default registration
             from cod3s.scripts.study_runner import _FM_REGISTRY
+
             _FM_REGISTRY.pop("ObjFMExp", None)
 
     def test_disabled_skipped(self):
@@ -107,6 +109,7 @@ class TestAddFailureModes:
             assert instances == []
         finally:
             from cod3s.scripts.study_runner import _FM_REGISTRY
+
             _FM_REGISTRY.pop("ObjFMExp", None)
 
     def test_construction_failure_logged_not_raised(self):
@@ -123,6 +126,7 @@ class TestAddFailureModes:
             assert count == 0  # nothing added, but no exception
         finally:
             from cod3s.scripts.study_runner import _FM_REGISTRY
+
             _FM_REGISTRY.pop("ObjFMExp", None)
 
     def test_generic_spec_passthrough(self):
@@ -149,6 +153,7 @@ class TestAddFailureModes:
             assert instances[0]["failure_param_name"] == ["k", "lambda"]
         finally:
             from cod3s.scripts.study_runner import _FM_REGISTRY
+
             _FM_REGISTRY.pop("FakeWeibull", None)
 
 
@@ -202,7 +207,21 @@ class TestApplyAttributeOverrides:
         logger.warning.assert_called_once()
 
     def test_failure_mode_param_override(self):
+        """The override updates the Python-side list AND pushes every
+        per-order value into the backend parameter variables the laws
+        are bound to (a bare setattr alone never reaches the
+        simulation)."""
         fm = MagicMock()
+        fm.targets = ["c1", "c2"]
+        fm.occ_param_name = ["lambda"]
+        fm.param_name_order_prefix = "__{order}_o_{order_max}"
+        variables = {}
+
+        def _variable(name):
+            return variables.setdefault(name, MagicMock())
+
+        fm.variable.side_effect = _variable
+
         system = MagicMock()
         system.comp = {"M_001": fm}
 
@@ -217,6 +236,30 @@ class TestApplyAttributeOverrides:
         )
         apply_attribute_overrides(system, overrides)
         assert fm.failure_param == [2e-5, 1e-5]
+        variables["lambda__1_o_2"].setValue.assert_called_once_with(2e-5)
+        variables["lambda__2_o_2"].setValue.assert_called_once_with(1e-5)
+
+    def test_failure_mode_param_override_without_param_surface_is_refused(self):
+        """A mode whose laws are not bound to parameter variables cannot
+        honour the override: it must be warned about, not silently
+        applied to the Python attribute and reported as a success."""
+        fm = MagicMock()
+        fm.targets = []
+        fm.occ_param_name = []
+        system = MagicMock()
+        system.comp = {"M_001": fm}
+        logger = MagicMock()
+
+        overrides = AttributeOverrides(
+            failure_mode_param=[
+                FailureModeParamOverride(
+                    fm_name="M_001", field="failure_param", value=[2e-5]
+                )
+            ]
+        )
+        apply_attribute_overrides(system, overrides, logger=logger)
+        logger.error.assert_called_once()
+        logger.info3.assert_not_called()
 
     def test_none_overrides_no_op(self):
         """apply_attribute_overrides(None) is a no-op."""
@@ -289,7 +332,9 @@ class TestRunStudyEndToEnd:
     def test_load_study_from_path(self, tmp_path):
         """run_study accepts a Path to a study.yaml file."""
         study_path = tmp_path / "study.yaml"
-        study_path.write_text(yaml.safe_dump({"name": "loaded", "simulation": {"nb_runs": 1}}))
+        study_path.write_text(
+            yaml.safe_dump({"name": "loaded", "simulation": {"nb_runs": 1}})
+        )
 
         system = MagicMock()
         system.comp = {}

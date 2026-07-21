@@ -141,6 +141,121 @@ class TestParamOverrideHardened:
         assert fm.occ_param == [0.7]
         assert fm.variable("lambda").value() == pytest.approx(0.7)
 
+    def test_override_honours_custom_param_name_order_prefix(self):
+        """The variables carry the mode's OWN suffix format; resolving
+        them with the default format silently targets names that do not
+        exist and leaves the simulation on the baseline (finding 5)."""
+        system = fresh_system("Mode2SWireOvPrefix")
+        Equipment("E1")
+        Equipment("E2")
+        fm = cod3s.ObjFMExp(
+            fm_name="frun",
+            targets=["E1", "E2"],
+            failure_param=[0.1, 0.2],
+            repair_param=[0.3, 0.4],
+            param_name_order_prefix="_ord{order}",
+        )
+        ov = FailureModeParamOverride(
+            fm_name="EX__frun", field="failure_param", value=[0.9, 0.8]
+        )
+        _apply_failure_mode_param_override(system, ov, logger=None)
+        assert fm.variable("lambda_ord1").value() == pytest.approx(0.9)
+        assert fm.variable("lambda_ord2").value() == pytest.approx(0.8)
+        assert fm.failure_param == [0.9, 0.8]
+
+    def test_override_writes_every_parameter_of_a_multi_param_law(self):
+        """A per-order tuple carries one value per declared parameter;
+        pushing only the first leaves a half-overridden law while the
+        run is reported as fully overridden (finding 6)."""
+
+        class ObjFMTwoParam(cod3s.ObjFMExp):
+            def set_default_failure_param_name(self):
+                if not self.failure_param_name:
+                    self.failure_param_name = ["wk", "wlam"]
+
+            def set_occ_law_failure(self, params):
+                return {"cls": "exp", "rate": params["wk"]}
+
+        system = fresh_system("Mode2SWireOvMulti")
+        Equipment("E1")
+        fm = ObjFMTwoParam(
+            fm_name="wb",
+            targets=["E1"],
+            failure_param=[(2.0, 1500.0)],
+            repair_param=0.5,
+        )
+        ov = FailureModeParamOverride(
+            fm_name="E1__wb", field="failure_param", value=[(3.0, 9999.0)]
+        )
+        _apply_failure_mode_param_override(system, ov, logger=None)
+        assert fm.variable("wk").value() == pytest.approx(3.0)
+        assert fm.variable("wlam").value() == pytest.approx(9999.0)
+
+    def test_override_partial_value_tuple_is_refused_atomically(self):
+        """An incomplete per-order tuple must abort the whole override,
+        not write the parameters it happens to cover."""
+
+        class ObjFMTwoParam(cod3s.ObjFMExp):
+            def set_default_failure_param_name(self):
+                if not self.failure_param_name:
+                    self.failure_param_name = ["wk", "wlam"]
+
+            def set_occ_law_failure(self, params):
+                return {"cls": "exp", "rate": params["wk"]}
+
+        system = fresh_system("Mode2SWireOvPartial")
+        Equipment("E1")
+        fm = ObjFMTwoParam(
+            fm_name="wb",
+            targets=["E1"],
+            failure_param=[(2.0, 1500.0)],
+            repair_param=0.5,
+        )
+        ov = FailureModeParamOverride(
+            fm_name="E1__wb", field="failure_param", value=[(3.0,)]
+        )
+        _apply_failure_mode_param_override(system, ov, logger=None)
+        assert fm.variable("wk").value() == pytest.approx(2.0)
+        assert fm.variable("wlam").value() == pytest.approx(1500.0)
+        assert fm.failure_param == [(2.0, 1500.0)]
+
+    def test_override_on_mode_without_param_variables_is_refused(self):
+        """A self-hosted mode bakes its laws as literals: there is no
+        variable to override, so the runner must warn instead of
+        reporting a success for a guaranteed no-op (finding 7)."""
+        system = fresh_system("Mode2SWireOvSelf")
+        Equipment("E1")
+        cod3s.ObjMode2S(
+            mode_name="watch",
+            targets=None,
+            occ_law={"cls": "delay", "time": 3},
+            not_occ_law={"cls": "delay", "time": 1},
+            occ_cond=False,
+        )
+
+        class Log:
+            def __init__(self):
+                self.info3_calls = []
+                self.error_calls = []
+                self.warning_calls = []
+
+            def info3(self, msg):
+                self.info3_calls.append(msg)
+
+            def error(self, msg):
+                self.error_calls.append(msg)
+
+            def warning(self, msg):
+                self.warning_calls.append(msg)
+
+        logger = Log()
+        ov = FailureModeParamOverride(
+            fm_name="watch", field="failure_param", value=[42.0]
+        )
+        _apply_failure_mode_param_override(system, ov, logger=logger)
+        assert logger.info3_calls == [], "a no-op must never be logged as applied"
+        assert len(logger.error_calls) + len(logger.warning_calls) == 1
+
     def test_override_wrong_length_is_not_logged_as_success(self):
         system = fresh_system("Mode2SWireOvBad")
         Equipment("E1")
