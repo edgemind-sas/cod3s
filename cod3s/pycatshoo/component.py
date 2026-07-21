@@ -2242,6 +2242,17 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         # mode is logically there — including its parked micro-state
         # (a failed return draw keeps the occ effects applied while
         # waiting in occ_star). One composite method per state.
+        #
+        # BEHAVIOUR CHANGE vs the pre-engine ObjFMInst (1.13.0), which
+        # clamped its repair effects on the armed state only: the parked
+        # state now carries them too. It is the symmetric reading of
+        # "logically still in the source state", but a model declaring
+        # non-empty repair_effects on an ObjFMInst *and* letting another
+        # automaton write the same variable will see that write undone
+        # during the parked window. The documented convention (CLAUDE.md)
+        # is to leave repair_effects empty and rely on reinitialised
+        # variables, which is why this is a safe generalisation — see
+        # the user guide's "ObjFMInst repair effects" warning.
         occ_logical_states = [occ_state_name]
         if not_occ_parked_cur:
             occ_logical_states.append(not_occ_parked_cur)

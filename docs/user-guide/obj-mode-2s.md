@@ -131,6 +131,18 @@ The historical classes keep their exact API; under the hood:
 | `lambda` / `mu`, `ttf` / `ttr`, `gamma` variables | `occ_rate` / `not_occ_rate`, `occ_time` / `not_occ_time`, `occ_prob` |
 | `set_occ_law_failure`, `get_failure_cond`, … hooks | `_direction_law_bkd`, `_direction_cond`, … template hooks |
 
+!!! warning "Behaviour change: ObjFMInst repair effects during parking"
+    A logical state's level clamps now also apply in its parked
+    micro-state, since the mode is logically still in that state. For
+    `ObjFMInst` this is a change: before the engine extraction, its
+    `repair_effects` were clamped on the armed `rep` state only, not
+    while parked in `not_occ` after a failed draw. A model that declares
+    non-empty `repair_effects` on an `ObjFMInst` **and** lets another
+    automaton write the same target variable will now see that write
+    undone during the parked window. The documented convention is to
+    leave `repair_effects` empty and rely on reinitialised variables
+    (see CLAUDE.md), which keeps models unaffected.
+
 !!! warning "ObjFMInst's `not_occ` is a *parked* state"
     In `ObjFMInst`, the state literally named `not_occ` is the
     **parked** micro-state of the occ direction (armed state = `rep`) —

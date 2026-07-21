@@ -159,6 +159,49 @@ class TestLegacyAttributesVisibleInHooks:
         assert fm.occ_param_name == ["custom_lambda"]
 
 
+class TestObjFMInstParkedStateClamp:
+    """Documented behaviour change (review finding 3): a logical state's
+    level clamps now span its parked micro-state too. Pinned so the
+    semantics is a decision, not an accident."""
+
+    def test_repair_effects_are_clamped_while_parked(self, pyc_session):
+        class Demandable(cod3s.PycComponent):
+            def __init__(self, name, **kwargs):
+                super().__init__(name, **kwargs)
+                self.demand = self.addVariable("demand", Pyc.TVarType.t_bool, False)
+                # Persistent (not reinitialised): the clamp is the only
+                # thing that can restore it.
+                self.marker = self.addVariable("marker", Pyc.TVarType.t_bool, False)
+
+        system = PycSystem(name="InstParkedClamp")
+        eq = Demandable("E1")
+        fm = cod3s.ObjFMInst(
+            fm_name="miss",
+            targets=["E1"],
+            failure_cond=lambda: eq.demand.value() is True,
+            repair_effects={"marker": True},
+            failure_param=0.3,
+            repair_param=0.1,
+        )
+        aut = fm.automata_d["miss"]
+
+        system.isimu_start()
+        eq.demand.setValue(True)
+        system.isimu_step_forward()
+        trs = system.isimu_fireable_transitions()
+        idx = next(i for i, t in enumerate(trs) if t is not None and t.name == "occ")
+        system.isimu_set_transition(idx, state_index=1)  # failed draw -> parked
+        system.isimu_step_forward()
+        assert aut.get_state_by_name("not_occ")._bkd.isActive()
+
+        # An external write during the parked window is re-clamped: the
+        # mode is logically still "not occurred".
+        eq.marker.setValue(False)
+        system.isimu_step_forward()
+        assert eq.marker.value() is True
+        system.isimu_stop()
+
+
 class TestObjFMInstBuildHookStillCalled:
     """The engine owns the 3-state machinery, but ``_build_fm_automaton``
     remains the documented ObjFMInst extension point."""
