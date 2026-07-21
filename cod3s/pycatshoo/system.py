@@ -1074,9 +1074,7 @@ class PycSystem(pyc.CSystem):
 
         return trans_fired
 
-    def isimu_set_transition(
-        self, trans_id=None, date=None, state_index=None
-    ):
+    def isimu_set_transition(self, trans_id=None, date=None, state_index=None):
         """Schedule a transition to occur at a specific time.
 
         Args:

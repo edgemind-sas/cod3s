@@ -579,6 +579,17 @@ class SimulationConfig(pydantic.BaseModel):
             "(audit / debugging)."
         ),
     )
+    strict_failure_modes: bool = pydantic.Field(
+        default=False,
+        description=(
+            "When True, ``run_study`` aborts if any enabled failure mode "
+            "failed to build (the runner otherwise swallows construction "
+            "errors: log + continue, and the study runs with SILENTLY "
+            "missing modes — optimistic reliability figures). Recommended "
+            "True for production studies; kept False by default for "
+            "backward compatibility."
+        ),
+    )
     filter_objevent_in_sequences: bool = pydantic.Field(
         default=True,
         description=(

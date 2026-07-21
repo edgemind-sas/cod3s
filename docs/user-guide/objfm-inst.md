@@ -110,3 +110,16 @@ the re-arm transition are masked out of monitoring via PyCATSHOO's
 is unaffected by solicitations that fail nothing. The masks survive
 `monitorTransition` patterns — the study runner re-applies them after
 monitoring is configured (`reapply_monitor_masks` hook).
+
+## Relation to ObjMode2S
+
+Since the ObjMode2S chantier, the 3-state machinery (armed / parked
+split, draw branching, `inst p=1` re-arm, monitoring masks) lives in
+the generic engine — `ObjFMInst` is a thin façade routing its occ
+direction onto it. The engine offers the same semantics natively (and
+symmetrically, on the return direction) through
+`occ_law = {"cls": "inst", "prob": gamma}`; see
+[Generic Two-State Modes (ObjMode2S)](obj-mode-2s.md). Naming caveat:
+`ObjFMInst`'s state literally called `not_occ` is the engine's *parked*
+micro-state (`<not_occ_state>_star` in native modes), not the engine's
+logical resting state.

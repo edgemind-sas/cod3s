@@ -30,7 +30,6 @@ from pathlib import Path
 import pydantic
 import yaml
 
-
 PIPELINE_SCHEMA_VERSION = "1.0.0"
 
 

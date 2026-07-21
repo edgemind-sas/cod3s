@@ -502,22 +502,22 @@ budget (`--durations` vs Phase 0 baseline).
 
 ### Phase 6 — Integration, overrides, docs, release prep
 
-- [ ] Registry: `"ObjMode2S"` in `_populate_default_fm_registry`; specs-runner test
+- [x] Registry: `"ObjMode2S"` in `_populate_default_fm_registry`; specs-runner test
       through `ObjFMGenericSpec` (routing, round-trip, swallowed-error count
       assertion, event-grammar contract — degmode precedent).
-- [ ] **`FailureModeParamOverride` hardening** (study_runner.py:490-507): today it
+- [x] **`FailureModeParamOverride` hardening** (study_runner.py:490-507): today it
       `setattr`s `failure_param`/`repair_param` post-build — on a native ObjMode2S
       that would create a dangling attribute and **log success while changing
       nothing**. Fix: verify the target attribute pre-exists, propagate to the
       backend parameter *variables* (the law→variable re-binding exists precisely
       for this), warn/raise otherwise. Verify the façade path actually works today
       while at it.
-- [ ] **Opt-in fail-closed runner flag** (`strict_failure_modes`, default `False`
+- [x] **Opt-in fail-closed runner flag** (`strict_failure_modes`, default `False`
       to preserve pinned swallow behaviour): when set, abort the study if
       `added != enabled` failure modes. Documented as the recommended setting —
       without it, every construction-time guard in this plan is reduced to a log
       line on the wire path.
-- [ ] Docs: `docs/user-guide/obj-mode-2s.md` — locked inst-semantics section +
+- [x] Docs: `docs/user-guide/obj-mode-2s.md` — locked inst-semantics section +
       diagram from the brainstorm, 3×3 matrix table with per-combo status
       (supported / rejected-with-error), façade↔engine mapping table
       (`lambda↔occ_rate`, `gamma↔occ_prob`, hook correspondence, the ObjFMInst
@@ -526,18 +526,18 @@ budget (`--durations` vs Phase 0 baseline).
       `drop_inactive_automata` runtime no-op, prob-1 runtime override → hang
       symptom, `add_targets` splat). Update `objfm-inst.md` (internals moved);
       `mkdocs.yml` nav; `CLAUDE.md` (architecture + example listing).
-- [ ] Example: `examples/objmode2s_demo/` — per-demand recovery walkthrough
+- [x] Example: `examples/objmode2s_demo/` — per-demand recovery walkthrough
       (scenario D, maintenance-crew inst return) runnable in `cod3s-isimu` with
       inline expected timeline.
-- [ ] Housekeeping while in the area: `ipdb` comments (:1216, :1246-1247); mutable
+- [x] Housekeeping while in the area: `ipdb` comments (:1216, :1246-1247); mutable
       defaults in `_factorize_target_names` (:2015 — lists → tuples); E731 lambdas
       (:1550); `target_name` loop-shadowing (:1591); optional conservative
       memoization of the external-cond state lookup (`make_external_cond`
       :1508-1526 re-resolves `get_state_by_name` per evaluation — cache the `_bkd`
       handle at first call; validated by the wall-time smoke).
-- [ ] Local validation: full `pytest` + `--runslow`, `black`/`isort`/`flake8`,
+- [x] Local validation: full `pytest` + `--runslow`, `black`/`isort`/`flake8`,
       `mypy cod3s/` on touched files, `mkdocs build`.
-- [ ] Suggest merge to `master` when validated (no PR — solo workflow); version
+- [x] Suggest merge to `master` when validated (no PR — solo workflow); version
       bump (1.14.0) is Roland's call at release time.
 
 **Gate:** everything green; docs build; demo runs.
@@ -545,26 +545,26 @@ budget (`--durations` vs Phase 0 baseline).
 ## Acceptance Criteria
 
 ### Functional
-- [ ] Entire pre-existing test suite passes **with zero test-file modifications**.
-- [ ] Native `ObjMode2S` supports the 3×3 matrix per the validation matrix
+- [x] Entire pre-existing test suite passes **with zero test-file modifications**.
+- [x] Native `ObjMode2S` supports the 3×3 matrix per the validation matrix
       (construct or clearly reject — never a silent wrong model); inst-on-return
       restricted to internal/order-1 (locked decision).
-- [ ] Unified inst semantics verified on both directions (scenarios A–D), `_star`
+- [x] Unified inst semantics verified on both directions (scenarios A–D), `_star`
       naming and masking per brainstorm; timed directions build no inst machinery.
-- [ ] Façade ≡ raw-engine equivalence (structure, counts, seeded MC traces).
-- [ ] Bare `ObjMode2S` cycles collapsed by `SequenceAnalyser` (deferral valve if
+- [x] Façade ≡ raw-engine equivalence (structure, counts, seeded MC traces).
+- [x] Bare `ObjMode2S` cycles collapsed by `SequenceAnalyser` (deferral valve if
       capacity requires — drop with its criterion); façade discovery unchanged.
-- [ ] `ObjMode2S` creatable via study.yaml (aliases + passthrough table) and
+- [x] `ObjMode2S` creatable via study.yaml (aliases + passthrough table) and
       drivable in `cod3s-isimu`, including same-instant inst cascades.
 
 ### Non-functional / quality gates
-- [ ] Statistical locks green (analytical exp/delay renewal; MC inst-return; MC
+- [x] Statistical locks green (analytical exp/delay renewal; MC inst-return; MC
       inst/inst termination with sequence-length bound) within the runtime budget.
-- [ ] Structural-count and sensitive-method-count parity vs Phase 0 baselines;
+- [x] Structural-count and sensitive-method-count parity vs Phase 0 baselines;
       MC wall-time smoke within ×1.3.
-- [ ] Subclass compat test (old-signature `_build_fm_automaton`, hook order) green.
-- [ ] `black`, `isort`, `flake8`, `mypy` (touched files), `mkdocs build` clean.
-- [ ] Docs page + demo delivered; CLAUDE.md updated.
+- [x] Subclass compat test (old-signature `_build_fm_automaton`, hook order) green.
+- [x] `black`, `isort`, `flake8`, `mypy` (touched files), `mkdocs build` clean.
+- [x] Docs page + demo delivered; CLAUDE.md updated.
 
 ## Dependencies & Risks
 

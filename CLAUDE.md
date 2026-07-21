@@ -151,6 +151,15 @@ Translates COD3S models to PyCATSHOO simulation engine:
   - `PycComponent`: Extends `Pycatshoo.CComponent` with COD3S semantics
   - Bridge between COD3S component model and PyCATSHOO backend
   - Handles automata, variables, and PDMP contributions
+  - `ObjMode2S`: generic two-state mode ENGINE (logical states
+    `occ`/`not_occ`, any `exp`/`delay`/`inst` law per direction — laws
+    declared via `cod3s/pycatshoo/mode_law.py` specs, unified anti-Zeno
+    inst machinery with `_star` parked micro-states). `ObjFM`,
+    `ObjFMExp`, `ObjFMDelay`, `ObjFMInst` and `ObjEvent` are thin
+    backward-compatible façades over it (historical `failure_*`/
+    `repair_*` vocabulary and hook protocol preserved — third-party
+    ObjFM subclasses keep working). See
+    `docs/user-guide/obj-mode-2s.md`.
 
 - **system.py**:
   - `PycSystem`: Extends `Pycatshoo.CSystem`
@@ -323,3 +332,4 @@ Two scenarios exercising the inst pending UX delivered by `cod3s-isimu` 0.3.0+. 
 - `examples/inst_coin_demo/inst_coin_demo.py` — single component, one 2-branch inst transition (`heads`/`tails`), `delay(1)` re-arms the toss. Smallest possible walk-through of the tree picker. Run: `PYTHONPATH="examples/inst_coin_demo:$PYTHONPATH" uv run cod3s-isimu --factory inst_coin_demo:build_system`.
 - `examples/inst_panne_demo/inst_panne_demo.py` — two pumps, each with a 3-branch inst (`panne_severe` 0.05 / `panne_legere` 0.15 / `ok` 0.80) and per-branch effects on a `severity` integer. Both inst pendings start simultaneously at t=0, demonstrating the multi-pending atomic-submit UX. Recovery delays differ per landing state (10 / 5 / 1) so the pumps drift in and out of synchronisation as the simulation progresses. Run: `PYTHONPATH="examples/inst_panne_demo:$PYTHONPATH" uv run cod3s-isimu --factory inst_panne_demo:build_system`.
 - `examples/objfm_inst_demo/objfm_inst_demo.py` — on-demand failure mode (`ObjFMInst`): a backup generator fails to start with probability gamma=0.3 at every grid drop (deterministic grid cycle up 10 h / down 2 h). Walks through the per-demand draw, the anti-Zeno `not_occ` parking, the auto-resolved deterministic re-arm, and the re-fire-after-repair semantics. Run: `PYTHONPATH="examples/objfm_inst_demo:$PYTHONPATH" uv run cod3s-isimu --factory objfm_inst_demo:build_system`. User guide: `docs/user-guide/objfm-inst.md`.
+- `examples/objmode2s_demo/objmode2s_demo.py` — generic two-state mode (`ObjMode2S`) showcasing the mixed-law matrix: deterministic failure (`occ_law=delay(6)`) with **per-demand recovery** (`not_occ_law=inst(0.7)` gated by a crew-on-site condition — one repair attempt per crew visit, `occ_star` parking on a failed attempt, masked `inst p=1` re-arm on crew departure). Scenario D of the ObjMode2S brainstorm. Run: `PYTHONPATH="examples/objmode2s_demo:$PYTHONPATH" uv run cod3s-isimu --factory objmode2s_demo:build_system`. User guide: `docs/user-guide/obj-mode-2s.md`.

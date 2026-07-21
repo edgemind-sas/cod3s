@@ -137,7 +137,9 @@ class SequencesPanel(Container):
         self._row_to_original: list[int] = []
         total = state.total_weight or 1
         for rank, (orig_idx, seq) in enumerate(state.sorted_sequences(), start=1):
-            proba = seq.probability if seq.probability is not None else seq.weight / total
+            proba = (
+                seq.probability if seq.probability is not None else seq.weight / total
+            )
             signature = " → ".join(f"{e.obj}.{e.attr}" for e in seq.events) or "(empty)"
             target = seq.target_name or "—"
             # Truncate very long signatures so the table stays readable.

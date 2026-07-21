@@ -51,7 +51,6 @@ from cod3s.pycatshoo.seq_tui.pipeline import (
     RmEventsOrderedPatternStep,
 )
 
-
 ExportFormat = Literal["json-cod3s", "csv", "markdown"]
 
 
@@ -271,9 +270,7 @@ class ConfigFilterObjFMCyclesModal(_ConfigStepModalBase):
                 )
         else:
             yield Label("ObjFM internal (comma-separated):")
-            yield Input(
-                placeholder="pump_X__def_pump, valve_Y__def_valve", id="int"
-            )
+            yield Input(placeholder="pump_X__def_pump, valve_Y__def_valve", id="int")
             yield Label("ObjFM external (comma-separated):")
             yield Input(placeholder="(empty)", id="ext")
         yield Label("Failure state:")

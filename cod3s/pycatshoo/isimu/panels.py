@@ -274,7 +274,9 @@ class FireablePanel(Container):
             self._inst_choices[fireable_idx] = default_state_idx
 
             for state_idx, branch in enumerate(branches):
-                child_label = self._format_branch(branch, selected=(state_idx == default_state_idx))
+                child_label = self._format_branch(
+                    branch, selected=(state_idx == default_state_idx)
+                )
                 node.add_leaf(child_label, data=(fireable_idx, state_idx))
         tree.root.expand_all()
 

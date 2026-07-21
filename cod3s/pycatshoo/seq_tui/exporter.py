@@ -24,7 +24,6 @@ from pathlib import Path
 
 from cod3s.pycatshoo.sequence import persist_sequence_analysis_artifacts
 
-
 # ---------------------------------------------------------------------------
 # JSON cod3s
 # ---------------------------------------------------------------------------
@@ -88,9 +87,7 @@ def export_markdown(analyser, path) -> None:
     The top table is sorted by descending weight; each detail section
     follows the same order.
     """
-    sequences = sorted(
-        analyser.sequences, key=lambda s: s.weight, reverse=True
-    )
+    sequences = sorted(analyser.sequences, key=lambda s: s.weight, reverse=True)
     total = sum(s.weight for s in sequences)
     lines: list[str] = ["# Sequence analysis", ""]
     lines.append(f"_Total weight: {total} — {len(sequences)} distinct signatures_")
@@ -107,9 +104,7 @@ def export_markdown(analyser, path) -> None:
         )
         signature = " → ".join(f"{e.obj}.{e.attr}" for e in s.events) or "_(empty)_"
         target = s.target_name or "—"
-        lines.append(
-            f"| {i} | {s.weight} | {proba:.4f} | {target} | {signature} |"
-        )
+        lines.append(f"| {i} | {s.weight} | {proba:.4f} | {target} | {signature} |")
 
     # Per-sequence detail sections
     for i, s in enumerate(sequences, start=1):

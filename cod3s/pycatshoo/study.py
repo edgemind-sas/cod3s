@@ -5,7 +5,7 @@ from .. import StudyModel, MCSimulationParam
 from . import PycSystem, PycVarIndicator, PycTransition
 
 installed_pkg = {pkg.key for pkg in pkg_resources.working_set}
-if 'ipdb' in installed_pkg:
+if "ipdb" in installed_pkg:
     import ipdb  # noqa: 401
 
 
@@ -20,7 +20,6 @@ class PycMCSimulationParam(MCSimulationParam):
 
 
 class PycStudy(StudyModel):
-
     """
     A class representing a study in Pycatshoo.
 
@@ -30,9 +29,7 @@ class PycStudy(StudyModel):
         indicators (typing.List[PycVarIndicator]): The list of indicators.
     """
 
-    system_model: PycSystem = pydantic.Field(
-        None, description="System model"
-    )
+    system_model: PycSystem = pydantic.Field(None, description="System model")
 
     simu_params: PycMCSimulationParam = pydantic.Field(
         None, description="Simulator parameters"
@@ -43,7 +40,6 @@ class PycStudy(StudyModel):
     )
 
     def prepare_simu(self, **kwargs):
-
         """
         Prepare the simulation by setting up the system model and indicators.
 
@@ -58,10 +54,9 @@ class PycStudy(StudyModel):
         # Prepare indicators
         for indic in self.indicators:
             indic.instants = instants_list
-            indic.bkd = \
-                self.system_model.bkd.addIndicator(indic.name,
-                                                   indic.get_expr(),
-                                                   indic.get_type())
+            indic.bkd = self.system_model.bkd.addIndicator(
+                indic.name, indic.get_expr(), indic.get_type()
+            )
             indic.update_restitution()
 
         # Simulator configuration
@@ -90,4 +85,3 @@ class PycStudy(StudyModel):
             indic.update_values()
 
         self.run_after_hook()
-

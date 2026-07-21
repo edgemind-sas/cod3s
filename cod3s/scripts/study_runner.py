@@ -307,7 +307,13 @@ def _populate_default_fm_registry() -> None:
     """
     if _FM_REGISTRY:
         return
-    from cod3s.pycatshoo.component import ObjFM, ObjFMDelay, ObjFMExp, ObjFMInst
+    from cod3s.pycatshoo.component import (
+        ObjFM,
+        ObjFMDelay,
+        ObjFMExp,
+        ObjFMInst,
+        ObjMode2S,
+    )
     from cod3s.pycatshoo.deg_mode import ObjDegMode
 
     _FM_REGISTRY.update(
@@ -320,6 +326,11 @@ def _populate_default_fm_registry() -> None:
             # ObjFMGenericSpec on the wire (extra fields: states,
             # occ_cond), so it needs no dedicated spec class.
             "ObjDegMode": ObjDegMode,
+            # Generic two-state engine: routed through ObjFMGenericSpec
+            # (extra fields: occ_law / not_occ_law / occ_* ...); the
+            # constructor accepts fm_name / failure_cond as wire aliases
+            # and tolerates the BaseSpec defaults.
+            "ObjMode2S": ObjMode2S,
         }
     )
 
@@ -332,8 +343,9 @@ def register_fm_class(name: str, fm_cls: Type[Any]) -> None:
     The runner will then instantiate ``fm_cls(**spec_dict)`` for
     failure modes targeting that name.
 
-    The check ``issubclass(fm_cls, ObjFM)`` is deferred until first
-    use to keep ``cod3s.specs`` importable without PyCATSHOO.
+    ``fm_cls`` does not have to subclass ``ObjFM`` (``ObjDegMode`` and
+    ``ObjMode2S`` are registered non-subclasses) — any callable
+    accepting the spec's ``model_dump`` kwargs works.
     """
     _FM_REGISTRY[name] = fm_cls
 
@@ -487,6 +499,33 @@ def _apply_component_attr_override(
             logger.error(f"override: {ov.component}.{ov.attribute} failed: {e}")
 
 
+def _propagate_param_override_to_variables(fm: Any, direction: str, values) -> None:
+    """Best-effort push of per-order values into the backend parameter
+    variables.
+
+    The occurrence laws are bound to those *variables* — a bare
+    ``setattr`` on the Python-side list alone changes nothing in the
+    simulation (historical silent no-op). Only runs when the component
+    exposes the real two-state surface (param-name list + targets);
+    silently skipped otherwise (e.g. mocks or exotic modes).
+    """
+    param_names = getattr(fm, f"{direction}_param_name", None)
+    targets = getattr(fm, "targets", None)
+    if not isinstance(param_names, list) or not param_names:
+        return
+    if not isinstance(targets, list) or not targets:
+        return
+    n_orders = len(targets)
+    if len(values) != n_orders:
+        raise ValueError(f"expected {n_orders} per-order entries, got {len(values)}")
+    from cod3s.pycatshoo.fm_wiring import order_param_name
+
+    base = param_names[0]
+    for order, val in enumerate(values, start=1):
+        scalar = val[0] if isinstance(val, (tuple, list)) else val
+        fm.variable(order_param_name(base, order, n_orders)).setValue(scalar)
+
+
 def _apply_failure_mode_param_override(
     system: Any,
     ov: FailureModeParamOverride,
@@ -498,8 +537,23 @@ def _apply_failure_mode_param_override(
         if logger:
             logger.warning(f"override: failure mode {ov.fm_name!r} not found, skipping")
         return
+    direction = "occ" if ov.field == "failure_param" else "not_occ"
+    generic_attr = f"{direction}_param"
+    if not (hasattr(fm, ov.field) or hasattr(fm, generic_attr)):
+        # Never log success for a no-op: a mode without the two-state
+        # param surface cannot honour the override.
+        if logger:
+            logger.warning(
+                f"override: {ov.fm_name!r} has no {ov.field} surface "
+                f"(not a two-state mode?), skipping"
+            )
+        return
     try:
-        setattr(fm, ov.field, ov.value)
+        if hasattr(fm, ov.field):
+            setattr(fm, ov.field, list(ov.value))
+        if hasattr(fm, generic_attr) and generic_attr != ov.field:
+            setattr(fm, generic_attr, list(ov.value))
+        _propagate_param_override_to_variables(fm, direction, ov.value)
         if logger:
             logger.info3(f"override: {ov.fm_name}.{ov.field} = {ov.value!r}")
     except Exception as e:
@@ -638,7 +692,24 @@ def run_study(
     # Step 2: failure modes
     if logger:
         logger.info1("Add failure modes")
-    add_failure_modes(system, study_obj.failure_modes, logger=logger)
+    fm_added = add_failure_modes(system, study_obj.failure_modes, logger=logger)
+    fm_expected = sum(1 for s in study_obj.failure_modes if getattr(s, "enabled", True))
+    if fm_added != fm_expected:
+        strict = bool(
+            study_obj.simulation is not None
+            and getattr(study_obj.simulation, "strict_failure_modes", False)
+        )
+        message = (
+            f"{fm_expected - fm_added}/{fm_expected} enabled failure mode(s) "
+            f"FAILED to build (see log above). The study would run with "
+            f"silently missing modes."
+        )
+        if strict:
+            raise RuntimeError(f"strict_failure_modes: {message}")
+        if logger:
+            logger.warning(
+                message + " Set simulation.strict_failure_modes: true to abort."
+            )
 
     # Step 3: events
     if logger:

@@ -96,8 +96,6 @@ def update_dict_deep(target, updates, key_attr=None):
     return target
 
 
-
-
 def remove_key_from_dict(obj, key_to_remove, recursive=False):
     """
     Remove occurrences of a specific key from a dictionary or nested structure.

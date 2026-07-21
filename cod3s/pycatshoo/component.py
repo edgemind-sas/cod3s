@@ -5,7 +5,7 @@ import typing
 import warnings
 from ..core import ObjCOD3S
 from ..utils import get_operator_function
-from .automaton import PycAutomaton, PycState
+from .automaton import PycAutomaton
 from .common import prepare_attr_tree, sanitize_cond_format
 from .fm_wiring import FmWiringMixin, cc_comb_suffix, order_param_name
 from .mode_law import ModeLawInst, parse_mode_law

@@ -4,7 +4,6 @@ import Pycatshoo as pyc
 from ..core import ObjCOD3S
 from ..utils import remove_key_from_dict
 
-
 # ANSI color codes
 BLUE = "\033[94m"
 GREEN = "\033[92m"
@@ -71,9 +70,9 @@ class StateProbModel(ObjCOD3S):
 class TransitionModel(ObjCOD3S):
     name: str = pydantic.Field(..., description="transition name")
     source: str = pydantic.Field(..., description="Source state name")
-    target: pydantic.SerializeAsAny[
-        str | typing.List[StateProbModel]
-    ] = pydantic.Field(..., description="Target state name")
+    target: pydantic.SerializeAsAny[str | typing.List[StateProbModel]] = pydantic.Field(
+        ..., description="Target state name"
+    )
     occ_law: pydantic.SerializeAsAny[OccurrenceDistributionModel] = pydantic.Field(
         None, description="Occurrence distribution"
     )
@@ -377,9 +376,7 @@ class InstOccDistribution(PycOccurrenceDistribution):
                 f"inst law, got {law_bkd.name()!r}"
             )
         if n_targets < 1:
-            raise ValueError(
-                f"n_targets must be >= 1, got {n_targets}"
-            )
+            raise ValueError(f"n_targets must be >= 1, got {n_targets}")
         explicit = [law_bkd.parameter(i) for i in range(law_bkd.nbParam())]
         if len(explicit) == n_targets - 1:
             probs = [*explicit, max(0.0, 1.0 - sum(explicit))]
@@ -611,12 +608,11 @@ class PycAutomaton(AutomatonModel):
         #                    for trans in trans_list_bkd]
 
         return aut
-    
 
     def describe(self):
         """Returns a dictionary from a automaton."""
 
         dict = self.model_dump()
         # Remove occurrences of a "kbd"" key from a dictionary.
-        cleaned_data_dict = remove_key_from_dict(dict, 'bkd', recursive=True)
-        return cleaned_data_dict   
+        cleaned_data_dict = remove_key_from_dict(dict, "bkd", recursive=True)
+        return cleaned_data_dict

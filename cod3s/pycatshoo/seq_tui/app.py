@@ -193,9 +193,7 @@ class SeqTuiApp(App[None]):
         try:
             new_state = self._state.with_step_applied(step)
         except Exception as exc:
-            self.call_from_thread(
-                self.notify, f"Step failed: {exc}", severity="error"
-            )
+            self.call_from_thread(self.notify, f"Step failed: {exc}", severity="error")
             return
         self._undo.push(self._state)
         self._state = new_state
@@ -348,9 +346,7 @@ class SeqTuiApp(App[None]):
             return
         self.push_screen(ExportModal(), self._on_export_choice)
 
-    def _on_export_choice(
-        self, choice: Optional[tuple[ExportFormat, Path]]
-    ) -> None:
+    def _on_export_choice(self, choice: Optional[tuple[ExportFormat, Path]]) -> None:
         if choice is None or self._state is None:
             return
         fmt, path = choice

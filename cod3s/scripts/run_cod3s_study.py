@@ -120,9 +120,7 @@ Examples:
     if logger:
         import Pycatshoo as Pyc
 
-        logger.info1(
-            f"PyCATSHOO Version: {Pyc.ILogManager.glLogManager().version()}"
-        )
+        logger.info1(f"PyCATSHOO Version: {Pyc.ILogManager.glLogManager().version()}")
 
     # ``namespace=globals()`` keeps backward compatibility with study
     # YAMLs that reference Python classes brought in by ``imports:``.
@@ -141,9 +139,7 @@ Examples:
 
         analyser = Pyc.CAnalyser(system)
         analyser.keepFilteredSeq(True)
-        analyser.printFilteredSeq(
-            100, str(results_dir / "sequences.xml"), "PySeq.xsl"
-        )
+        analyser.printFilteredSeq(100, str(results_dir / "sequences.xml"), "PySeq.xsl")
         if logger:
             logger.info3(f"Sequences XML saved to {results_dir / 'sequences.xml'}")
     except Exception as e:

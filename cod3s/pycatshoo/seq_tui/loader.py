@@ -31,7 +31,6 @@ from cod3s.pycatshoo.sequence import (
     Sequence,
 )
 
-
 SourceFormat = typing.Literal["xml", "json-cod3s"]
 
 
@@ -233,9 +232,7 @@ def load_sequences_from_json_cod3s(
 
     seq_dicts = payload.get("sequences")
     if seq_dicts is None:
-        raise SequenceLoadError(
-            f'{p.name}: missing "sequences" array in envelope'
-        )
+        raise SequenceLoadError(f'{p.name}: missing "sequences" array in envelope')
     if not isinstance(seq_dicts, list):
         raise SequenceLoadError(
             f'{p.name}: "sequences" must be an array, got {type(seq_dicts).__name__}'

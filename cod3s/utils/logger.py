@@ -206,9 +206,9 @@ class COD3SLogger:
         """
         level = self._get_level_from_name(level_name)
         self.level_name = level_name.upper()
-        
+
         # Initialize logger if not already done
-        if not hasattr(self, 'logger'):
+        if not hasattr(self, "logger"):
             self.logger = logging.getLogger(self.__class__.__name__)
             # To avoid logging propagation and repeated messages
             self.logger.propagate = False
@@ -228,7 +228,7 @@ class COD3SLogger:
 
             # Add handler to logger
             self.logger.addHandler(console_handler)
-        
+
         self.logger.setLevel(level)
 
         # Update all handlers with the new level
