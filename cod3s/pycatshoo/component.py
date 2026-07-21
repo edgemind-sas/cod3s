@@ -933,6 +933,31 @@ class ObjEvent(PycComponent):
     #     return cond
 
 
+# FailureModeBaseSpec fields with no native ObjMode2S meaning: accepted
+# when they carry their BaseSpec default (the ObjFMGenericSpec wire path
+# always emits defaults through ``model_dump``), rejected with a clear
+# error on any explicit non-default value (never silently ignored).
+# ``fm_name`` and ``failure_cond`` are FUNCTIONAL wire aliases instead
+# (mode_name / occ_cond).
+_MODE2S_BASESPEC_PASSTHROUGH_DEFAULTS: dict = {
+    "failure_state": ("occ",),
+    "repair_state": ("rep",),
+    "failure_effects": (None, {}),
+    "failure_effects_trans": (None, {}),
+    "repair_cond": (None, True),
+    "repair_effects": (None, {}),
+    "repair_effects_trans": (None, {}),
+    "failure_param_name": (None, [], ""),
+    "repair_param_name": (None, [], ""),
+    "failure_param": (None, []),
+    "repair_param": (None, []),
+}
+
+# Identifier-like, regex-safe state names: they are interpolated into
+# monitor masks and sequence-filter patterns.
+_MODE2S_STATE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
 class ObjMode2S(FmWiringMixin, PycComponent):
     """Generic two-state mode engine (logical states ``occ`` / ``not_occ``).
 
@@ -989,7 +1014,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
     def __init__(
         self,
-        mode_name,
+        mode_name=None,
         *,
         targets=None,
         target_name=None,
@@ -1015,9 +1040,42 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         cond_inner_logic=all,
         cond_outer_logic=any,
         step=None,
+        fm_name=None,
+        failure_cond=None,
         **kwargs,
     ):
+        # ---- Wire aliases (ObjFMGenericSpec path: fm_cls(**spec_dict)) ----
+        if fm_name is not None:
+            if mode_name is not None and mode_name != fm_name:
+                raise ValueError(
+                    f"ObjMode2S: both mode_name={mode_name!r} and its wire "
+                    f"alias fm_name={fm_name!r} are set — set exactly one."
+                )
+            mode_name = fm_name
+        if not mode_name or not isinstance(mode_name, str):
+            raise ValueError("ObjMode2S: mode_name must be a non-empty string.")
+        if failure_cond is not None and failure_cond is not True:
+            # Wire alias of occ_cond.
+            if occ_cond is not True:
+                raise ValueError(
+                    f"Mode {mode_name!r}: both occ_cond and its wire alias "
+                    f"failure_cond are set — set exactly one."
+                )
+            occ_cond = failure_cond
+
+        # ---- BaseSpec compatibility table (never silently ignore) ----
         if self._engine_strict_kwargs:
+            for key, accepted in _MODE2S_BASESPEC_PASSTHROUGH_DEFAULTS.items():
+                if key in kwargs:
+                    value = kwargs.pop(key)
+                    if not any(value == acc for acc in accepted):
+                        raise ValueError(
+                            f"ObjMode2S {mode_name!r}: field {key!r}={value!r} "
+                            f"belongs to the two-state ObjFM façade API and "
+                            f"has no native meaning. Use the engine fields "
+                            f"(occ_* / not_occ_*), or declare the mode with "
+                            f"an ObjFM* class."
+                        )
             unknown = [k for k in kwargs if k not in self._PYC_COMPONENT_KWARGS]
             if unknown:
                 raise TypeError(
@@ -1026,6 +1084,20 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                     f"{list(self._PYC_COMPONENT_KWARGS)}. A typo here would "
                     f"otherwise silently build a wrong model."
                 )
+
+        # ---- State-name validation (mask / pattern safety) ----
+        for label, st in (("occ_state", occ_state), ("not_occ_state", not_occ_state)):
+            if not isinstance(st, str) or not _MODE2S_STATE_NAME_RE.match(st):
+                raise ValueError(
+                    f"Mode {mode_name!r}: {label}={st!r} is not a valid state "
+                    f"name (identifier-like, regex-safe names only — they are "
+                    f"interpolated into monitor masks and filter patterns)."
+                )
+        if occ_state == not_occ_state:
+            raise ValueError(
+                f"Mode {mode_name!r}: occ_state and not_occ_state must be "
+                f"distinct, both are {occ_state!r}."
+            )
 
         # Normalise mutable-default sentinels.
         if targets is None:
@@ -1071,7 +1143,9 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         # Per-direction law specs (ModeLaw | dict | None). None = the
         # law is provided by the template hooks (façade / subclass).
-        self.occ_law = parse_mode_law(occ_law, what="occ_law") if occ_law is not None else None
+        self.occ_law = (
+            parse_mode_law(occ_law, what="occ_law") if occ_law is not None else None
+        )
         self.not_occ_law = (
             parse_mode_law(not_occ_law, what="not_occ_law")
             if not_occ_law is not None
@@ -1114,6 +1188,11 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         self.not_occ_effects_trans = copy.deepcopy(not_occ_effects_trans)
         self._validate_trans_effects()
 
+        # Silent-failure hardening: resolve every effect against every
+        # target BEFORE creating any variable or automaton, so a typo on
+        # one target fails cleanly instead of leaving a half-built mode.
+        self._dry_run_resolve_effects()
+
         self.occ_param_name = (
             [occ_param_name]
             if isinstance(occ_param_name, str)
@@ -1133,9 +1212,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         self.trans_name_prefix_fun = trans_name_prefix_fun
 
         self.occ_param = (
-            [occ_param]
-            if not isinstance(occ_param, list)
-            else copy.deepcopy(occ_param)
+            [occ_param] if not isinstance(occ_param, list) else copy.deepcopy(occ_param)
         )
         occ_param_diff = len(self.targets) - len(self.occ_param)
         if occ_param_diff > 0:
@@ -1169,47 +1246,12 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         for order in range(1, order_max + 1):
 
-            occ_param_cur = self.occ_param[order - 1]
-            if not isinstance(occ_param_cur, tuple):
-                occ_param_cur = (occ_param_cur,)
-
-            occ_var_params_cur = {}
-            for occ_param_name_cur, param_value in zip(
-                self.occ_param_name, occ_param_cur
-            ):
-                occ_param_name_cur_tmp = order_param_name(
-                    occ_param_name_cur,
-                    order,
-                    order_max,
-                    fmt=self.param_name_order_prefix,
-                )
-
-                occ_var_param = self.addVariable(
-                    occ_param_name_cur_tmp, pyc.TVarType.t_double, param_value
-                )
-                occ_var_params_cur.update({occ_param_name_cur: occ_var_param})
-
-            not_occ_param_cur = self.not_occ_param[order - 1]
-            if not isinstance(not_occ_param_cur, tuple):
-                not_occ_param_cur = (not_occ_param_cur,)
-
-            not_occ_var_params_cur = {}
-            for not_occ_param_name_cur, param_value in zip(
-                self.not_occ_param_name, not_occ_param_cur
-            ):
-                not_occ_param_name_cur_tmp = order_param_name(
-                    not_occ_param_name_cur,
-                    order,
-                    order_max,
-                    fmt=self.param_name_order_prefix,
-                )
-
-                not_occ_var_param = self.addVariable(
-                    not_occ_param_name_cur_tmp, pyc.TVarType.t_double, param_value
-                )
-                not_occ_var_params_cur.update(
-                    {not_occ_param_name_cur: not_occ_var_param}
-                )
+            occ_var_params_cur = self._build_order_param_variables(
+                "occ", order, order_max
+            )
+            not_occ_var_params_cur = self._build_order_param_variables(
+                "not_occ", order, order_max
+            )
 
             # Store order 1 params
             if order == 1:
@@ -1218,9 +1260,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             if (
                 drop_inactive_automata
                 and not self._is_direction_law_active("occ", occ_var_params_cur)
-                and not self._is_direction_law_active(
-                    "not_occ", not_occ_var_params_cur
-                )
+                and not self._is_direction_law_active("not_occ", not_occ_var_params_cur)
             ):
                 continue
 
@@ -1452,9 +1492,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         # clear error rather than silently produce a one-shot model.
         if self.behaviour == "external_rep_indep":
             if self.not_occ_var_params_order1 is None or not (
-                self._is_direction_law_active(
-                    "not_occ", self.not_occ_var_params_order1
-                )
+                self._is_direction_law_active("not_occ", self.not_occ_var_params_order1)
             ):
                 raise ValueError(
                     f"behaviour='external_rep_indep' requires the order-1 "
@@ -1486,6 +1524,83 @@ class ObjMode2S(FmWiringMixin, PycComponent):
     # The façades override these to delegate to the historical
     # failure/repair-named hooks.
     # ------------------------------------------------------------------
+
+    def _build_order_param_variables(self, direction, order, order_max):
+        """Create the ``t_double`` parameter variables of ``direction``
+        for one CC ``order`` and return them as ``{base_name: variable}``.
+
+        Variables are created for every order — including orders whose
+        automata are later dropped by ``drop_inactive_automata`` — so
+        study indicators can always reference them.
+        """
+        param_names = (
+            self.occ_param_name if direction == "occ" else self.not_occ_param_name
+        )
+        param_cur = (
+            self.occ_param[order - 1]
+            if direction == "occ"
+            else self.not_occ_param[order - 1]
+        )
+        if not isinstance(param_cur, tuple):
+            param_cur = (param_cur,)
+
+        var_params_cur = {}
+        for param_name_cur, param_value in zip(param_names, param_cur):
+            param_var_name = order_param_name(
+                param_name_cur,
+                order,
+                order_max,
+                fmt=self.param_name_order_prefix,
+            )
+            var_param = self.addVariable(
+                param_var_name, pyc.TVarType.t_double, param_value
+            )
+            var_params_cur.update({param_name_cur: var_param})
+        return var_params_cur
+
+    def _dry_run_resolve_effects(self):
+        """Resolve all effect dicts against all targets (build nothing).
+
+        Runs before any variable/automaton creation. Reuses the exact
+        historical resolution code paths so the error messages stay
+        identical — only earlier.
+        """
+        for tgt in self.targets:
+            try:
+                comp_cur = self.system().component(tgt)
+            except Exception as exc:
+                comp_cur = None
+                cause = exc
+            else:
+                cause = None
+            if comp_cur is None:
+                raise ValueError(
+                    f"Mode '{self.mode_name}': target component {tgt!r} not "
+                    f"found in the system. Create the targets before the mode."
+                ) from cause
+            if self.behaviour == "internal":
+                for effects in (self.occ_effects, self.not_occ_effects):
+                    for var in effects:
+                        if not (
+                            hasattr(comp_cur, var)
+                            or var in [v.basename() for v in comp_cur.variables()]
+                        ):
+                            raise ValueError(
+                                f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                            )
+            else:
+                self._resolve_target_effects(
+                    comp_cur, tgt, self.occ_effects, kind="failure_effects"
+                )
+                self._resolve_target_effects(
+                    comp_cur, tgt, self.not_occ_effects, kind="repair_effects"
+                )
+            self._resolve_target_effects(
+                comp_cur, tgt, self.occ_effects_trans, kind="failure_effects_trans"
+            )
+            self._resolve_target_effects(
+                comp_cur, tgt, self.not_occ_effects_trans, kind="repair_effects_trans"
+            )
 
     def _direction_law(self, direction):
         """Return the law spec of ``direction`` (may be None)."""
@@ -1554,7 +1669,8 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         raise ValueError(
             f"Mode '{self.mode_name}': {len(current)} {direction} "
             f"parameter(s) provided for {order_max} targets, and no law "
-            f"spec to derive the missing ones (no silent padding)."
+            f"spec to derive the missing ones (no silent padding). "
+            f"Provide {direction}_law or explicit {direction}_param values."
         )
 
     def _is_direction_law_active(self, direction, params):

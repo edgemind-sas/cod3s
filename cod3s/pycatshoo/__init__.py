@@ -9,8 +9,17 @@ from .automaton import (
 from .system import PycSystem, PycMCSimulationParam
 from .sequence import PycSequence, Sequence, SeqEvent, SequenceAnalyser
 
-from .component import PycComponent, ObjEvent, ObjFM, ObjFMDelay, ObjFMExp, ObjFMInst
+from .component import (
+    ObjEvent,
+    ObjFM,
+    ObjFMDelay,
+    ObjFMExp,
+    ObjFMInst,
+    ObjMode2S,
+    PycComponent,
+)
 from .deg_mode import DegLawDelay, DegLawExp, DegState, ObjDegMode
+from .mode_law import ModeLawDelay, ModeLawExp, ModeLawInst, parse_mode_law
 from ..utils import remove_key_from_dict
 
 # from .kb import PycKB

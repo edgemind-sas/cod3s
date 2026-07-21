@@ -40,8 +40,7 @@ def ensure_non_negative(value, what):
     for v in values:
         if v < 0:
             raise ValueError(
-                f"{what} must be >= 0, got {v} (sign mistake in the "
-                f"configuration?)"
+                f"{what} must be >= 0, got {v} (sign mistake in the " f"configuration?)"
             )
     return value
 
@@ -150,9 +149,7 @@ class ModeLawInst(_ModeLawBase):
         probs = v if isinstance(v, list) else [v]
         for p in probs:
             if not (0 <= p <= 1):
-                raise ValueError(
-                    f"inst law prob must be within [0, 1], got {p}"
-                )
+                raise ValueError(f"inst law prob must be within [0, 1], got {p}")
         return v
 
     def to_bkd_law(self, param):

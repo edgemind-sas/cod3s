@@ -412,25 +412,25 @@ oracle.
 
 ### Phase 2 — Engine extraction + timed-law façades
 
-- [ ] **2a — mechanical extraction**: `ObjMode2S` = renamed ObjFM body (mapping
+- [x] **2a — mechanical extraction**: `ObjMode2S` = renamed ObjFM body (mapping
       table), `ObjFM` = near-alias façade; no new features, targets semantics
       unchanged. *Gate: full suite green* — including `test_objfm_inst_*`, whose
       wholesale `_build_fm_automaton` override **must survive via the old-signature
       tolerance** (stated requirement, not an accident).
-- [ ] **2b — generalization**: law-spec-driven native path (hook-bridge contract
+- [x] **2b — generalization**: law-spec-driven native path (hook-bridge contract
       items 1-5), validate-then-build decomposition, keyword-only signature,
       unknown-kwargs rejection, state-name validation, wire aliases +
       `_BASESPEC_PASSTHROUGH_DEFAULTS`, `fm_name` property alias, typing,
       `get_direction_cond` dedupe. Build-time-resolved delegation only (no
       per-evaluation dispatch — condition-closure depth unchanged vs today).
-- [ ] `tests/pyc_obj/obj_mode2s/test_mode2s_core.py` (+ `_utils.py` on the
+- [x] `tests/pyc_obj/obj_mode2s/test_mode2s_core.py` (+ `_utils.py` on the
       obj_deg_mode model): native construction (occ/not_occ grammar,
       `occ_rate`/`not_occ_time` variables), and the **façade ≡ raw-engine
       equivalence test**: same automata/states/transitions/variables, same
       sensitive-method registration counts, same deterministic isimu cycle, and a
       **seeded MC run with strict event-trace equality** (ObjFMExp vs hand-built
       ObjMode2S — the strongest anti-drift check available).
-- [ ] Re-run the Phase 0 MC wall-time smoke (soft threshold ×1.3).
+- [x] Re-run the Phase 0 MC wall-time smoke (soft threshold ×1.3).
 
 **Gate:** full existing suite green unmodified + new tests + baseline counts match.
 
