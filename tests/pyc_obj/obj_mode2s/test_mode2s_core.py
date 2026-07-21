@@ -143,6 +143,38 @@ class TestNativeValidation:
                 not_occ_law={"cls": "exp", "rate": [0.2, 0.3]},
             )
 
+    def test_partial_all_zero_param_vector_rejected_not_substituted(self, pyc_session):
+        """An explicit vector of zeros is a deliberate 'inactive order'
+        declaration: it must never be mistaken for an absent one and
+        silently replaced by the law-spec values (review finding 8)."""
+        system = PycSystem(name="Mode2SValFalsy")
+        for n in ("C1", "C2"):
+            Equipment(n)
+        with pytest.raises(ValueError, match="strict length"):
+            ObjMode2S(
+                mode_name="wear",
+                targets=["C1", "C2"],
+                occ_law={"cls": "exp", "rate": [0.1, 0.2]},
+                not_occ_law={"cls": "exp", "rate": [0.3, 0.4]},
+                occ_param=[0.0],
+            )
+
+    def test_full_explicit_zero_vector_is_honoured(self, pyc_session):
+        system = PycSystem(name="Mode2SValZeros")
+        for n in ("C1", "C2"):
+            Equipment(n)
+        mode = ObjMode2S(
+            mode_name="wear",
+            targets=["C1", "C2"],
+            occ_law={"cls": "exp", "rate": [0.1, 0.2]},
+            not_occ_law={"cls": "exp", "rate": [0.3, 0.4]},
+            occ_param=[0.0, 0.0],
+            drop_inactive_automata=False,
+        )
+        assert mode.occ_param == [0.0, 0.0]
+        assert mode.variable("occ_rate__1_o_2").value() == 0.0
+        assert mode.variable("occ_rate__2_o_2").value() == 0.0
+
     def test_vector_length_mismatch_rejected(self, pyc_session):
         system = PycSystem(name="Mode2SValVec")
         for n in ("C1", "C2"):

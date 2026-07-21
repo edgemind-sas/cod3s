@@ -1781,7 +1781,12 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         current = self.occ_param if direction == "occ" else self.not_occ_param
         law = self._direction_law(direction)
         order_max = len(self.targets)
-        if law is not None and not any(current):
+        # ``not current`` (emptiness), NOT ``not any(current)``: an
+        # explicitly provided vector of zeros is a deliberate "inactive
+        # order" declaration, never an absent one — substituting the law
+        # values there would be exactly the silent padding this engine
+        # refuses.
+        if law is not None and not current:
             values = law.values()
             if len(values) == order_max:
                 return values
@@ -1804,9 +1809,11 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             )
         raise ValueError(
             f"Mode '{self.mode_name}': {len(current)} {direction} "
-            f"parameter(s) provided for {order_max} targets, and no law "
-            f"spec to derive the missing ones (no silent padding). "
-            f"Provide {direction}_law or explicit {direction}_param values."
+            f"parameter(s) provided for {order_max} targets (strict "
+            f"length, no silent padding). Provide the full per-order "
+            f"vector — explicit 0 for inactive orders — or omit "
+            f"{direction}_param entirely to derive it from "
+            f"{direction}_law."
         )
 
     def _is_direction_law_active(self, direction, params):
