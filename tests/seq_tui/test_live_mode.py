@@ -48,8 +48,8 @@ def live_system():
 
     # One ObjFM internal covering both pumps.
     ObjFMExp(
-        name="pump_X__def_pump",
-        target_comps=["pump_1", "pump_2"],
+        fm_name="def_pump",
+        targets=["pump_1", "pump_2"],
         failure_param=[(1e-3,), (1e-4,)],
         repair_param=[(1e-1,), (1e-2,)],
         failure_effects={"working": False},
