@@ -128,6 +128,92 @@ def test_bare_engine_cycles_collapsed(pyc_session):
     assert _sig(result.sequences[0]) == [("top", "occ")]
 
 
+class TestExplicitFilterHonoursPerModeStateNames:
+    """cod3s-seq lists discovered modes and applies ONE (failure_state,
+    repair_state) pair; a system mixing ObjFM (occ/rep) and a bare
+    ObjMode2S (occ/not_occ) has no single valid pair, so a selected
+    ObjMode2S used to be silently left untouched (review finding 9)."""
+
+    def _system_with_both(self):
+        system = PycSystem(name="Mode2SExplicitFilter")
+        Box("C1")
+        Box("C2")
+        ObjMode2S(
+            mode_name="wear",
+            targets=["C1"],
+            occ_law={"cls": "exp", "rate": 0.1},
+            not_occ_law={"cls": "exp", "rate": 0.2},
+        )
+        cod3s.ObjFMExp(
+            fm_name="frun", targets=["C2"], failure_param=0.1, repair_param=0.2
+        )
+        return system
+
+    def _analyser(self, system):
+        analyser = SequenceAnalyser(
+            sequences=[
+                _seq(
+                    _ev("C1__wear", "occ"),
+                    _ev("C1__wear", "not_occ"),
+                    _ev("C2__frun", "occ"),
+                    _ev("C2__frun", "rep"),
+                    _ev("top", "occ"),
+                )
+            ]
+        )
+        analyser._system = system
+        return analyser
+
+    def test_default_pair_uses_each_mode_own_state_names(self, pyc_session):
+        system = self._system_with_both()
+        analyser = self._analyser(system)
+        result = analyser.filter_objfm_cycles(
+            objfm_internal=["C1__wear", "C2__frun"],
+            objfm_external=[],
+            inplace=False,
+        )
+        # Both transients collapse despite using different conventions.
+        assert _sig(result.sequences[0]) == [("top", "occ")]
+
+    def test_explicit_non_default_pair_still_wins(self, pyc_session):
+        system = self._system_with_both()
+        analyser = self._analyser(system)
+        result = analyser.filter_objfm_cycles(
+            objfm_internal=["C1__wear", "C2__frun"],
+            objfm_external=[],
+            failure_state="occ",
+            repair_state="zzz",
+            inplace=False,
+        )
+        # The caller asked for a specific pair: no introspection kicks
+        # in, so nothing matches and nothing is stripped.
+        assert _sig(result.sequences[0]) == [
+            ("C1__wear", "occ"),
+            ("C1__wear", "not_occ"),
+            ("C2__frun", "occ"),
+            ("C2__frun", "rep"),
+            ("top", "occ"),
+        ]
+
+    def test_post_mortem_without_system_keeps_the_given_pair(self, pyc_session):
+        """No attached system (post-mortem path): the explicit pair is
+        the only available information and must be used as-is."""
+        analyser = SequenceAnalyser(
+            sequences=[
+                _seq(
+                    _ev("C2__frun", "occ"),
+                    _ev("C2__frun", "rep"),
+                    _ev("top", "occ"),
+                )
+            ]
+        )
+        assert analyser._system is None
+        result = analyser.filter_objfm_cycles(
+            objfm_internal=["C2__frun"], objfm_external=[], inplace=False
+        )
+        assert _sig(result.sequences[0]) == [("top", "occ")]
+
+
 def test_self_hosted_bare_engine_cycles_collapsed(pyc_session):
     system = PycSystem(name="Mode2SCollapseSelf")
     Box("C1")

@@ -1236,8 +1236,32 @@ class SequenceAnalyser(ObjCOD3S):
         else:
             objfm_internal = list(objfm_internal or [])
             objfm_external = list(objfm_external or [])
+            # A system may mix state-name conventions (ObjFM uses
+            # occ/rep, a bare ObjMode2S uses occ/not_occ), and the
+            # explicit API carries a SINGLE pair for the whole call — no
+            # single value can be right for such a system. So when the
+            # caller left the pair at its defaults and a system is
+            # attached, each named mode is filtered with its OWN state
+            # names, discovered by introspection; an explicitly supplied
+            # pair still wins for every mode.
+            discovered_internal = {}
+            discovered_external = {}
+            if (
+                self._system is not None
+                and failure_state == "occ"
+                and repair_state == "rep"
+            ):
+                disc_int, disc_ext = self._discover_objfm_specs()
+                discovered_internal = {
+                    name: (fail, rep) for (name, fail, rep) in disc_int
+                }
+                discovered_external = {
+                    name: (fm_name, fail, rep)
+                    for (name, fm_name, fail, rep) in disc_ext
+                }
             internal_specs = [
-                (name, failure_state, repair_state) for name in objfm_internal
+                (name, *discovered_internal.get(name, (failure_state, repair_state)))
+                for name in objfm_internal
             ]
             # In the explicit API, the user passes the component name as
             # seen in the event trace (``f"{target_name}__{fm_name}"``).
@@ -1246,7 +1270,13 @@ class SequenceAnalyser(ObjCOD3S):
             # name as-is when no ``__`` is present (covers tests built on
             # synthetic obj names).
             external_specs = [
-                (name, _derive_fm_name(name), failure_state, repair_state)
+                (
+                    name,
+                    *discovered_external.get(
+                        name,
+                        (_derive_fm_name(name), failure_state, repair_state),
+                    ),
+                )
                 for name in objfm_external
             ]
 
