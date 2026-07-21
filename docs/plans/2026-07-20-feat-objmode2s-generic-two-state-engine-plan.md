@@ -475,16 +475,16 @@ oracle.
 
 ### Phase 5 — New combos, locks, isimu
 
-- [ ] **Reduced validation matrix** (~15 cases, not 54): parametrized sweep of the
+- [x] **Reduced validation matrix** (~15 cases, not 54): parametrized sweep of the
       9 law cells at `internal`/order 1 (construct or reject, **rejections asserted
       at construction without simulating**); targeted cells where law type meets
       machinery — **new locked decision: inst-on-return is rejected with CC
       order > 1 and with `external`/`external_rep_indep`** (clear errors, liftable
       later); inst×CC on the occ side (exists today via ObjFMInst — kept); G3
       prob-1 rule per CC-order pairs.
-- [ ] Deterministic isimu tests for the accepted mixed combos (exp/delay,
+- [x] Deterministic isimu tests for the accepted mixed combos (exp/delay,
       delay/exp, delay/inst, inst/delay, exp/inst — internal, order 1).
-- [ ] Statistical locks (`--runslow`, `@pytest.mark.slow`, seeded, ≤ ~2 min total
+- [x] Statistical locks (`--runslow`, `@pytest.mark.slow`, seeded, ≤ ~2 min total
       added):
       - **Analytical (non-circular):** exp/delay alternating renewal — asymptotic
         availability `(1/λ)/(1/λ + ttr)` (degmode CTMC-lock pattern).
@@ -495,7 +495,7 @@ oracle.
         anti-hang guard **plus a per-run sequence-length bound** (a Zeno
         regression shows up as event-count explosion before it shows up as a
         hang).
-- [ ] isimu inst/inst cascade regression test (G11).
+- [x] isimu inst/inst cascade regression test (G11).
 
 **Gate:** full suite + new suites green; slow locks green under `--runslow` within
 budget (`--durations` vs Phase 0 baseline).
