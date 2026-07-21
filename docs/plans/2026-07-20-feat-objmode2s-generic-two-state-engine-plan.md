@@ -403,9 +403,9 @@ oracle.
 
 ### Phase 1 — Law specs (`mode_law.py`)
 
-- [ ] Module as specified above (union, TypeAdapter, `prob ∈ [0,1]`, activity
+- [x] Module as specified above (union, TypeAdapter, `prob ∈ [0,1]`, activity
       rules, `to_bkd_law`, shared validators importable by deg_mode).
-- [ ] `tests/pyc_obj/test_mode_law.py`: validation matrix, vector handling,
+- [x] `tests/pyc_obj/test_mode_law.py`: validation matrix, vector handling,
       activity rules, dict round-trip, **DegLaw schema-subset anti-drift test**.
 
 **Gate:** unit tests green; no production code touched.
