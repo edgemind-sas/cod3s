@@ -146,6 +146,41 @@ class FmWiringMixin:
             f"effect_trans__{self.name()}_{aut.name}_{trans_name}", sensitive_method
         )
 
+    def _wire_state_effects_multi(self, aut, state_names, effects_records, trans_name):
+        """Level clamp spanning SEVERAL states through one sensitive method.
+
+        Same registration pattern as :meth:`_wire_state_effects` (one
+        method on the automaton + each written variable + start + step)
+        with a composite any-active predicate — used for a logical
+        state and its parked micro-state(s) in the inst machinery.
+        Never register one clamp per micro-state: that would double the
+        per-fixpoint-pass cost on every written variable.
+        """
+        if not effects_records:
+            return
+        st_bkds = [aut.get_state_by_name(name)._bkd for name in state_names]
+
+        def sensitive_method():
+            if any(st.isActive() for st in st_bkds):
+                for elt in effects_records:
+                    if elt["var"].value() != elt["value"]:
+                        elt["var"].setValue(elt["value"])
+
+        method_name = f"effect__{self.name()}_{aut.name}_{trans_name}"
+        aut._bkd.addSensitiveMethod(method_name, sensitive_method)
+        for elt in effects_records:
+            elt["var"].addSensitiveMethod(method_name, sensitive_method)
+        self.addStartMethod(method_name, sensitive_method)
+        try:
+            step = self.step
+        except AttributeError:
+            raise TypeError(
+                f"{type(self).__name__} must define self.step (None allowed) "
+                f"before wiring state effects (FmWiringMixin host contract)."
+            ) from None
+        if step:
+            step.addMethod(self, method_name)
+
     def _wire_state_effects(self, aut, state_name, effects_records, trans_name):
         """Register a state-entry sensitive method applying ``effects_records``.
 

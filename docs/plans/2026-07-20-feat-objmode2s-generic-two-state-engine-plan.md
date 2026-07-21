@@ -454,19 +454,19 @@ oracle.
 
 ### Phase 4 — Generic inst machinery + ObjFMInst façade
 
-- [ ] Absorb the 3-state build into the engine (inst routing before legacy
+- [x] Absorb the 3-state build into the engine (inst routing before legacy
       delegation; parked naming; branch order `[dest, parked]`; prob re-binding;
       masks with `re.escape`; engine-level `_monitor_masks` +
       `reapply_monitor_masks`); symmetric return direction (`occ_star`); composite
       armed-OR-parked clamp predicate; **no `_star`/re-arm for timed directions**
       (pinned).
-- [ ] `ObjFMInst` façade: inst occ law (base `gamma`), exp return (base `mu`),
+- [x] `ObjFMInst` façade: inst occ law (base `gamma`), exp return (base `mu`),
       `not_occ_state="rep"`, `parked_state_name="not_occ"`; **deletes** its
       `_build_fm_automaton` override; keeps its trans-effects rejection (verbatim
       messages) and `get_*_cond` overrides; drop-on-`gamma<=0` behaviour preserved
       via its activity hook (+ test pinning the native-inst-vs-façade drop
       divergence).
-- [ ] `tests/pyc_obj/obj_mode2s/test_mode2s_inst.py`: brainstorm scenarios A–D on
+- [x] `tests/pyc_obj/obj_mode2s/test_mode2s_inst.py`: brainstorm scenarios A–D on
       the **return** direction (per-demand recovery, `occ_star` parking, re-arm,
       entry-with-cond-true, `cond≡True` immediate-or-never), `_star` naming, masks,
       clamps-during-parking pin.

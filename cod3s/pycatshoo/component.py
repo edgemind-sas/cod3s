@@ -926,6 +926,8 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         not_occ_effects_trans=None,
         not_occ_param_name=None,
         not_occ_param=None,
+        occ_parked_state=None,
+        not_occ_parked_state=None,
         param_name_order_prefix="__{order}_o_{order_max}",
         trans_name_prefix="__cc_{target_comb_u}",
         trans_name_prefix_fun=None,
@@ -979,7 +981,14 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 )
 
         # ---- State-name validation (mask / pattern safety) ----
-        for label, st in (("occ_state", occ_state), ("not_occ_state", not_occ_state)):
+        for label, st in (
+            ("occ_state", occ_state),
+            ("not_occ_state", not_occ_state),
+            ("occ_parked_state", occ_parked_state),
+            ("not_occ_parked_state", not_occ_parked_state),
+        ):
+            if st is None and label.endswith("parked_state"):
+                continue
             if not isinstance(st, str) or not _MODE2S_STATE_NAME_RE.match(st):
                 raise ValueError(
                     f"Mode {mode_name!r}: {label}={st!r} is not a valid state "
@@ -1069,6 +1078,59 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         self.occ_state = occ_state
         self.not_occ_state = not_occ_state
+        #: Parked micro-state BASE names per inst direction (the CC
+        #: suffix is appended per combination). ``occ_parked_state``
+        #: parks failed draws of the occ edge (it lives beside the
+        #: armed ``not_occ`` state); symmetrically for the return edge.
+        self.occ_parked_state = occ_parked_state
+        self.not_occ_parked_state = not_occ_parked_state
+
+        # Native inst guards (law-spec-driven; façade routing keeps its
+        # own historical rules through the hook overrides).
+        native_inst_dirs = [
+            d
+            for d, law in (("occ", self.occ_law), ("not_occ", self.not_occ_law))
+            if isinstance(law, ModeLawInst)
+        ]
+        if native_inst_dirs and behaviour != "internal":
+            raise ValueError(
+                f"Mode {mode_name!r}: inst laws are only supported with "
+                f"behaviour='internal' (got {behaviour!r}) — the "
+                f"external/external_rep_indep synchronisation of inst "
+                f"draws is deferred."
+            )
+        if isinstance(self.not_occ_law, ModeLawInst) and len(self.targets) > 1:
+            raise ValueError(
+                f"Mode {mode_name!r}: inst on the return direction "
+                f"(not_occ_law) is not supported with CC order > 1 "
+                f"(len(targets)={len(self.targets)}) — locked decision, "
+                f"liftable later."
+            )
+        if isinstance(self.occ_law, ModeLawInst) and isinstance(
+            self.not_occ_law, ModeLawInst
+        ):
+            # Certain-livelock guard: a same-instant occ/not_occ
+            # ping-pong continues with probability p_occ * p_ret per
+            # cycle — it terminates almost surely unless BOTH are 1.
+            occ_probs = self.occ_law.values()
+            ret_probs = self.not_occ_law.values()
+            pairs_both_one = any(
+                p1 == 1 and p2 == 1 for p1, p2 in zip(occ_probs, ret_probs)
+            )
+            if pairs_both_one:
+                if occ_cond is True and not_occ_cond is True:
+                    raise ValueError(
+                        f"Mode {mode_name!r}: inst/inst with prob 1 on both "
+                        f"directions and trivially-true conditions is a "
+                        f"certain same-instant livelock."
+                    )
+                warnings.warn(
+                    f"Mode {mode_name!r}: inst/inst with prob 1 on both "
+                    f"directions — termination then relies entirely on the "
+                    f"conditions; a runtime state where both hold yields a "
+                    f"same-instant livelock (stepForward hang).",
+                    stacklevel=2,
+                )
 
         if isinstance(step, str):
             step_name = step
@@ -1079,6 +1141,10 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         self.cond_inner_logic = cond_inner_logic
         self.cond_outer_logic = cond_outer_logic
+
+        # Sequence-monitoring masks of the inst machinery, re-applied by
+        # the study runner after ``monitorTransition`` (duck-typed hook).
+        self._monitor_masks = []
 
         self.var_params = {}
         self.occ_effects = copy.deepcopy(occ_effects)
@@ -1283,16 +1349,17 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 occ_state_name_cur = self.occ_state
                 not_occ_state_name_cur = self.not_occ_state
                 aut_name_cur = self.mode_name
+                cc_suffix_cur = ""
                 if order_max > 1:
-                    trans_name_prefix_cur = cc_comb_suffix(
+                    cc_suffix_cur = cc_comb_suffix(
                         target_set_idx,
                         order_max,
                         trans_name_prefix=self.trans_name_prefix,
                         trans_name_prefix_fun=self.trans_name_prefix_fun,
                     )
-                    aut_name_cur += trans_name_prefix_cur
-                    occ_state_name_cur += trans_name_prefix_cur
-                    not_occ_state_name_cur += trans_name_prefix_cur
+                    aut_name_cur += cc_suffix_cur
+                    occ_state_name_cur += cc_suffix_cur
+                    not_occ_state_name_cur += cc_suffix_cur
 
                 target_comps_cur = [
                     self.system().component(self.targets[idx]) for idx in target_set_idx
@@ -1353,29 +1420,56 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                     else:
                         not_occ_cond_cur = _always_true
 
+                # Inst routing happens HERE, at engine level, before any
+                # legacy delegation: a direction carrying an inst law
+                # takes the armed/parked draw machinery; timed
+                # directions never build any `_star` state or re-arm
+                # transition.
+                inst_occ = self._direction_is_inst("occ")
+                inst_not_occ = self._direction_is_inst("not_occ")
+
                 # Mode return law: instantaneous in external_rep_indep
                 # (trigger — the mode emits a one-shot signal then resets).
                 if self.behaviour == "external_rep_indep":
                     mode_return_law = {"cls": "delay", "time": 0}
+                elif inst_not_occ:
+                    mode_return_law = None  # built as a draw, not a law dict
                 else:
                     mode_return_law = self._direction_law_bkd(
                         "not_occ", not_occ_var_params_cur
                     )
 
-                aut = self._build_mode_automaton(
-                    aut_name=aut_name_cur,
-                    not_occ_state_name=not_occ_state_name_cur,
-                    occ_state_name=occ_state_name_cur,
-                    occ_cond=occ_cond_cur,
-                    not_occ_cond=not_occ_cond_cur,
-                    occ_var_params=occ_var_params_cur,
-                    not_occ_var_params=not_occ_var_params_cur,
-                    occ_effects=occ_effects_cur,
-                    not_occ_effects=not_occ_effects_cur,
-                    not_occ_law=mode_return_law,
-                    occ_effects_trans=occ_effects_trans_cur,
-                    not_occ_effects_trans=not_occ_effects_trans_cur,
-                )
+                if inst_occ or inst_not_occ:
+                    aut = self._build_inst_mode_automaton(
+                        aut_name=aut_name_cur,
+                        not_occ_state_name=not_occ_state_name_cur,
+                        occ_state_name=occ_state_name_cur,
+                        occ_cond=occ_cond_cur,
+                        not_occ_cond=not_occ_cond_cur,
+                        occ_var_params=occ_var_params_cur,
+                        not_occ_var_params=not_occ_var_params_cur,
+                        occ_effects=occ_effects_cur,
+                        not_occ_effects=not_occ_effects_cur,
+                        not_occ_law=mode_return_law,
+                        inst_occ=inst_occ,
+                        inst_not_occ=inst_not_occ,
+                        cc_suffix=cc_suffix_cur,
+                    )
+                else:
+                    aut = self._build_mode_automaton(
+                        aut_name=aut_name_cur,
+                        not_occ_state_name=not_occ_state_name_cur,
+                        occ_state_name=occ_state_name_cur,
+                        occ_cond=occ_cond_cur,
+                        not_occ_cond=not_occ_cond_cur,
+                        occ_var_params=occ_var_params_cur,
+                        not_occ_var_params=not_occ_var_params_cur,
+                        occ_effects=occ_effects_cur,
+                        not_occ_effects=not_occ_effects_cur,
+                        not_occ_law=mode_return_law,
+                        occ_effects_trans=occ_effects_trans_cur,
+                        not_occ_effects_trans=not_occ_effects_trans_cur,
+                    )
 
                 # Record impacting automata for centralized control
                 if self.behaviour in ("external", "external_rep_indep"):
@@ -1781,12 +1875,20 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         """Reject trans-based effects on unsupported configurations.
 
         Native mirror of the historical validation (level+pulse overlap,
-        behaviours without a symmetric edge pair, CCF order > 1) with
-        engine vocabulary. The façades override this to keep the
-        historical messages verbatim (they are pinned by tests).
+        behaviours without a symmetric edge pair, CCF order > 1, inst
+        laws) with engine vocabulary. The façades override this to keep
+        the historical messages verbatim (they are pinned by tests).
         """
         if not (self.occ_effects_trans or self.not_occ_effects_trans):
             return
+        if isinstance(self.occ_law, ModeLawInst) or isinstance(
+            self.not_occ_law, ModeLawInst
+        ):
+            raise ValueError(
+                f"Mode {self.mode_name!r}: trans-based effects are not "
+                f"supported on inst directions (one-shot pulses on a "
+                f"branching draw edge are deferred)."
+            )
         level_vars = set(self.occ_effects) | set(self.not_occ_effects)
         trans_vars = set(self.occ_effects_trans) | set(self.not_occ_effects_trans)
         overlap = level_vars & trans_vars
@@ -1879,6 +1981,262 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         )
         self._wire_transition_effects(aut, not_occ_state_name, not_occ_effects_trans)
         return aut
+
+    # ------------------------------------------------------------------
+    # Generic inst machinery (armed / parked split, anti-Zeno)
+    # ------------------------------------------------------------------
+
+    #: Out-state mask that matches no state — fully silences a
+    #: transition in the sequence monitoring ("#" prefix = regex, "$^"
+    #: matches nothing).
+    _NEVER_MATCH_MASK = "#$^"
+
+    def _direction_is_inst(self, direction):
+        """Whether ``direction`` takes the inst (draw) machinery.
+
+        Native rule: exclusively ``isinstance(law, ModeLawInst)`` on a
+        present spec — a hook-driven direction always takes the timed
+        two-state path. The ``ObjFMInst`` façade overrides this (its
+        gamma law flows through the legacy hooks, not a spec).
+        """
+        return isinstance(self._direction_law(direction), ModeLawInst)
+
+    def _parked_state_name(self, direction):
+        """BASE name of the parked micro-state of an inst ``direction``
+        (the per-combination CC suffix is appended by the builder).
+
+        The parked state lives beside the armed source state of the
+        edge: ``occ`` direction parks beside ``not_occ`` (default
+        ``<not_occ_state>_star``), the return direction parks beside
+        ``occ`` (default ``<occ_state>_star``).
+        """
+        if direction == "occ":
+            return self.occ_parked_state or f"{self.not_occ_state}_star"
+        return self.not_occ_parked_state or f"{self.occ_state}_star"
+
+    def _build_inst_mode_automaton(
+        self,
+        aut_name,
+        not_occ_state_name,
+        occ_state_name,
+        occ_cond,
+        not_occ_cond,
+        occ_var_params,
+        not_occ_var_params,
+        occ_effects,
+        not_occ_effects,
+        not_occ_law,
+        inst_occ,
+        inst_not_occ,
+        cc_suffix,
+    ):
+        """Build one cc-combination automaton with inst direction(s).
+
+        Unified per-edge inst semantics (locked 2026-07-20): one draw
+        per rising edge of the composite guard "armed state AND
+        condition". Each inst direction splits its SOURCE logical state
+        into armed + parked micro-states:
+
+        * draw — inst law, guard = direction condition, branches
+          ``[destination (prob), parked]``; named after the destination
+          state (sequence-trace convention), recorded only when the
+          destination branch lands (mask ``#<dest>$``);
+        * parking — no draw transition leaves the parked state
+          (anti-Zeno: the level-triggered inst law would otherwise
+          re-draw forever within the instant);
+        * re-arm — ``inst p=1`` guarded by NOT condition, named after
+          the parked state (its source), fully masked from monitoring.
+
+        Timed directions build their classic single transition — no
+        ``_star`` state, no re-arm. Level clamps span BOTH micro-states
+        of a logical state through ONE composite-predicate sensitive
+        method (never two registrations per variable).
+
+        The draw probability is baked as a float then re-bound to the
+        per-order parameter variable so runtime overrides keep working.
+        """
+        occ_parked_cur = (
+            f"{self._parked_state_name('occ')}{cc_suffix}" if inst_occ else None
+        )
+        not_occ_parked_cur = (
+            f"{self._parked_state_name('not_occ')}{cc_suffix}" if inst_not_occ else None
+        )
+
+        states = [not_occ_state_name, occ_state_name]
+        if occ_parked_cur:
+            states.append(occ_parked_cur)
+        if not_occ_parked_cur:
+            states.append(not_occ_parked_cur)
+
+        transitions = []
+        if inst_occ:
+            occ_prob_var = occ_var_params[self.occ_param_name[0]]
+            transitions.append(
+                {
+                    "name": occ_state_name,
+                    "source": not_occ_state_name,
+                    "target": [
+                        {
+                            "state": occ_state_name,
+                            "prob": float(occ_prob_var.value()),
+                        },
+                        # Complement branch (1 - prob) -> parked.
+                        {"state": occ_parked_cur},
+                    ],
+                }
+            )
+            transitions.append(
+                {
+                    # Named after the parked state (source): naming it
+                    # after its destination would collide with the
+                    # return transition.
+                    "name": occ_parked_cur,
+                    "source": occ_parked_cur,
+                    "target": not_occ_state_name,
+                    # inst p=1: drains with priority over timed
+                    # transitions at the same instant — a same-date
+                    # fall-and-rise of the condition is re-armed and
+                    # drawn instead of being missed.
+                    "occ_law": {"cls": "inst", "probs": [1]},
+                }
+            )
+        else:
+            transitions.append(
+                {
+                    "name": occ_state_name,
+                    "source": not_occ_state_name,
+                    "target": occ_state_name,
+                    "occ_law": self._direction_law_bkd("occ", occ_var_params),
+                }
+            )
+
+        if inst_not_occ:
+            ret_prob_var = not_occ_var_params[self.not_occ_param_name[0]]
+            transitions.append(
+                {
+                    "name": not_occ_state_name,
+                    "source": occ_state_name,
+                    "target": [
+                        {
+                            "state": not_occ_state_name,
+                            "prob": float(ret_prob_var.value()),
+                        },
+                        {"state": not_occ_parked_cur},
+                    ],
+                }
+            )
+            transitions.append(
+                {
+                    "name": not_occ_parked_cur,
+                    "source": not_occ_parked_cur,
+                    "target": occ_state_name,
+                    "occ_law": {"cls": "inst", "probs": [1]},
+                }
+            )
+        else:
+            transitions.append(
+                {
+                    "name": not_occ_state_name,
+                    "source": occ_state_name,
+                    "target": not_occ_state_name,
+                    "occ_law": not_occ_law,
+                }
+            )
+
+        aut = self.add_automaton(
+            name=aut_name,
+            states=states,
+            init_state=not_occ_state_name,
+            transitions=transitions,
+        )
+
+        # Conditions + prob re-binding + masks per inst direction.
+        def _wire_inst_direction(draw_name, rearm_name, cond_fun, prob_var, law):
+            draw_bkd = aut.get_transition_by_name(draw_name)._bkd
+            if isinstance(law, ModeLawInst):
+                # Native spec path: gate the draw on a positive prob so
+                # a runtime prob=0 mode never draws (the façade gets
+                # the same gate from its legacy param-gated conds —
+                # no extra closure layer there).
+                def gated_cond():
+                    return prob_var.value() > 0 and cond_fun()
+
+                draw_cond = gated_cond
+            else:
+                draw_cond = cond_fun
+            draw_bkd.setCondition(draw_cond)
+
+            def rearm_cond():
+                return not cond_fun()
+
+            rearm_bkd = aut.get_transition_by_name(rearm_name)._bkd
+            rearm_bkd.setCondition(rearm_cond)
+
+            # Re-bind the draw law's parameter to the prob variable
+            # (the PycAutomaton path baked the float value in).
+            draw_bkd.distLaw().setParameter(prob_var, 0)
+
+            self._monitor_masks.append((draw_bkd, f"#{re.escape(draw_name)}$"))
+            self._monitor_masks.append((rearm_bkd, self._NEVER_MATCH_MASK))
+
+        if inst_occ:
+            _wire_inst_direction(
+                occ_state_name,
+                occ_parked_cur,
+                occ_cond,
+                occ_var_params[self.occ_param_name[0]],
+                self._direction_law("occ"),
+            )
+        else:
+            aut.get_transition_by_name(occ_state_name)._bkd.setCondition(occ_cond)
+
+        if inst_not_occ:
+            _wire_inst_direction(
+                not_occ_state_name,
+                not_occ_parked_cur,
+                not_occ_cond,
+                not_occ_var_params[self.not_occ_param_name[0]],
+                self._direction_law("not_occ"),
+            )
+        else:
+            aut.get_transition_by_name(not_occ_state_name)._bkd.setCondition(
+                not_occ_cond
+            )
+
+        # Level clamps: a logical state's effects stay active while the
+        # mode is logically there — including its parked micro-state
+        # (a failed return draw keeps the occ effects applied while
+        # waiting in occ_star). One composite method per state.
+        occ_logical_states = [occ_state_name]
+        if not_occ_parked_cur:
+            occ_logical_states.append(not_occ_parked_cur)
+        not_occ_logical_states = [not_occ_state_name]
+        if occ_parked_cur:
+            not_occ_logical_states.append(occ_parked_cur)
+        self._wire_state_effects_multi(
+            aut, occ_logical_states, occ_effects, trans_name=occ_state_name
+        )
+        self._wire_state_effects_multi(
+            aut,
+            not_occ_logical_states,
+            not_occ_effects,
+            trans_name=not_occ_state_name,
+        )
+
+        self.reapply_monitor_masks()
+        return aut
+
+    def reapply_monitor_masks(self):
+        """(Re-)apply the out-state monitoring masks of this mode.
+
+        Called at construction, and again by the study runner *after*
+        ``monitorTransition`` patterns are applied — monitoring a
+        transition may reset its out-state mask, and the masks are what
+        keeps the parked branches and the re-arm transitions out of the
+        recorded sequences. No-op for modes without inst directions.
+        """
+        for trans_bkd, mask in self._monitor_masks:
+            trans_bkd.setMonitoredOutStateMask(mask)
 
     def _build_target_automaton(
         self, target_name, return_occ_law, occ_effects=None, not_occ_effects=None
@@ -2780,6 +3138,16 @@ class ObjFMInst(ObjFM):
          │   exp(mu), guard = repair_cond             │ inst p=1,
          └────────────────────────── occ ◄────────────┘ guard = NOT failure_cond
 
+    Since the ObjMode2S chantier the 3-state machinery lives in the
+    ENGINE (generic armed/parked inst path,
+    :meth:`ObjMode2S._build_inst_mode_automaton`); this façade only
+    routes its occ direction onto it (``_direction_is_inst``) and pins
+    the historical parked-state name: the state historically called
+    ``not_occ`` here is the engine's *parked* micro-state of the occ
+    direction (engine-native modes call it ``<not_occ_state>_star``) —
+    NOT the engine's logical ``not_occ`` resting state, which this
+    façade names ``rep``.
+
     Design (ADR 2026-07-05, cod3s-specs):
 
     * ``not_occ`` absorbs the demand front: while ``failure_cond`` stays
@@ -2796,26 +3164,14 @@ class ObjFMInst(ObjFM):
     * CC combinations follow the ``ObjFM`` structure unchanged:
       ``failure_param = [gamma_1, ..., gamma_n]`` (probability of the
       order-k event on solicitation, symmetric to ``lambda_k``). Each
-      combination automaton draws **independently** on a shared front;
-      distinct subsets may both land in ``occ`` at the same instant
-      (probability = product of gammas, second order) — same
-      independence structure as the exp CCF processes.
+      combination automaton draws **independently** on a shared front.
     * Sequence monitoring: the draw transition is named after the
       failure state (``occ`` [+ ``__cc_`` suffix]) so recorded events
       match the ObjFMExp convention. The success branch and the re-arm
       transition are masked out of monitoring via
-      ``setMonitoredOutStateMask`` — see :meth:`reapply_monitor_masks`.
+      ``setMonitoredOutStateMask`` — see
+      :meth:`ObjMode2S.reapply_monitor_masks`.
     """
-
-    #: Out-state mask that matches no state — used to fully silence the
-    #: re-arm transition in the sequence monitoring ("#" prefix = regex,
-    #: "$^" matches nothing).
-    _NEVER_MATCH_MASK = "#$^"
-
-    def __init__(self, *args, **kwargs):
-        # Populated by _build_fm_automaton (called from super().__init__).
-        self._monitor_masks = []
-        super().__init__(*args, **kwargs)
 
     def set_default_failure_param_name(self):
         if not self.failure_param_name:
@@ -2841,10 +3197,24 @@ class ObjFMInst(ObjFM):
     def is_occ_law_repair_active(self, params):
         return params[self.repair_param_name[0]].value() > 0
 
+    def _direction_is_inst(self, direction):
+        # The gamma draw flows through the legacy hook protocol (no
+        # ModeLaw spec) — route the occ direction onto the engine's
+        # inst machinery explicitly.
+        return direction == "occ"
+
+    def _parked_state_name(self, direction):
+        # Historical grammar: the parked micro-state of the occ
+        # direction is literally named ``not_<failure_state>``
+        # (``not_occ``) — frozen by tests, masks and studies.
+        if direction == "occ":
+            return f"not_{self.failure_state}"
+        return super()._parked_state_name(direction)
+
     def set_occ_law_failure(self, params):
         raise NotImplementedError(
-            "ObjFMInst builds its draw transition directly in "
-            "_build_fm_automaton (inst law + probabilistic branching); "
+            "ObjFMInst builds its draw transition through the engine's "
+            "inst machinery (inst law + probabilistic branching); "
             "set_occ_law_failure has no meaning here."
         )
 
@@ -2875,10 +3245,9 @@ class ObjFMInst(ObjFM):
     def _validate_trans_effects_supported(self):
         """Reject trans-based effects for ObjFMInst (on-demand law).
 
-        The inst draw transition wires its branch effects through a start
-        method (fires at t=0), so a one-shot trans-based effect has no
-        correct home here (MVP). Overrides ``ObjFM`` to reject regardless
-        of ``behaviour``.
+        The inst draw transition has no correct home for a one-shot
+        trans-based effect (MVP). Overrides ``ObjFM`` to reject
+        regardless of ``behaviour``.
         """
         if self.failure_effects_trans or self.repair_effects_trans:
             raise ValueError(
@@ -2889,124 +3258,3 @@ class ObjFMInst(ObjFM):
                 f"that would fire the one-shot effect at t=0. Use "
                 f"behaviour='internal' with an exp/delay law."
             )
-
-    def _build_fm_automaton(
-        self,
-        aut_name,
-        repair_state_name,
-        failure_state_name,
-        failure_cond,
-        repair_cond,
-        failure_var_params,
-        repair_var_params,
-        failure_effects,
-        repair_effects,
-        repair_law,
-    ):
-        # No trans-effect kwargs here: trans-based effects are rejected
-        # upfront for ObjFMInst (_validate_trans_effects_supported), so the
-        # shared call-site never forwards them (pre-feature signature kept,
-        # which also exercises the subclass-compat path of that call-site).
-        gamma_var = failure_var_params[self.failure_param_name[0]]
-        not_occ_state_name = f"not_{failure_state_name}"
-        # Transition names: the draw is named after the failure state
-        # (sequence-trace convention shared with ObjFMExp: NAME == ST on
-        # the failure branch); the repair after the repair state; the
-        # re-arm after the not_occ state (its source) since naming it
-        # "rep" would collide with the repair transition.
-        draw_name = failure_state_name
-        rearm_name = not_occ_state_name
-        repair_name = repair_state_name
-
-        aut = self.add_automaton(
-            name=aut_name,
-            states=[repair_state_name, failure_state_name, not_occ_state_name],
-            init_state=repair_state_name,
-            transitions=[
-                {
-                    "name": draw_name,
-                    "source": repair_state_name,
-                    # Model probs are display/serialization floats; the
-                    # backend law parameter is re-bound to the gamma
-                    # *variable* right after update_bkd (below) so that
-                    # runtime parameter overrides keep working, exactly
-                    # like ObjFMExp binds its law to the lambda variable.
-                    "target": [
-                        {
-                            "state": failure_state_name,
-                            "prob": float(gamma_var.value()),
-                        },
-                        # Complement branch (1 - gamma).
-                        {"state": not_occ_state_name},
-                    ],
-                },
-                {
-                    "name": rearm_name,
-                    "source": not_occ_state_name,
-                    "target": repair_state_name,
-                    # inst p=1 (single target): drains with priority over
-                    # timed transitions at the same instant — a same-date
-                    # fall-and-rise of the demand is re-armed and drawn
-                    # instead of being missed (delay(0) would go through
-                    # the timed queue where same-date ordering is
-                    # arbitrary and the guard could cancel the return).
-                    "occ_law": {"cls": "inst", "probs": [1]},
-                },
-                {
-                    "name": repair_name,
-                    "source": failure_state_name,
-                    "target": repair_state_name,
-                    "occ_law": repair_law,
-                },
-            ],
-        )
-
-        # Conditions (callables compiled by get_failure_cond/get_repair_cond).
-        aut.get_transition_by_name(draw_name)._bkd.setCondition(failure_cond)
-        aut.get_transition_by_name(repair_name)._bkd.setCondition(repair_cond)
-
-        def rearm_cond():
-            return not failure_cond()
-
-        aut.get_transition_by_name(rearm_name)._bkd.setCondition(rearm_cond)
-
-        # Re-bind the draw law's parameter to the gamma variable (the
-        # PycAutomaton path baked the float value in).
-        draw_bkd = aut.get_transition_by_name(draw_name)._bkd
-        draw_bkd.distLaw().setParameter(gamma_var, 0)
-
-        # State-entry effects (records format), mirroring add_aut2st.
-        self._wire_state_effects(
-            aut, failure_state_name, failure_effects, trans_name=draw_name
-        )
-        self._wire_state_effects(
-            aut, repair_state_name, repair_effects, trans_name=repair_name
-        )
-
-        # Sequence-monitoring masks: only the occ branch of the draw is
-        # recorded; the re-arm transition is fully silenced. Registered
-        # for re-application because ``CSystem.monitorTransition`` (run
-        # later, at study time) may reset per-transition masks.
-        rearm_bkd = aut.get_transition_by_name(rearm_name)._bkd
-        self._monitor_masks.append((draw_bkd, f"#{failure_state_name}$"))
-        self._monitor_masks.append((rearm_bkd, self._NEVER_MATCH_MASK))
-        self.reapply_monitor_masks()
-
-        return aut
-
-    # ``_wire_state_effects`` is inherited from ``FmWiringMixin``
-    # (cod3s/pycatshoo/fm_wiring.py) — same pattern as ``add_aut2st``'s
-    # records branch, hosted there because ``add_aut2st`` is structurally
-    # two-state and cannot host the 3-state automaton.
-
-    def reapply_monitor_masks(self):
-        """(Re-)apply the out-state monitoring masks of this FM.
-
-        Called at construction, and again by the study runner *after*
-        ``monitorTransition`` patterns are applied — monitoring a
-        transition may reset its out-state mask, and the masks are what
-        keeps the success branch (``not_occ``) and the re-arm transition
-        out of the recorded sequences.
-        """
-        for trans_bkd, mask in self._monitor_masks:
-            trans_bkd.setMonitoredOutStateMask(mask)
