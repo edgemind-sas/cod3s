@@ -850,6 +850,27 @@ _MODE2S_BASESPEC_PASSTHROUGH_DEFAULTS: dict = {
 _MODE2S_STATE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _legacy_alias(generic_name):
+    """Return a property exposing ``generic_name`` under a legacy name.
+
+    The façades keep the historical ``failure_*`` / ``repair_*`` API as
+    *views* on the engine's ``occ_*`` / ``not_occ_*`` storage rather than
+    as mirrored copies: a hook (or user code) writing the legacy name is
+    immediately visible to the engine, and reading either name always
+    yields the current value.
+    """
+
+    def getter(self):
+        return getattr(self, generic_name)
+
+    def setter(self, value):
+        setattr(self, generic_name, value)
+
+    return property(
+        getter, setter, doc=f"Legacy alias of the engine's ``{generic_name}``."
+    )
+
+
 class ObjMode2S(FmWiringMixin, PycComponent):
     """Generic two-state mode engine (logical states ``occ`` / ``not_occ``).
 
@@ -1866,8 +1887,15 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         if callable(cond_spec):
             return cond_spec
 
+        # Constant conditions stay LATE-bound: the guard re-reads the
+        # attribute at every evaluation, so rebinding ``occ_cond`` (or
+        # its ``failure_cond`` alias) after construction still inhibits
+        # or re-enables the mode — a historical idiom. Callables and
+        # structured trees are compiled once, as they always were.
+        attr_name = "occ_cond" if direction == "occ" else "not_occ_cond"
+
         def direction_cond_const():
-            return cond_spec
+            return getattr(self, attr_name)
 
         return direction_cond_const
 
@@ -2521,26 +2549,24 @@ class ObjFM(ObjMode2S):
     #: Restore the historical constructor-kwargs passthrough.
     _engine_strict_kwargs = False
 
-    #: Engine attribute -> historical alias, mirrored by
-    #: ``_sync_legacy_aliases()`` at every bridge-hook boundary and at
-    #: the end of ``__init__`` (post-construction surface: sequence
-    #: auto-discovery and user code read the historical names).
-    _GENERIC_TO_LEGACY = {
-        "mode_name": "fm_name",
-        "occ_state": "failure_state",
-        "not_occ_state": "repair_state",
-        "occ_cond": "failure_cond",
-        "not_occ_cond": "repair_cond",
-        "occ_effects": "failure_effects",
-        "not_occ_effects": "repair_effects",
-        "occ_effects_trans": "failure_effects_trans",
-        "not_occ_effects_trans": "repair_effects_trans",
-        "occ_param_name": "failure_param_name",
-        "not_occ_param_name": "repair_param_name",
-        "occ_param": "failure_param",
-        "not_occ_param": "repair_param",
-        "not_occ_var_params_order1": "repair_var_params_order1",
-    }
+    # Historical names are *views* on the engine attributes, not copies:
+    # reading or writing either name touches the same storage. A one-way
+    # mirror would make a legacy write invisible to the engine (and a
+    # later re-sync would clobber it), and would freeze the value read by
+    # the condition closures — both were real regressions.
+    failure_state = _legacy_alias("occ_state")
+    repair_state = _legacy_alias("not_occ_state")
+    failure_cond = _legacy_alias("occ_cond")
+    repair_cond = _legacy_alias("not_occ_cond")
+    failure_effects = _legacy_alias("occ_effects")
+    repair_effects = _legacy_alias("not_occ_effects")
+    failure_effects_trans = _legacy_alias("occ_effects_trans")
+    repair_effects_trans = _legacy_alias("not_occ_effects_trans")
+    failure_param_name = _legacy_alias("occ_param_name")
+    repair_param_name = _legacy_alias("not_occ_param_name")
+    failure_param = _legacy_alias("occ_param")
+    repair_param = _legacy_alias("not_occ_param")
+    repair_var_params_order1 = _legacy_alias("not_occ_var_params_order1")
 
     def __init__(
         self,
@@ -2598,32 +2624,18 @@ class ObjFM(ObjMode2S):
             step=step,
             **kwargs,
         )
-        self._sync_legacy_aliases()
-
-    def _sync_legacy_aliases(self):
-        """Mirror the generic engine attributes onto the historical
-        names (only those already set — the engine initialises them
-        progressively and the hook protocol pins what is visible at
-        each hook)."""
-        for generic, legacy in self._GENERIC_TO_LEGACY.items():
-            try:
-                setattr(self, legacy, getattr(self, generic))
-            except AttributeError:
-                pass
 
     # ------------------------------------------------------------------
     # Engine template hooks -> historical hook protocol bridges.
-    # Every bridge starts by syncing the legacy aliases so the
-    # historical hooks see the attributes they have always seen, and
-    # returns/mirrors back the values legacy hooks mutate in place.
+    # The legacy names are properties over the engine storage, so the
+    # historical hooks read and mutate exactly what the engine uses —
+    # no mirroring step is needed.
     # ------------------------------------------------------------------
 
     def _validate_trans_effects(self):
-        self._sync_legacy_aliases()
         self._validate_trans_effects_supported()
 
     def _default_direction_param_names(self, direction):
-        self._sync_legacy_aliases()
         if direction == "occ":
             self.set_default_failure_param_name()
             return self.failure_param_name
@@ -2631,7 +2643,6 @@ class ObjFM(ObjMode2S):
         return self.repair_param_name
 
     def _default_direction_params(self, direction):
-        self._sync_legacy_aliases()
         if direction == "occ":
             self.set_default_failure_param()
             return self.failure_param
@@ -2649,12 +2660,55 @@ class ObjFM(ObjMode2S):
         return self.set_occ_law_repair(params)
 
     def _direction_cond(self, direction, target_comps, param=None, **kwrds):
-        self._sync_legacy_aliases()
         if direction == "occ":
             return self.get_failure_cond(
                 target_comps=target_comps, param=param, **kwrds
             )
         return self.get_repair_cond(target_comps=target_comps, param=param, **kwrds)
+
+    def _build_inst_mode_automaton(
+        self,
+        aut_name,
+        not_occ_state_name,
+        occ_state_name,
+        occ_cond,
+        not_occ_cond,
+        occ_var_params,
+        not_occ_var_params,
+        occ_effects,
+        not_occ_effects,
+        not_occ_law,
+        inst_occ,
+        inst_not_occ,
+        cc_suffix,
+    ):
+        """Route an inst build through the historical extension hook.
+
+        ``_build_fm_automaton`` is the documented override point of the
+        ObjFM family — including ``ObjFMInst``, which used to build its
+        own 3-state automaton there. The machinery now lives in the
+        engine, but a subclass override must still be invoked, so the
+        inst path is bridged onto the same hook. The engine-only
+        arguments travel through ``_inst_build_context`` rather than
+        widening the frozen historical signature.
+        """
+        self._inst_build_context = {
+            "inst_occ": inst_occ,
+            "inst_not_occ": inst_not_occ,
+            "cc_suffix": cc_suffix,
+        }
+        return self._build_fm_automaton(
+            aut_name=aut_name,
+            repair_state_name=not_occ_state_name,
+            failure_state_name=occ_state_name,
+            failure_cond=occ_cond,
+            repair_cond=not_occ_cond,
+            failure_var_params=occ_var_params,
+            repair_var_params=not_occ_var_params,
+            failure_effects=occ_effects,
+            repair_effects=not_occ_effects,
+            repair_law=not_occ_law,
+        )
 
     def _build_mode_automaton(
         self,
@@ -2671,6 +2725,7 @@ class ObjFM(ObjMode2S):
         occ_effects_trans=None,
         not_occ_effects_trans=None,
     ):
+        self._inst_build_context = None
         # Only forward the trans-effect kwargs when non-empty, so a
         # third-party ObjFM subclass that overrides _build_fm_automaton
         # with the pre-feature signature keeps working as long as it
@@ -2703,7 +2758,6 @@ class ObjFM(ObjMode2S):
     def _build_target_automaton(
         self, target_name, return_occ_law, occ_effects=None, not_occ_effects=None
     ):
-        self._sync_legacy_aliases()
         return self._create_target_automaton(
             target_name,
             return_occ_law,
@@ -2752,9 +2806,26 @@ class ObjFM(ObjMode2S):
         the occ / rep transition edge — fired once per crossing —
         instead of clamped on the state.
         """
-        # Qualified call: the engine implementation, not the façade
-        # override above (a subclass overriding BOTH hooks must not
-        # recurse).
+        # Qualified calls: the engine implementations, not the façade
+        # overrides above (a subclass overriding BOTH hooks must not
+        # recurse). ``_inst_build_context`` is set by the bridge that
+        # routed us here and tells which engine builder applies.
+        inst_context = getattr(self, "_inst_build_context", None)
+        if inst_context:
+            return ObjMode2S._build_inst_mode_automaton(
+                self,
+                aut_name=aut_name,
+                not_occ_state_name=repair_state_name,
+                occ_state_name=failure_state_name,
+                occ_cond=failure_cond,
+                not_occ_cond=repair_cond,
+                occ_var_params=failure_var_params,
+                not_occ_var_params=repair_var_params,
+                occ_effects=failure_effects,
+                not_occ_effects=repair_effects,
+                not_occ_law=repair_law,
+                **inst_context,
+            )
         return ObjMode2S._build_mode_automaton(
             self,
             aut_name=aut_name,
