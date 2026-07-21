@@ -436,16 +436,16 @@ oracle.
 
 ### Phase 3 — Self-hosted mode + ObjEvent façade + discovery
 
-- [ ] Self-hosted build path (`_build_self_automaton`, explicit activation,
+- [x] Self-hosted build path (`_build_self_automaton`, explicit activation,
       naming, validation matrix, zero-overhead contract).
-- [ ] `ObjEvent` façade: cond compiled in the façade exactly as today, then
+- [x] `ObjEvent` façade: cond compiled in the façade exactly as today, then
       `occ_cond=cond_fun` / `not_occ_cond=lambda: not cond_fun()`; `tempo_*` →
       `ModeLawDelay`; naming mapped. Replace `getattr(builtins, inner_logic)`
       (:862-864) with a `{"all": all, "any": any}` lookup + `ValueError` (only
       documented values; kills the `"breakpoint"`/`"sum"` footgun). Drop the
       commented-out `sanitize_cond_format` dead block (:911-932) — do not recopy.
       `EventSpec` / `add_events` / `add_targets` untouched.
-- [ ] Sequence discovery: bare-engine branch with façade exclusion (see design);
+- [x] Sequence discovery: bare-engine branch with façade exclusion (see design);
       regression tests for façade discovery + bare occ/not_occ cycle collapse in
       `tests/pyc_obj/obj_mode2s/test_mode2s_sequence_filter.py`.
 

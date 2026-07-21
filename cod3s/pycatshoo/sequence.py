@@ -10,7 +10,6 @@ from .automaton import PycTransition
 from ..core import ObjCOD3S
 import colored as clr
 
-
 # JSON envelope version emitted by :func:`serialise_analyser`. Bump when
 # the envelope shape changes (not when ``Sequence``'s own schema evolves
 # — that one is governed by Pydantic v2's per-field default behaviour).
@@ -85,9 +84,7 @@ def persist_sequence_analysis_artifacts(
         encoding: Text encoding for the file (default ``"utf-8"``).
     """
     Path(path).write_text(
-        serialise_analyser(
-            analyser, target_group_id=target_group_id, meta=meta
-        ),
+        serialise_analyser(analyser, target_group_id=target_group_id, meta=meta),
         encoding=encoding,
     )
 
@@ -113,7 +110,9 @@ class SeqEvent(ObjCOD3S):
     # name: str = pydantic.Field(None, description="Event name")
     obj: str = pydantic.Field(..., description="Object hit by the event")
     attr: str = pydantic.Field(..., description="Attribute hit by the event")
-    time: typing.Optional[float] = pydantic.Field(None, description="Time of occurrence")
+    time: typing.Optional[float] = pydantic.Field(
+        None, description="Time of occurrence"
+    )
     type: typing.Optional[str] = pydantic.Field(None, description="Event type")
 
     @property
@@ -265,10 +264,14 @@ class SeqEvent(ObjCOD3S):
 
 class Sequence(ObjCOD3S):
     # Parametres
-    probability: typing.Optional[float] = pydantic.Field(None, description="Sequence probability")
+    probability: typing.Optional[float] = pydantic.Field(
+        None, description="Sequence probability"
+    )
     weight: int = pydantic.Field(1, description="Sequence weight")
 
-    end_time: typing.Optional[float] = pydantic.Field(None, description="Sequence end time")
+    end_time: typing.Optional[float] = pydantic.Field(
+        None, description="Sequence end time"
+    )
 
     target_name: typing.Optional[str] = pydantic.Field(None, description="Target event")
 
@@ -1335,24 +1338,35 @@ class SequenceAnalyser(ObjCOD3S):
         """
         # Lazy import to avoid a cycle (component.py imports from
         # ``pycatshoo`` which imports ``sequence``).
-        from cod3s.pycatshoo.component import ObjFM
+        from cod3s.pycatshoo.component import ObjEvent, ObjFM, ObjMode2S
 
         internal = []
         external = []
         if self._system is None:
             return internal, external
         for comp in self._system.comp.values():
-            if not isinstance(comp, ObjFM):
-                continue
-            fail = comp.failure_state
-            rep = comp.repair_state
-            if comp.behaviour == "internal":
-                internal.append((comp.name(), fail, rep))
-            else:
-                # external / external_rep_indep: keep both the full
-                # comp.name() (for the ObjFM-events drop) and the
-                # bare fm_name (for the target-events pattern).
-                external.append((comp.name(), comp.fm_name, fail, rep))
+            if isinstance(comp, ObjFM):
+                fail = comp.failure_state
+                rep = comp.repair_state
+                if comp.behaviour == "internal":
+                    internal.append((comp.name(), fail, rep))
+                else:
+                    # external / external_rep_indep: keep both the full
+                    # comp.name() (for the ObjFM-events drop) and the
+                    # bare fm_name (for the target-events pattern).
+                    external.append((comp.name(), comp.fm_name, fail, rep))
+            elif isinstance(comp, ObjMode2S) and not isinstance(comp, ObjEvent):
+                # Bare (native) engine mode. The façade exclusions above
+                # matter: ObjFM and ObjEvent are ObjMode2S subclasses —
+                # a naive isinstance branch would double-filter them
+                # (ObjEvent cycles are handled by
+                # ``_discover_objevent_specs`` / the objevent filter).
+                fail = comp.occ_state
+                rep = comp.not_occ_state
+                if comp.behaviour == "internal":
+                    internal.append((comp.name(), fail, rep))
+                else:
+                    external.append((comp.name(), comp.mode_name, fail, rep))
         return internal, external
 
     def _discover_objevent_specs(self):
@@ -1432,9 +1446,7 @@ class SequenceAnalyser(ObjCOD3S):
 
         specs = objevents
         if specs is None:
-            specs = (
-                self._discover_objevent_specs() if self._system is not None else []
-            )
+            specs = self._discover_objevent_specs() if self._system is not None else []
         specs = list(specs)
 
         for seq in result.sequences:
@@ -1484,7 +1496,9 @@ class SequenceAnalyser(ObjCOD3S):
         # Group sequences by target_name
         sequences_by_target = defaultdict(list)
         for seq in self.sequences:
-            sequences_by_target[seq.target_name].append(seq if inplace else seq.model_copy())
+            sequences_by_target[seq.target_name].append(
+                seq if inplace else seq.model_copy()
+            )
 
         minimal_sequences = []
 
@@ -1583,8 +1597,17 @@ class SequenceAnalyser(ObjCOD3S):
 
         # Define columns to ensure they exist even for empty DataFrame
         columns = [
-            'seq_idx', 'target_name', 'probability', 'weight', 'end_time',
-            'event_idx', 'event_name', 'event_time', 'event_obj', 'event_type', 'event_attr'
+            "seq_idx",
+            "target_name",
+            "probability",
+            "weight",
+            "end_time",
+            "event_idx",
+            "event_name",
+            "event_time",
+            "event_obj",
+            "event_type",
+            "event_attr",
         ]
 
         data = []

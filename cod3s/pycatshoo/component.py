@@ -8,14 +8,13 @@ from ..utils import get_operator_function
 from .automaton import PycAutomaton, PycState
 from .common import prepare_attr_tree, sanitize_cond_format
 from .fm_wiring import FmWiringMixin, cc_comb_suffix, order_param_name
-from .mode_law import parse_mode_law
+from .mode_law import ModeLawInst, parse_mode_law
 import Pycatshoo as pyc
 import copy
 import re
 import colored
 import textwrap
 import itertools
-import builtins
 
 
 class PycVariable(ObjCOD3S):
@@ -826,113 +825,6 @@ class PycComponent(pyc.CComponent):
         return cnct_info
 
 
-class ObjEvent(PycComponent):
-
-    def __init__(
-        self,
-        name,
-        cond,
-        inner_logic=all,
-        outer_logic=any,
-        cond_operator="==",
-        cond_value=True,
-        tempo_occ=0,
-        tempo_not_occ=0,
-        event_aut_name="ev",
-        occ_state_name="occ",
-        not_occ_state_name="not_occ",
-        **kwargs,
-    ):
-        super().__init__(name, **kwargs)
-
-        # Expose the automaton names so post-mortem sequence tooling
-        # (``SequenceAnalyser._discover_objevent_specs`` /
-        # ``filter_objevent_cycles``) can rebuild the occ/not_occ
-        # transition patterns by introspection rather than guessing.
-        # NOTE: a monitored transition's ``basename()`` equals these
-        # state names ONLY because the automaton below uses
-        # ``trans_name_12_fmt="{st2}"`` / ``trans_name_21_fmt="{st1}"``.
-        # Keep those formats in sync if you touch the filter.
-        self.event_aut_name = event_aut_name
-        self.occ_state_name = occ_state_name
-        self.not_occ_state_name = not_occ_state_name
-
-        cond = sanitize_cond_format(cond)
-
-        if isinstance(inner_logic, str):
-            inner_logic = getattr(builtins, inner_logic)
-        if isinstance(outer_logic, str):
-            outer_logic = getattr(builtins, outer_logic)
-
-        cond_operator_fun = get_operator_function(cond_operator)
-
-        if isinstance(cond, list):
-
-            cond_bis = prepare_attr_tree(cond, system=self.system())
-
-            def cond_fun():
-                return cond_operator_fun(
-                    outer_logic(
-                        [
-                            inner_logic(
-                                [
-                                    get_operator_function(c_inner.get("ope", "=="))(
-                                        getattr(
-                                            c_inner["attr"], c_inner["attr_val_name"]
-                                        )(),
-                                        c_inner["value"],
-                                    )
-                                    for c_inner in c_outer
-                                ]
-                            )
-                            for c_outer in cond_bis
-                        ]
-                    ),
-                    cond_value,
-                )
-
-        else:
-            cond_fun = cond
-
-        self.add_aut2st(
-            name=event_aut_name,
-            st1=not_occ_state_name,
-            st2=occ_state_name,
-            init_st2=False,
-            trans_name_12_fmt="{st2}",
-            cond_occ_12=cond_fun,
-            occ_law_12={"cls": "delay", "time": tempo_occ},
-            occ_interruptible_12=True,
-            trans_name_21_fmt="{st1}",
-            cond_occ_21=lambda: not cond_fun(),
-            occ_law_21={"cls": "delay", "time": tempo_not_occ},
-            occ_interruptible_21=True,
-        )
-
-    # def sanitize_cond_format(self, cond):
-
-    #     if isinstance(cond, dict):
-    #         cond = [[cond]]
-    #     else:
-    #         if isinstance(cond, list):
-    #             if all([isinstance(c, list) for c in cond]):
-    #                 if any(
-    #                     [any([not isinstance(ci, dict) for ci in co]) for co in cond]
-    #                 ):
-    #                     raise ValueError(
-    #                         "ObjEvent condition specification must be a list of list of dict"
-    #                     )
-    #             elif all([isinstance(c, dict) for c in cond]):
-    #                 # Just add the second level of list
-    #                 cond = [cond]
-    #             else:
-    #                 raise ValueError(
-    #                     "ObjEvent condition specification must be a list of list of dict"
-    #                 )
-
-    #     return cond
-
-
 # FailureModeBaseSpec fields with no native ObjMode2S meaning: accepted
 # when they carry their BaseSpec default (the ObjFMGenericSpec wire path
 # always emits defaults through ``model_dump``), rejected with a clear
@@ -1018,6 +910,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         *,
         targets=None,
         target_name=None,
+        aut_name=None,
         behaviour="internal",
         occ_state="occ",
         occ_law=None,
@@ -1099,6 +992,13 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 f"distinct, both are {occ_state!r}."
             )
 
+        # ``targets=None`` activates the SELF-HOSTED mode: one automaton
+        # on the component itself, no CC machinery, no behaviour
+        # machinery, no parameter variables (zero-overhead contract —
+        # the ObjEvent substrate). ``targets=[]`` keeps the historical
+        # silent no-op of the ObjFM façade.
+        self._self_hosted = targets is None
+
         # Normalise mutable-default sentinels.
         if targets is None:
             targets = []
@@ -1129,7 +1029,11 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             target_name = self.targets[0]
         self.target_name = target_name or self._factorize_target_names(targets)
 
-        comp_name = f"{self.target_name}__{self.mode_name}"
+        if self._self_hosted:
+            # Self-hosted modes are named directly (no target prefix).
+            comp_name = self.mode_name
+        else:
+            comp_name = f"{self.target_name}__{self.mode_name}"
 
         super().__init__(comp_name, **kwargs)
 
@@ -1192,6 +1096,33 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         # target BEFORE creating any variable or automaton, so a typo on
         # one target fails cleanly instead of leaving a half-built mode.
         self._dry_run_resolve_effects()
+
+        if self._self_hosted:
+            self.occ_param_name = []
+            self.not_occ_param_name = []
+            self.occ_param = []
+            self.not_occ_param = []
+            self.param_name_order_prefix = param_name_order_prefix
+            self.trans_name_prefix = trans_name_prefix
+            self.trans_name_prefix_fun = trans_name_prefix_fun
+            self.not_occ_var_params_order1 = None
+            self.target_impacting_automata = {}
+            self._validate_self_hosted(
+                aut_name,
+                occ_param_name,
+                occ_param,
+                not_occ_param_name,
+                not_occ_param,
+            )
+            self._build_self_automaton(aut_name or self.mode_name)
+            return
+
+        if aut_name is not None:
+            raise ValueError(
+                f"Mode {mode_name!r}: aut_name is only meaningful in "
+                f"self-hosted mode (targets=None); targeted modes name "
+                f"their automata after mode_name + the CC suffix."
+            )
 
         self.occ_param_name = (
             [occ_param_name]
@@ -1524,6 +1455,96 @@ class ObjMode2S(FmWiringMixin, PycComponent):
     # The façades override these to delegate to the historical
     # failure/repair-named hooks.
     # ------------------------------------------------------------------
+
+    def _validate_self_hosted(
+        self, aut_name, occ_param_name, occ_param, not_occ_param_name, not_occ_param
+    ):
+        """Self-hosted validation matrix — reject, never silently ignore.
+
+        The self-hosted mode is the zero-overhead ObjEvent substrate:
+        no behaviour machinery, no parameter variables, no effects, and
+        laws baked as literals. Every targeted-mode option that has no
+        meaning here raises a clear error.
+        """
+        label = f"Self-hosted mode {self.mode_name!r}"
+        if self.behaviour != "internal":
+            raise ValueError(
+                f"{label}: behaviour={self.behaviour!r} is not supported "
+                f"(no targets to synchronise — self-hosted modes are "
+                f"structurally internal)."
+            )
+        if occ_param_name or occ_param or not_occ_param_name or not_occ_param:
+            raise ValueError(
+                f"{label}: parameter variables (occ_param / occ_param_name "
+                f"/ not_occ_*) are not supported — laws are baked as "
+                f"literals (zero-overhead contract)."
+            )
+        if (
+            self.occ_effects
+            or self.not_occ_effects
+            or self.occ_effects_trans
+            or self.not_occ_effects_trans
+        ):
+            raise ValueError(
+                f"{label}: effects are not supported (no targets to apply "
+                f"them to) — deferred."
+            )
+        if self.trans_name_prefix_fun is not None:
+            raise ValueError(
+                f"{label}: trans_name_prefix_fun has no meaning without CC "
+                f"combinations."
+            )
+        for direction in ("occ", "not_occ"):
+            law = self._require_direction_law(direction)
+            if isinstance(law, ModeLawInst):
+                raise ValueError(
+                    f"{label}: inst laws are not supported in self-hosted "
+                    f"mode — deferred."
+                )
+            if len(law.values()) != 1:
+                raise ValueError(
+                    f"{label}: per-order law vectors have no meaning "
+                    f"without CC combinations (scalar expected)."
+                )
+            cond = self.occ_cond if direction == "occ" else self.not_occ_cond
+            if not (isinstance(cond, bool) or callable(cond)):
+                raise ValueError(
+                    f"{label}: structured condition trees are not supported "
+                    f"natively in self-hosted mode — compile the condition "
+                    f"to a callable (the ObjEvent façade does this)."
+                )
+        if aut_name is not None and not _MODE2S_STATE_NAME_RE.match(aut_name):
+            raise ValueError(
+                f"{label}: aut_name={aut_name!r} is not a valid automaton "
+                f"name (identifier-like names only)."
+            )
+
+    def _build_self_automaton(self, aut_name):
+        """Build the single two-state automaton of a self-hosted mode.
+
+        Zero-overhead contract (pinned by the ObjEvent characterization
+        suite): no parameter variables, no sensitive / start method
+        registrations — the laws carry literal values and there are no
+        effects. Transitions are named after their destination state
+        (``trans_name_12_fmt="{st2}"`` / ``"{st1}"``), the frozen
+        grammar the sequence filters rely on.
+        """
+        occ_law = self._require_direction_law("occ")
+        not_occ_law = self._require_direction_law("not_occ")
+        self.add_aut2st(
+            name=aut_name,
+            st1=self.not_occ_state,
+            st2=self.occ_state,
+            init_st2=False,
+            trans_name_12_fmt="{st2}",
+            cond_occ_12=self._direction_cond("occ", target_comps=[]),
+            occ_law_12=occ_law.to_bkd_law(occ_law.values()[0]),
+            occ_interruptible_12=True,
+            trans_name_21_fmt="{st1}",
+            cond_occ_21=self._direction_cond("not_occ", target_comps=[]),
+            occ_law_21=not_occ_law.to_bkd_law(not_occ_law.values()[0]),
+            occ_interruptible_21=True,
+        )
 
     def _build_order_param_variables(self, direction, order, order_max):
         """Create the ``t_double`` parameter variables of ``direction``
@@ -2507,6 +2528,156 @@ class ObjFM(ObjMode2S):
 
     def is_occ_law_repair_active(self, params):
         return True
+
+
+class ObjEvent(ObjMode2S):
+    """Two-state event component (``occ`` / ``not_occ``).
+
+    Backward-compatible façade over the :class:`ObjMode2S` self-hosted
+    mode: one automaton (default ``ev``) hosted on the component itself,
+    both transitions carried by interruptible delay laws
+    (``tempo_occ`` / ``tempo_not_occ``), the ``occ`` edge driven by the
+    compiled ``cond`` and the ``not_occ`` edge by its automatic
+    negation.
+
+    The condition compilation (structured attr tree with
+    ``inner_logic`` / ``outer_logic`` / ``cond_operator`` /
+    ``cond_value``, or a plain callable) stays in this façade — the
+    engine only consumes the compiled callables through its
+    ``_direction_cond`` hook, which also defers the compilation until
+    the system is available.
+
+    Frozen grammar (relied upon by ``SequenceAnalyser``
+    auto-discovery and ``filter_objevent_cycles``): a monitored
+    transition's ``basename()`` equals the state names because the
+    self-hosted builder names transitions after their destination state.
+    ``event_aut_name`` / ``occ_state_name`` / ``not_occ_state_name``
+    stay exposed as attributes for introspection.
+    """
+
+    #: Restore the historical constructor-kwargs passthrough.
+    _engine_strict_kwargs = False
+
+    #: Only the documented logic names — a plain ``getattr(builtins,
+    #: ...)`` would silently accept any builtin (``"sum"``,
+    #: ``"breakpoint"``, ...) and produce wrong truth logic instead of
+    #: an error.
+    _LOGIC_FUNCTIONS = {"all": all, "any": any}
+
+    def __init__(
+        self,
+        name,
+        cond,
+        inner_logic=all,
+        outer_logic=any,
+        cond_operator="==",
+        cond_value=True,
+        tempo_occ=0,
+        tempo_not_occ=0,
+        event_aut_name="ev",
+        occ_state_name="occ",
+        not_occ_state_name="not_occ",
+        **kwargs,
+    ):
+        # Expose the automaton names so post-mortem sequence tooling
+        # (``SequenceAnalyser._discover_objevent_specs`` /
+        # ``filter_objevent_cycles``) can rebuild the occ/not_occ
+        # transition patterns by introspection rather than guessing.
+        self.event_aut_name = event_aut_name
+        self.occ_state_name = occ_state_name
+        self.not_occ_state_name = not_occ_state_name
+
+        if isinstance(inner_logic, str):
+            inner_logic = self._resolve_logic("inner_logic", inner_logic)
+        if isinstance(outer_logic, str):
+            outer_logic = self._resolve_logic("outer_logic", outer_logic)
+
+        # Compilation inputs, consumed lazily by ``_direction_cond``
+        # (the system reference only exists once the component is
+        # constructed).
+        self._event_cond_raw = sanitize_cond_format(cond)
+        self._event_inner_logic = inner_logic
+        self._event_outer_logic = outer_logic
+        self._event_cond_operator_fun = get_operator_function(cond_operator)
+        self._event_cond_value = cond_value
+        self._event_cond_fun = None
+
+        super().__init__(
+            name,
+            targets=None,  # self-hosted
+            aut_name=event_aut_name,
+            occ_state=occ_state_name,
+            not_occ_state=not_occ_state_name,
+            occ_law={"cls": "delay", "time": tempo_occ},
+            not_occ_law={"cls": "delay", "time": tempo_not_occ},
+            **kwargs,
+        )
+
+    @classmethod
+    def _resolve_logic(cls, label, value):
+        try:
+            return cls._LOGIC_FUNCTIONS[value]
+        except KeyError:
+            raise ValueError(
+                f"ObjEvent {label} must be one of "
+                f"{sorted(cls._LOGIC_FUNCTIONS)}, got {value!r}."
+            ) from None
+
+    def _compile_event_cond(self):
+        """Compile (once) the event condition into a zero-arg callable.
+
+        Structured trees go through ``prepare_attr_tree`` with a
+        system-wide resolution (no per-target ``obj_default`` — events
+        observe arbitrary components), then the inner/outer logic and
+        the ``cond_operator`` / ``cond_value`` comparison. Callables
+        pass through unchanged (operator/value are NOT applied to
+        them — historical behaviour).
+        """
+        if self._event_cond_fun is None:
+            cond = self._event_cond_raw
+            if isinstance(cond, list):
+                cond_bis = prepare_attr_tree(cond, system=self.system())
+                inner_logic = self._event_inner_logic
+                outer_logic = self._event_outer_logic
+                cond_operator_fun = self._event_cond_operator_fun
+                cond_value = self._event_cond_value
+
+                def cond_fun():
+                    return cond_operator_fun(
+                        outer_logic(
+                            [
+                                inner_logic(
+                                    [
+                                        get_operator_function(c_inner.get("ope", "=="))(
+                                            getattr(
+                                                c_inner["attr"],
+                                                c_inner["attr_val_name"],
+                                            )(),
+                                            c_inner["value"],
+                                        )
+                                        for c_inner in c_outer
+                                    ]
+                                )
+                                for c_outer in cond_bis
+                            ]
+                        ),
+                        cond_value,
+                    )
+
+                self._event_cond_fun = cond_fun
+            else:
+                self._event_cond_fun = cond
+        return self._event_cond_fun
+
+    def _direction_cond(self, direction, target_comps, param=None, **kwrds):
+        cond_fun = self._compile_event_cond()
+        if direction == "occ":
+            return cond_fun
+
+        def negated_cond():
+            return not cond_fun()
+
+        return negated_cond
 
 
 class ObjFMExp(ObjFM):
