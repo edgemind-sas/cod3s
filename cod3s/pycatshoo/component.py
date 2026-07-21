@@ -8,6 +8,7 @@ from ..utils import get_operator_function
 from .automaton import PycAutomaton, PycState
 from .common import prepare_attr_tree, sanitize_cond_format
 from .fm_wiring import FmWiringMixin, cc_comb_suffix, order_param_name
+from .mode_law import parse_mode_law
 import Pycatshoo as pyc
 import copy
 import re
@@ -932,28 +933,1038 @@ class ObjEvent(PycComponent):
     #     return cond
 
 
-class ObjFM(FmWiringMixin, PycComponent):
+class ObjMode2S(FmWiringMixin, PycComponent):
+    """Generic two-state mode engine (logical states ``occ`` / ``not_occ``).
+
+    ``ObjMode2S`` is the engine behind the mode-like components: it owns
+    the common-cause combinatorics (one automaton per target
+    combination), the three behaviours (``internal``, ``external``,
+    ``external_rep_indep``), the effect wiring (state-based level clamps
+    and trans-based one-shot pulses via :class:`FmWiringMixin`), and —
+    since the ObjMode2S chantier — the per-direction occurrence laws
+    declared through :mod:`cod3s.pycatshoo.mode_law` specs.
+
+    Vocabulary note (edge vs state): ``occ_law`` / ``occ_cond`` are
+    properties of the EDGE entering ``occ`` (``not_occ -> occ``), while
+    ``occ_effects`` is the level clamp maintained WHILE in ``occ``; the
+    ``not_occ_*`` fields mirror this for the return edge / state. This
+    follows the historical ``failure_*`` convention of ``ObjFM``.
+
+    The historical classes ``ObjFM`` / ``ObjFMExp`` / ``ObjFMDelay`` /
+    ``ObjFMInst`` / ``ObjEvent`` are thin backward-compatible façades
+    over this engine. The engine consumes laws, conditions and defaults
+    exclusively through its template hooks (below); the ``ModeLaw``
+    specs are merely the *default implementation* of those hooks, so a
+    façade (or a third-party subclass through a façade) can keep
+    providing arbitrary backend law dicts:
+
+    * ``_default_direction_param_names(direction)`` -> list[str]
+    * ``_default_direction_params(direction)`` -> list
+    * ``_is_direction_law_active(direction, params)`` -> bool
+    * ``_direction_law_bkd(direction, params)`` -> backend law dict
+    * ``_direction_cond(direction, target_comps, param=None)`` -> callable
+    * ``_validate_trans_effects()``
+    * ``_build_mode_automaton(...)`` -> PycAutomaton
+    * ``_build_target_automaton(...)`` (external behaviours)
+
+    ``direction`` is ``"occ"`` (edge ``not_occ -> occ``) or
+    ``"not_occ"`` (edge ``occ -> not_occ``).
+
+    Engine code must never reference the façade classes or the
+    failure/repair vocabulary — the façade layer owns that mapping.
+    ``self.fm_name`` is kept as a plain read alias of ``mode_name`` for
+    duck-typed tooling (sequence discovery, wiring labels).
+    """
+
+    VALID_BEHAVIOURS = ("internal", "external", "external_rep_indep")
+
+    #: Native engine instances reject unknown constructor kwargs
+    #: (silent-typo hardening). Façades restore the historical
+    #: passthrough by turning this off.
+    _engine_strict_kwargs = True
+
+    #: Kwargs consumed by ``PycComponent.__init__`` and therefore always
+    #: legitimate.
+    _PYC_COMPONENT_KWARGS = ("label", "description", "metadata")
+
+    def __init__(
+        self,
+        mode_name,
+        *,
+        targets=None,
+        target_name=None,
+        behaviour="internal",
+        occ_state="occ",
+        occ_law=None,
+        occ_cond=True,
+        occ_effects=None,
+        occ_effects_trans=None,
+        occ_param_name=None,
+        occ_param=None,
+        not_occ_state="not_occ",
+        not_occ_law=None,
+        not_occ_cond=True,
+        not_occ_effects=None,
+        not_occ_effects_trans=None,
+        not_occ_param_name=None,
+        not_occ_param=None,
+        param_name_order_prefix="__{order}_o_{order_max}",
+        trans_name_prefix="__cc_{target_comb_u}",
+        trans_name_prefix_fun=None,
+        drop_inactive_automata=True,
+        cond_inner_logic=all,
+        cond_outer_logic=any,
+        step=None,
+        **kwargs,
+    ):
+        if self._engine_strict_kwargs:
+            unknown = [k for k in kwargs if k not in self._PYC_COMPONENT_KWARGS]
+            if unknown:
+                raise TypeError(
+                    f"ObjMode2S got unexpected keyword argument(s) "
+                    f"{sorted(unknown)}. Known extra kwargs: "
+                    f"{list(self._PYC_COMPONENT_KWARGS)}. A typo here would "
+                    f"otherwise silently build a wrong model."
+                )
+
+        # Normalise mutable-default sentinels.
+        if targets is None:
+            targets = []
+        if occ_effects is None:
+            occ_effects = {}
+        if occ_effects_trans is None:
+            occ_effects_trans = {}
+        if occ_param_name is None:
+            occ_param_name = []
+        if occ_param is None:
+            occ_param = []
+        if not_occ_effects is None:
+            not_occ_effects = {}
+        if not_occ_effects_trans is None:
+            not_occ_effects_trans = {}
+        if not_occ_param_name is None:
+            not_occ_param_name = []
+        if not_occ_param is None:
+            not_occ_param = []
+
+        self.mode_name = mode_name
+        # Plain read alias for duck-typed tooling (sequence discovery,
+        # FmWiringMixin labels). Documented legacy alias — do not use in
+        # engine logic.
+        self.fm_name = mode_name
+        self.targets = [targets] if isinstance(targets, str) else targets
+        if target_name is None and len(self.targets) == 1:
+            target_name = self.targets[0]
+        self.target_name = target_name or self._factorize_target_names(targets)
+
+        comp_name = f"{self.target_name}__{self.mode_name}"
+
+        super().__init__(comp_name, **kwargs)
+
+        order_max = len(self.targets)
+
+        if behaviour not in self.VALID_BEHAVIOURS:
+            raise ValueError(
+                f"behaviour must be one of {self.VALID_BEHAVIOURS}, got '{behaviour}'"
+            )
+        self.behaviour = behaviour
+
+        # Per-direction law specs (ModeLaw | dict | None). None = the
+        # law is provided by the template hooks (façade / subclass).
+        self.occ_law = parse_mode_law(occ_law, what="occ_law") if occ_law is not None else None
+        self.not_occ_law = (
+            parse_mode_law(not_occ_law, what="not_occ_law")
+            if not_occ_law is not None
+            else None
+        )
+
+        # Create control variables for external behaviours
+        self.ctrl_vars = {}
+        if self.behaviour in ("external", "external_rep_indep"):
+            for target_name_cur in self.targets:
+                ctrl_var_name = f"ctrl_{self.mode_name}_{target_name_cur}"
+                ctrl_var = self.addVariable(ctrl_var_name, pyc.TVarType.t_bool, False)
+                self.ctrl_vars[target_name_cur] = ctrl_var
+
+        self.occ_cond = copy.deepcopy(occ_cond)
+        self.not_occ_cond = copy.deepcopy(not_occ_cond)
+
+        self.occ_state = occ_state
+        self.not_occ_state = not_occ_state
+
+        if isinstance(step, str):
+            step_name = step
+            step = self.system().step(step_name)
+            if step is None:
+                raise ValueError(f"Step {step_name} does not exist in this system")
+        self.step = step
+
+        self.cond_inner_logic = cond_inner_logic
+        self.cond_outer_logic = cond_outer_logic
+
+        self.var_params = {}
+        self.occ_effects = copy.deepcopy(occ_effects)
+        self.not_occ_effects = copy.deepcopy(not_occ_effects)
+        # Trans-based effects (mode="trans_based"): applied once at the
+        # instant the occ / not_occ transition fires, via a
+        # transition-edge sensitive method (see
+        # ``_wire_transition_effects``), unlike the state-clamped
+        # ``occ_effects`` / ``not_occ_effects``.
+        self.occ_effects_trans = copy.deepcopy(occ_effects_trans)
+        self.not_occ_effects_trans = copy.deepcopy(not_occ_effects_trans)
+        self._validate_trans_effects()
+
+        self.occ_param_name = (
+            [occ_param_name]
+            if isinstance(occ_param_name, str)
+            else copy.deepcopy(occ_param_name)
+        )
+        self.occ_param_name = self._default_direction_param_names("occ")
+
+        self.not_occ_param_name = (
+            [not_occ_param_name]
+            if isinstance(not_occ_param_name, str)
+            else copy.deepcopy(not_occ_param_name)
+        )
+        self.not_occ_param_name = self._default_direction_param_names("not_occ")
+
+        self.param_name_order_prefix = param_name_order_prefix
+        self.trans_name_prefix = trans_name_prefix
+        self.trans_name_prefix_fun = trans_name_prefix_fun
+
+        self.occ_param = (
+            [occ_param]
+            if not isinstance(occ_param, list)
+            else copy.deepcopy(occ_param)
+        )
+        occ_param_diff = len(self.targets) - len(self.occ_param)
+        if occ_param_diff > 0:
+            self.occ_param = self._default_direction_params("occ")
+        elif occ_param_diff < 0:
+            raise ValueError(
+                f"Mode of order {order_max} but you provide "
+                f"{len(self.occ_param)} occ (failure) parameters: {self.occ_param}"
+            )
+
+        self.not_occ_param = (
+            [not_occ_param]
+            if not isinstance(not_occ_param, list)
+            else copy.deepcopy(not_occ_param)
+        )
+        not_occ_param_diff = len(self.targets) - len(self.not_occ_param)
+        if not_occ_param_diff > 0:
+            self.not_occ_param = self._default_direction_params("not_occ")
+        elif not_occ_param_diff < 0:
+            raise ValueError(
+                f"Mode of order {order_max} but you provide "
+                f"{len(self.not_occ_param)} not_occ (repair) parameters: "
+                f"{self.not_occ_param}"
+            )
+
+        # Store order 1 return-direction params for external_rep_indep
+        self.not_occ_var_params_order1 = None
+
+        # Track impacting automata for each target in external modes
+        self.target_impacting_automata = {t: [] for t in self.targets}
+
+        for order in range(1, order_max + 1):
+
+            occ_param_cur = self.occ_param[order - 1]
+            if not isinstance(occ_param_cur, tuple):
+                occ_param_cur = (occ_param_cur,)
+
+            occ_var_params_cur = {}
+            for occ_param_name_cur, param_value in zip(
+                self.occ_param_name, occ_param_cur
+            ):
+                occ_param_name_cur_tmp = order_param_name(
+                    occ_param_name_cur,
+                    order,
+                    order_max,
+                    fmt=self.param_name_order_prefix,
+                )
+
+                occ_var_param = self.addVariable(
+                    occ_param_name_cur_tmp, pyc.TVarType.t_double, param_value
+                )
+                occ_var_params_cur.update({occ_param_name_cur: occ_var_param})
+
+            not_occ_param_cur = self.not_occ_param[order - 1]
+            if not isinstance(not_occ_param_cur, tuple):
+                not_occ_param_cur = (not_occ_param_cur,)
+
+            not_occ_var_params_cur = {}
+            for not_occ_param_name_cur, param_value in zip(
+                self.not_occ_param_name, not_occ_param_cur
+            ):
+                not_occ_param_name_cur_tmp = order_param_name(
+                    not_occ_param_name_cur,
+                    order,
+                    order_max,
+                    fmt=self.param_name_order_prefix,
+                )
+
+                not_occ_var_param = self.addVariable(
+                    not_occ_param_name_cur_tmp, pyc.TVarType.t_double, param_value
+                )
+                not_occ_var_params_cur.update(
+                    {not_occ_param_name_cur: not_occ_var_param}
+                )
+
+            # Store order 1 params
+            if order == 1:
+                self.not_occ_var_params_order1 = not_occ_var_params_cur
+
+            if (
+                drop_inactive_automata
+                and not self._is_direction_law_active("occ", occ_var_params_cur)
+                and not self._is_direction_law_active(
+                    "not_occ", not_occ_var_params_cur
+                )
+            ):
+                continue
+
+            for target_set_idx in itertools.combinations(range(order_max), order):
+
+                # Prepare effects based on behaviour.
+                # external: level (state) effects on the target are handled by
+                #   the centralized ctrl_var sensitive method below (the mode's
+                #   own transitions carry no direct level effects on ctrl_vars);
+                #   trans-based one-shot effects DO apply, wired on the mode's
+                #   OWN occ / not_occ transition and writing the target's
+                #   persistent gate once per crossing (both-pulse
+                #   inter-component), resolved against the targets exactly like
+                #   the internal branch.
+                # external_rep_indep: trigger model (mode.occ sets ctrl=True
+                #   directly on the transition; mode.not_occ does NOT touch
+                #   ctrl, the target owns the reset on its own return
+                #   transition). Trans-based effects are rejected upfront for
+                #   it (and for CCF) by ``_validate_trans_effects``, so those
+                #   lists stay empty in the paths that never opt in.
+                occ_effects_trans_cur = []
+                not_occ_effects_trans_cur = []
+                if self.behaviour == "external":
+                    occ_effects_cur = []
+                    not_occ_effects_cur = []
+                elif self.behaviour == "external_rep_indep":
+                    occ_effects_cur = [
+                        {"var": self.ctrl_vars[self.targets[idx]], "value": True}
+                        for idx in target_set_idx
+                    ]
+                    not_occ_effects_cur = []
+                else:  # internal behaviour
+                    occ_effects_cur = []
+                    for var, value in self.occ_effects.items():
+                        for target_idx in target_set_idx:
+                            comp_cur = self.system().component(self.targets[target_idx])
+
+                            if hasattr(comp_cur, var):
+                                comp_var = getattr(comp_cur, var)
+                            elif var in [v.basename() for v in comp_cur.variables()]:
+                                comp_var = comp_cur.variable(var)
+                            else:
+                                raise ValueError(
+                                    f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                                )
+                            occ_effects_cur.append({"var": comp_var, "value": value})
+
+                    not_occ_effects_cur = []
+                    for var, value in self.not_occ_effects.items():
+                        for target_idx in target_set_idx:
+                            comp_cur = self.system().component(self.targets[target_idx])
+
+                            if hasattr(comp_cur, var):
+                                comp_var = getattr(comp_cur, var)
+                            elif var in [v.basename() for v in comp_cur.variables()]:
+                                comp_var = comp_cur.variable(var)
+                            else:
+                                raise ValueError(
+                                    f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
+                                )
+                            not_occ_effects_cur.append(
+                                {"var": comp_var, "value": value}
+                            )
+
+                # Trans-based (one-shot edge) effects: resolved IDENTICALLY for
+                # internal and external (var_name -> target variable), wired on
+                # the mode's occ / not_occ transition edge by
+                # ``_wire_transition_effects`` rather than on the state. For
+                # external the pulse writes the TARGET's persistent gate,
+                # coexisting with the level ctrl_var (both-pulse
+                # inter-component). external_rep_indep keeps the trans dicts
+                # empty via ``_validate_trans_effects``, so this loop is an
+                # inert no-op there (empty dicts resolve to []).
+                for target_idx in target_set_idx:
+                    comp_cur = self.system().component(self.targets[target_idx])
+                    occ_effects_trans_cur += self._resolve_target_effects(
+                        comp_cur,
+                        self.targets[target_idx],
+                        self.occ_effects_trans,
+                        kind="failure_effects_trans",
+                    )
+                    not_occ_effects_trans_cur += self._resolve_target_effects(
+                        comp_cur,
+                        self.targets[target_idx],
+                        self.not_occ_effects_trans,
+                        kind="repair_effects_trans",
+                    )
+
+                occ_state_name_cur = self.occ_state
+                not_occ_state_name_cur = self.not_occ_state
+                aut_name_cur = self.mode_name
+                if order_max > 1:
+                    trans_name_prefix_cur = cc_comb_suffix(
+                        target_set_idx,
+                        order_max,
+                        trans_name_prefix=self.trans_name_prefix,
+                        trans_name_prefix_fun=self.trans_name_prefix_fun,
+                    )
+                    aut_name_cur += trans_name_prefix_cur
+                    occ_state_name_cur += trans_name_prefix_cur
+                    not_occ_state_name_cur += trans_name_prefix_cur
+
+                target_comps_cur = [
+                    self.system().component(self.targets[idx]) for idx in target_set_idx
+                ]
+
+                occ_cond_cur = self._direction_cond(
+                    "occ", target_comps=target_comps_cur, param=occ_var_params_cur
+                )
+                not_occ_cond_cur = self._direction_cond(
+                    "not_occ",
+                    target_comps=target_comps_cur,
+                    param=not_occ_var_params_cur,
+                )
+
+                if self.behaviour in ("external", "external_rep_indep"):
+
+                    def make_external_cond(
+                        base_cond, targets, mode_name, required_state_name
+                    ):
+                        def cond():
+                            # Check base condition
+                            if not base_cond():
+                                return False
+                            # Check all targets are in required state
+                            for t in targets:
+                                if mode_name not in t.automata_d:
+                                    return False
+                                st = t.automata_d[mode_name].get_state_by_name(
+                                    required_state_name
+                                )
+                                if not st._bkd.isActive():
+                                    return False
+                            return True
+
+                        return cond
+
+                    # Occ edge: targets must be in the not_occ (resting)
+                    # state. The target automaton's state is name-prefixed
+                    # since the multi-mode-per-target fix; mirror that here.
+                    occ_cond_cur = make_external_cond(
+                        occ_cond_cur,
+                        target_comps_cur,
+                        self.mode_name,
+                        f"{self.mode_name}__{self.not_occ_state}",
+                    )
+
+                    if self.behaviour == "external":
+                        # Return edge: targets must be in the occ state.
+                        not_occ_cond_cur = make_external_cond(
+                            not_occ_cond_cur,
+                            target_comps_cur,
+                            self.mode_name,
+                            f"{self.mode_name}__{self.occ_state}",
+                        )
+                    # external_rep_indep: the mode's return edge is
+                    # unconditional (trigger model — instantaneous
+                    # delay(0), see the law override below).
+                    else:
+                        not_occ_cond_cur = _always_true
+
+                # Mode return law: instantaneous in external_rep_indep
+                # (trigger — the mode emits a one-shot signal then resets).
+                if self.behaviour == "external_rep_indep":
+                    mode_return_law = {"cls": "delay", "time": 0}
+                else:
+                    mode_return_law = self._direction_law_bkd(
+                        "not_occ", not_occ_var_params_cur
+                    )
+
+                aut = self._build_mode_automaton(
+                    aut_name=aut_name_cur,
+                    not_occ_state_name=not_occ_state_name_cur,
+                    occ_state_name=occ_state_name_cur,
+                    occ_cond=occ_cond_cur,
+                    not_occ_cond=not_occ_cond_cur,
+                    occ_var_params=occ_var_params_cur,
+                    not_occ_var_params=not_occ_var_params_cur,
+                    occ_effects=occ_effects_cur,
+                    not_occ_effects=not_occ_effects_cur,
+                    not_occ_law=mode_return_law,
+                    occ_effects_trans=occ_effects_trans_cur,
+                    not_occ_effects_trans=not_occ_effects_trans_cur,
+                )
+
+                # Record impacting automata for centralized control
+                if self.behaviour in ("external", "external_rep_indep"):
+                    for idx in target_set_idx:
+                        impacted_target = self.targets[idx]
+                        self.target_impacting_automata[impacted_target].append(
+                            (aut, occ_state_name_cur)
+                        )
+
+        # Centralized ctrl_var management for `external` only.
+        # `external_rep_indep` does NOT use this: mode.occ sets ctrl=True via
+        # a direct effect on the transition (trigger model), and target.rep
+        # clears it via the target automaton's own return effect.
+        # Re-introducing the OR-based sensitive method here would reset
+        # ctrl_var as soon as the mode triggers back, breaking the model.
+        if self.behaviour == "external":
+            for (
+                ctrl_target_name,
+                impacting_info,
+            ) in self.target_impacting_automata.items():
+                ctrl_var = self.ctrl_vars[ctrl_target_name]
+
+                def make_ctrl_method(cv, info_list):
+                    def ctrl_method():
+                        should_be_failed = any(
+                            a.get_state_by_name(st_name)._bkd.isActive()
+                            for a, st_name in info_list
+                        )
+                        if cv.value() != should_be_failed:
+                            cv.setValue(should_be_failed)
+
+                    return ctrl_method
+
+                method = make_ctrl_method(ctrl_var, impacting_info)
+                method_name = f"ctrl_sync__{self.name()}_{ctrl_target_name}"
+
+                for aut, _ in impacting_info:
+                    aut._bkd.addSensitiveMethod(method_name, method)
+
+                self.addStartMethod(method_name, method)
+
+        # In external_rep_indep, the target's self-return uses the order-1
+        # return law. If that law is inactive the targets would never
+        # return — which is almost certainly a config mistake. Raise a
+        # clear error rather than silently produce a one-shot model.
+        if self.behaviour == "external_rep_indep":
+            if self.not_occ_var_params_order1 is None or not (
+                self._is_direction_law_active(
+                    "not_occ", self.not_occ_var_params_order1
+                )
+            ):
+                raise ValueError(
+                    f"behaviour='external_rep_indep' requires the order-1 "
+                    f"return (repair) law to be active for mode "
+                    f"'{self.mode_name}'. Provide a non-zero order-1 "
+                    f"parameter (repair_param / not_occ_param)."
+                )
+
+        # Create automata in target components for external behaviours
+        if self.behaviour in ("external", "external_rep_indep"):
+            for target_name_cur in self.targets:
+                # Create fresh dict each time to avoid mutation issues
+                if self.behaviour == "external":
+                    target_return_law = {"cls": "delay", "time": 0}
+                else:  # external_rep_indep
+                    target_return_law = self._direction_law_bkd(
+                        "not_occ", self.not_occ_var_params_order1
+                    )
+
+                self._build_target_automaton(
+                    target_name_cur,
+                    target_return_law,
+                    occ_effects=self.occ_effects,
+                    not_occ_effects=self.not_occ_effects,
+                )
+
+    # ------------------------------------------------------------------
+    # Template hooks — native (law-spec-driven) default implementations.
+    # The façades override these to delegate to the historical
+    # failure/repair-named hooks.
+    # ------------------------------------------------------------------
+
+    def _direction_law(self, direction):
+        """Return the law spec of ``direction`` (may be None)."""
+        return self.occ_law if direction == "occ" else self.not_occ_law
+
+    def _require_direction_law(self, direction):
+        law = self._direction_law(direction)
+        if law is None:
+            raise ValueError(
+                f"Mode '{self.mode_name}': no "
+                f"{'occ_law' if direction == 'occ' else 'not_occ_law'} "
+                f"provided (and no subclass hook supplies one). Declare the "
+                f"law with a ModeLaw spec, e.g. {{'cls': 'exp', 'rate': ...}}."
+            )
+        return law
+
+    def _default_direction_param_names(self, direction):
+        """Return the parameter variable base names of ``direction``.
+
+        Called right after the user-provided names are normalised; the
+        return value is assigned back. Native default: keep the provided
+        names, or derive ``occ_<field>`` / ``not_occ_<field>`` from the
+        law spec when none were provided.
+        """
+        current = self.occ_param_name if direction == "occ" else self.not_occ_param_name
+        if current:
+            return current
+        law = self._direction_law(direction)
+        if law is not None:
+            return [f"{direction}_{law.param_field}"]
+        return current
+
+    def _default_direction_params(self, direction):
+        """Return the per-order parameter values of ``direction``.
+
+        Called only when fewer values than targets were provided
+        (mirrors the historical padding hook call sites). Native rule:
+        strict — the values come from the law spec vector, a scalar
+        being only meaningful for a single-target mode; anything else
+        must be explicit (no silent padding).
+        """
+        current = self.occ_param if direction == "occ" else self.not_occ_param
+        law = self._direction_law(direction)
+        order_max = len(self.targets)
+        if law is not None and not any(current):
+            values = law.values()
+            if len(values) == order_max:
+                return values
+            if len(values) == 1 and order_max >= 1:
+                if order_max == 1:
+                    return values
+                raise ValueError(
+                    f"Mode '{self.mode_name}': "
+                    f"{'occ_law' if direction == 'occ' else 'not_occ_law'} "
+                    f"provides a scalar parameter but the mode has "
+                    f"{order_max} targets. Provide the full per-order "
+                    f"vector (explicit 0 for inactive orders — no silent "
+                    f"padding)."
+                )
+            raise ValueError(
+                f"Mode '{self.mode_name}': "
+                f"{'occ_law' if direction == 'occ' else 'not_occ_law'} "
+                f"vector has {len(values)} entries but the mode has "
+                f"{order_max} targets (strict length, no silent padding)."
+            )
+        raise ValueError(
+            f"Mode '{self.mode_name}': {len(current)} {direction} "
+            f"parameter(s) provided for {order_max} targets, and no law "
+            f"spec to derive the missing ones (no silent padding)."
+        )
+
+    def _is_direction_law_active(self, direction, params):
+        """Whether the ``direction`` law is active for one CC order.
+
+        ``params`` is the ``{base_name: variable}`` dict of that order.
+        Native rule: delegate to the law spec (exp active iff rate > 0;
+        delay and inst always active). Without a law spec: active.
+        """
+        law = self._direction_law(direction)
+        if law is None:
+            return True
+        param_names = (
+            self.occ_param_name if direction == "occ" else self.not_occ_param_name
+        )
+        if not param_names:
+            return True
+        return law.is_active_value(params[param_names[0]].value())
+
+    def _direction_law_bkd(self, direction, params):
+        """Return the backend law dict of ``direction`` for one order."""
+        law = self._require_direction_law(direction)
+        param_names = (
+            self.occ_param_name if direction == "occ" else self.not_occ_param_name
+        )
+        return law.to_bkd_law(params[param_names[0]])
+
+    def _direction_cond(self, direction, target_comps, param=None, **kwrds):
+        """Compile the ``direction`` condition into a zero-arg callable.
+
+        Native semantics (shared by both directions — historically
+        duplicated in ``get_failure_cond`` / ``get_repair_cond``):
+        structured trees are resolved per target and ANDed across
+        targets; callables pass through; other values are truthy
+        constants.
+        """
+        cond_spec = self.occ_cond if direction == "occ" else self.not_occ_cond
+
+        cond_sanitized = sanitize_cond_format(cond_spec)
+
+        if isinstance(cond_spec, list):
+
+            cond_bis_list = [
+                prepare_attr_tree(
+                    cond_sanitized,
+                    obj_default=comp,
+                    system=self.system(),
+                )
+                for comp in target_comps
+            ]
+
+            def direction_cond_fun():
+                return all(
+                    [
+                        self.cond_outer_logic(
+                            [
+                                self.cond_inner_logic(
+                                    [
+                                        get_operator_function(c_inner.get("ope", "=="))(
+                                            getattr(
+                                                c_inner["attr"],
+                                                c_inner["attr_val_name"],
+                                            )(),
+                                            c_inner["value"],
+                                        )
+                                        for c_inner in c_outer
+                                    ]
+                                )
+                                for c_outer in cond_bis_cur
+                            ]
+                        )
+                        for cond_bis_cur in cond_bis_list
+                    ]
+                )
+
+            return direction_cond_fun
+
+        if callable(cond_spec):
+            return cond_spec
+
+        def direction_cond_const():
+            return cond_spec
+
+        return direction_cond_const
+
+    def _validate_trans_effects(self):
+        """Reject trans-based effects on unsupported configurations.
+
+        Native mirror of the historical validation (level+pulse overlap,
+        behaviours without a symmetric edge pair, CCF order > 1) with
+        engine vocabulary. The façades override this to keep the
+        historical messages verbatim (they are pinned by tests).
+        """
+        if not (self.occ_effects_trans or self.not_occ_effects_trans):
+            return
+        level_vars = set(self.occ_effects) | set(self.not_occ_effects)
+        trans_vars = set(self.occ_effects_trans) | set(self.not_occ_effects_trans)
+        overlap = level_vars & trans_vars
+        if overlap:
+            raise ValueError(
+                f"Mode {self.mode_name!r}: variables {sorted(overlap)} are "
+                f"driven by BOTH state-based (occ_effects/not_occ_effects) "
+                f"and trans-based (occ_effects_trans/not_occ_effects_trans) "
+                f"effects. A level clamp and a one-shot pulse on the same "
+                f"variable conflict (the pulse is silently overwritten). "
+                f"Use distinct variables."
+            )
+        if self.behaviour not in ("internal", "external"):
+            raise ValueError(
+                f"Trans-based effects (occ_effects_trans / "
+                f"not_occ_effects_trans) are only supported with "
+                f"behaviour='internal' or behaviour='external' for mode "
+                f"{self.mode_name!r}, got behaviour={self.behaviour!r}. "
+                f"behaviour='external_rep_indep' is a trigger model with no "
+                f"symmetric occ/not_occ edge pair to carry a both-pulse "
+                f"one-shot effect."
+            )
+        if len(self.targets) > 1:
+            raise ValueError(
+                f"Trans-based effects (occ_effects_trans / "
+                f"not_occ_effects_trans) are not supported with CCF order "
+                f"> 1 (len(targets)={len(self.targets)}) for mode "
+                f"{self.mode_name!r} (persistent-gate both-pulse desync "
+                f"across combinations) — deferred."
+            )
+
+    # ------------------------------------------------------------------
+    # Automaton builders
+    # ------------------------------------------------------------------
+
+    def _build_mode_automaton(
+        self,
+        aut_name,
+        not_occ_state_name,
+        occ_state_name,
+        occ_cond,
+        not_occ_cond,
+        occ_var_params,
+        not_occ_var_params,
+        occ_effects,
+        not_occ_effects,
+        not_occ_law,
+        occ_effects_trans=None,
+        not_occ_effects_trans=None,
+    ):
+        """Build the automaton for one cc-combination of this mode.
+
+        Extension hook: ``__init__`` calls this once per active
+        cc-combination, after having resolved the combination-specific
+        names, conditions, parameter variables, effects (records
+        format) and return law. The default implementation builds the
+        classic two-state occ / not_occ automaton via
+        :meth:`add_aut2st`.
+
+        The occ transition is named after the occ state
+        (``trans_name_12_fmt="{st2}"``) and the return transition after
+        the not_occ state (``trans_name_21_fmt="{st1}"``), so those two
+        names are the trans-effect wiring targets below.
+        """
+        aut = self.add_aut2st(
+            name=aut_name,
+            st1=not_occ_state_name,
+            st2=occ_state_name,
+            init_st2=False,
+            trans_name_12_fmt="{st2}",
+            cond_occ_12=occ_cond,
+            occ_law_12=self._direction_law_bkd("occ", occ_var_params),
+            occ_interruptible_12=True,
+            effects_st2=occ_effects,
+            effects_st2_format="records",
+            trans_name_21_fmt="{st1}",
+            cond_occ_21=not_occ_cond,
+            occ_law_21=not_occ_law,
+            occ_interruptible_21=True,
+            effects_st1=not_occ_effects,
+            effects_st1_format="records",
+            step=self.step,
+        )
+        # Trans-based effects: one-shot edge callbacks (no-op when empty).
+        self._wire_transition_effects(
+            aut,
+            occ_state_name,
+            occ_effects_trans,
+            target_state=occ_state_name,
+        )
+        self._wire_transition_effects(aut, not_occ_state_name, not_occ_effects_trans)
+        return aut
+
+    def _build_target_automaton(
+        self, target_name, return_occ_law, occ_effects=None, not_occ_effects=None
+    ):
+        """Create a synchronized automaton in the target component.
+
+        Args:
+            target_name: Name of the target component
+            return_occ_law: Occurrence law for the return transition
+                - {"cls": "delay", "time": 0} for external behaviour
+                - the order-1 law dict for external_rep_indep behaviour
+            occ_effects: Effects applied while in the occ state
+            not_occ_effects: Effects applied while in the not_occ state
+        """
+        if occ_effects is None:
+            occ_effects = {}
+        if not_occ_effects is None:
+            not_occ_effects = {}
+        target_comp = self.system().component(target_name)
+
+        # Check for name conflict
+        existing_aut_names = [aut.basename() for aut in target_comp.automata()]
+        if self.mode_name in existing_aut_names:
+            raise ValueError(
+                f"Target '{target_name}' already has an automaton named "
+                f"'{self.mode_name}'. Cannot create external FM automaton."
+            )
+
+        ctrl_var = self.ctrl_vars[target_name]
+
+        # Condition to transition to the occ state
+        def occ_condition():
+            return ctrl_var.value() is True
+
+        # Condition for the return transition
+        if self.behaviour == "external":
+            # Synchronized with the mode
+            def return_condition():
+                return ctrl_var.value() is False
+
+        else:  # external_rep_indep
+            # Reuse the user's original return condition on this target
+            # alone. We pass the order-1 params because the target's
+            # return law is the order-1 law — keeps the cond and the law
+            # referring to the same parameters.
+            return_condition = self._direction_cond(
+                "not_occ",
+                target_comps=[target_comp],
+                param=self.not_occ_var_params_order1,
+            )
+
+        final_occ_effects = self._resolve_target_effects(
+            target_comp, target_name, occ_effects, kind="failure_effects"
+        )
+        final_not_occ_effects = self._resolve_target_effects(
+            target_comp, target_name, not_occ_effects, kind="repair_effects"
+        )
+
+        # Prefix the state and transition names with the mode's name so
+        # the target can host several modes in ``external`` /
+        # ``external_rep_indep`` mode without colliding on the bare
+        # ``occ`` / ``not_occ`` namespace. The resulting sequence trace
+        # also disambiguates which mode fired the event (e.g.
+        # ``C1.frun__occ`` instead of ``C1.occ``).
+        st_not_occ_prefixed = f"{self.mode_name}__{self.not_occ_state}"
+        st_occ_prefixed = f"{self.mode_name}__{self.occ_state}"
+        target_aut = target_comp.add_aut2st(
+            name=self.mode_name,
+            st1=st_not_occ_prefixed,
+            st2=st_occ_prefixed,
+            init_st2=False,
+            # ``st1`` / ``st2`` are already prefixed, so the bare ``{st2}``
+            # / ``{st1}`` format yields the prefixed transition name.
+            trans_name_12_fmt="{st2}",
+            cond_occ_12=occ_condition,
+            occ_law_12={"cls": "delay", "time": 0},  # Always instantaneous
+            occ_interruptible_12=True,
+            effects_st2=final_occ_effects,
+            effects_st2_format="records",
+            trans_name_21_fmt="{st1}",
+            cond_occ_21=return_condition,
+            occ_law_21=return_occ_law,
+            occ_interruptible_21=True,
+            effects_st1=final_not_occ_effects,
+            effects_st1_format="records",
+            step=self.step,
+        )
+
+        # In external_rep_indep, the mode does NOT reset ctrl_var on its
+        # own return (trigger model). The target clears ctrl_var when its
+        # automaton transitions back to the resting state. We use a
+        # sensitive method on the target's automaton (NOT on the
+        # variable) to avoid the cascading re-evaluation that would
+        # happen if ctrl_var=False was placed in the state effects
+        # (which registers the effect on the variable itself, creating a
+        # conflict with the mode.occ effect at simulation start).
+        if self.behaviour == "external_rep_indep":
+            not_occ_state_bkd = target_aut.get_state_by_name(st_not_occ_prefixed)._bkd
+
+            def reset_ctrl_on_target_return():
+                if not_occ_state_bkd.isActive() and ctrl_var.value() is True:
+                    ctrl_var.setValue(False)
+
+            target_aut._bkd.addSensitiveMethod(
+                f"reset_ctrl__{self.mode_name}__{target_name}",
+                reset_ctrl_on_target_return,
+            )
+
+    @staticmethod
+    def _factorize_target_names(
+        targets: list[str],
+        rep_char: str = "X",
+        ignored_char: tuple = ("_",),
+        concat_char: tuple = ("__",),
+    ) -> str:
+        """
+        Creates a factorized name from a list of target component names.
+
+        This utility method generates a compact representation of multiple
+        target names by identifying common patterns and replacing differing
+        characters with a placeholder. This is particularly useful for modes
+        that affect multiple similar components.
+
+        The algorithm works as follows:
+        1. If targets have different lengths, concatenate with separator
+        2. For same-length targets, compare character by character
+        3. Keep common characters, replace differences with rep_char
+        4. Ignore specified characters (like underscores) during comparison
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of target component names to factorize
+        rep_char : str, optional
+            Character to use for differing positions (default: "X")
+        ignored_char : tuple, optional
+            Characters to ignore during comparison (default: ("_",))
+        concat_char : tuple, optional
+            Characters to use for concatenation when lengths differ
+            (default: ("__",))
+
+        Returns
+        -------
+        str
+            Factorized name representing all targets
+
+        Examples
+        --------
+        >>> _factorize_target_names(["pump1", "pump2", "pump3"])
+        "pumpX"
+
+        >>> _factorize_target_names(["motor_A1", "motor_B1"])
+        "motor_X1"
+
+        >>> _factorize_target_names(["component1", "very_long_name"])
+        "component1__very_long_name"
+        """
+        if not targets:
+            return ""
+        if len(targets) == 1:
+            return targets[0]
+
+        first_len = len(targets[0])
+        # If targets have different lengths, concatenate them
+        if not all(len(t) == first_len for t in targets):
+            return concat_char[0].join(targets)
+
+        # Character-by-character comparison for same-length targets
+        result_chars = []
+        for i in range(first_len):
+            ref_char = targets[0][i]
+
+            # Skip ignored characters (keep them as-is)
+            if ref_char in ignored_char:
+                result_chars.append(ref_char)
+                continue
+
+            # Check if character is common across all targets
+            is_common = all(t[i] == ref_char for t in targets)
+
+            if is_common:
+                result_chars.append(ref_char)
+            else:
+                result_chars.append(rep_char)
+
+        return "".join(result_chars)
+
+
+def _always_true():
+    return True
+
+
+class ObjFM(ObjMode2S):
     """
     A component that models failure modes affecting multiple target components.
 
-    This class creates automata-based failure modes that can affect one or more target
-    components simultaneously. It supports different orders of failure (affecting 1, 2,
-    or more components at once) and allows customization of failure and repair conditions,
-    parameters, and effects.
+    Backward-compatible façade over :class:`ObjMode2S`: the historical
+    ``failure_*`` / ``repair_*`` vocabulary maps onto the engine's
+    ``occ_*`` / ``not_occ_*`` fields, and the engine's template hooks
+    delegate to the historical hook protocol (``set_occ_law_failure``,
+    ``set_default_failure_param_name``, ``get_failure_cond``,
+    ``_build_fm_automaton``, ...) so existing subclasses keep working
+    unchanged.
 
-    The failure mode creates all possible combinations of target components up to the
-    specified order and generates corresponding automata with failure and repair transitions.
-    Each automaton is named using customizable prefixes to distinguish between different
-    target combinations.
+    This class creates automata-based failure modes that can affect one or more
+    target components simultaneously. It supports different orders of failure
+    (affecting 1, 2, or more components at once) and allows customization of
+    failure and repair conditions, parameters, and effects.
+
+    The failure mode creates all possible combinations of target components up
+    to the specified order and generates corresponding automata with failure
+    and repair transitions. Each automaton is named using customizable prefixes
+    to distinguish between different target combinations.
 
     Failure and Repair Conditions
     ----------------------------
-    The failure_cond and repair_cond parameters support multiple formats for defining
-    when transitions should occur:
+    The failure_cond and repair_cond parameters support multiple formats for
+    defining when transitions should occur:
 
     1. **Boolean values**: Simple True/False conditions
     2. **Callable functions**: Custom Python functions returning boolean values
-    3. **Structured conditions**: Lists of dictionaries specifying attribute-based conditions
+    3. **Structured conditions**: Lists of dictionaries specifying
+       attribute-based conditions
 
     For structured conditions, the format follows a nested list structure:
     - Outer list: OR logic between elements (controlled by cond_outer_logic)
@@ -995,67 +2006,6 @@ class ObjFM(FmWiringMixin, PycComponent):
     cond_outer_logic : callable, optional
         Logic function for combining outer condition elements (default: any)
 
-    Parameters
-    ----------
-    fm_name : str
-        The name of the failure mode
-    targets : str or list[str]
-        Target component(s) that can be affected by this failure mode
-    target_name : str, optional
-        Custom name for the target combination. If None, auto-generated from targets
-    behaviour : str, optional
-        The behaviour of the failure mode. One of "internal", "external", "external_rep_indep".
-        (default: "internal")
-    failure_state : str, optional
-        Name of the failure state (default: "occ")
-    failure_cond : bool, callable, or list, optional
-        Condition that must be met for failure to occur (default: True)
-    failure_effects : dict, optional
-        Effects applied when failure occurs (default: {})
-    failure_param_name : str or list[str], optional
-        Names of failure parameters (default: [])
-    failure_param : list, optional
-        Values of failure parameters (default: [])
-    repair_state : str, optional
-        Name of the repair state (default: "rep")
-    repair_cond : bool, callable, or list, optional
-        Condition that must be met for repair to occur (default: True)
-    repair_effects : dict, optional
-        Effects applied when repair occurs (default: {})
-    repair_param_name : str or list[str], optional
-        Names of repair parameters (default: [])
-    repair_param : list, optional
-        Values of repair parameters (default: [])
-    param_name_order_prefix : str, optional
-        Template for parameter name suffixes (default: "__{order}_o_{order_max}")
-    trans_name_prefix : str, optional
-        Template for transition/automaton name suffixes (default: "__cc_{target_comb_u}")
-        Available placeholders: {target_comb}, {target_binary}, {target_comb_u}, {order}, {order_max}
-    trans_name_prefix_fun : callable, optional
-        Custom function to generate transition/automaton name suffixes. Takes keyword arguments:
-        target_set_idx, target_comb, target_binary, target_comb_u, order, order_max
-    drop_inactive_automata : bool, optional
-        Whether to skip creating automata with inactive occurrence laws (default: True)
-    cond_inner_logic : callable, optional
-        Logic function for inner condition combinations (default: all)
-    cond_outer_logic : callable, optional
-        Logic function for outer condition combinations (default: any)
-    step : optional
-        Step parameter for automaton transitions
-
-    Methods
-    -------
-    get_failure_cond(target_comps, failure_param)
-        Creates a failure condition function for the given target components
-    get_repair_cond(target_comps, repair_param)
-        Creates a repair condition function for the given target components
-    set_default_failure_param_name()
-        Sets default failure parameter names (to be overridden in subclasses)
-    set_default_repair_param_name()
-        Sets default repair parameter names (to be overridden in subclasses)
-    _factorize_target_names(targets, rep_char="X", ignored_char=["_"], concat_char=["__"])
-        Static method to create factorized names from target lists
-
     Examples
     --------
     Basic failure mode with default naming:
@@ -1068,123 +2018,34 @@ class ObjFM(FmWiringMixin, PycComponent):
     ... )
     # Creates automata: "common_cause__cc_1_2", "common_cause__cc_1", "common_cause__cc_2"
 
-    Using custom trans_name_prefix with binary representation:
-
-    >>> fm = ObjFM(
-    ...     fm_name="failure",
-    ...     targets=["comp1", "comp2", "comp3"],
-    ...     trans_name_prefix="__bin_{target_binary}",
-    ...     failure_effects={"output": False}
-    ... )
-    # Creates automata like: "failure__bin_110", "failure__bin_101", etc.
-
-    Using custom trans_name_prefix_fun for complex naming:
-
-    >>> def custom_naming(target_set_idx, target_comb, target_binary, **kwargs):
-    ...     return f"__custom_{len(target_set_idx)}of{kwargs['order_max']}_{target_binary}"
-    ...
-    >>> fm = ObjFM(
-    ...     fm_name="advanced",
-    ...     targets=["A", "B", "C"],
-    ...     trans_name_prefix_fun=custom_naming,
-    ...     failure_effects={"signal": False}
-    ... )
-    # Creates automata like: "advanced__custom_2of3_110", "advanced__custom_1of3_100", etc.
-
-    Using underscore-separated target combinations:
-
-    >>> fm = ObjFM(
-    ...     fm_name="mode",
-    ...     targets=["unit1", "unit2", "unit3"],
-    ...     trans_name_prefix="__targets_{target_comb_u}",
-    ...     failure_effects={"active": False}
-    ... )
-    # Creates automata like: "mode__targets_1_2", "mode__targets_2_3", etc.
-
-    Failure condition examples:
-
-    Simple boolean condition:
-    >>> fm = ObjFM(
-    ...     fm_name="simple_failure",
-    ...     targets=["pump1"],
-    ...     failure_cond=True,  # Always ready to fail
-    ...     repair_cond=False   # Never repairs automatically
-    ... )
-
-    Custom function condition:
-    >>> def custom_failure_condition():
-    ...     return system_pressure > 100 and temperature < 50
-    ...
-    >>> fm = ObjFM(
-    ...     fm_name="pressure_failure",
-    ...     targets=["valve1"],
-    ...     failure_cond=custom_failure_condition
-    ... )
-
-    Structured attribute-based conditions:
-    >>> # Single condition: fail when pressure >= 100
-    >>> fm = ObjFM(
-    ...     fm_name="pressure_fm",
-    ...     targets=["pump1"],
-    ...     failure_cond=[{"attr": "pressure", "ope": ">=", "value": 100}]
-    ... )
-
-    >>> # Multiple conditions with AND logic: fail when pressure >= 100 AND temperature <= 50
-    >>> fm = ObjFM(
-    ...     fm_name="combined_fm",
-    ...     targets=["pump1"],
-    ...     failure_cond=[[
-    ...         {"attr": "pressure", "ope": ">=", "value": 100},
-    ...         {"attr": "temperature", "ope": "<=", "value": 50}
-    ...     ]]
-    ... )
-
-    >>> # Multiple conditions with OR logic: fail when pressure >= 100 OR temperature <= 50
-    >>> fm = ObjFM(
-    ...     fm_name="either_fm",
-    ...     targets=["pump1"],
-    ...     failure_cond=[
-    ...         [{"attr": "pressure", "ope": ">=", "value": 100}],
-    ...         [{"attr": "temperature", "ope": "<=", "value": 50}]
-    ...     ]
-    ... )
-
-    >>> # Complex nested conditions: (pressure >= 100 AND temp <= 50) OR (flow <= 0)
-    >>> fm = ObjFM(
-    ...     fm_name="complex_fm",
-    ...     targets=["system1"],
-    ...     failure_cond=[
-    ...         [
-    ...             {"attr": "pressure", "ope": ">=", "value": 100},
-    ...             {"attr": "temperature", "ope": "<=", "value": 50}
-    ...         ],
-    ...         [{"attr": "flow", "ope": "<=", "value": 0}]
-    ...     ]
-    ... )
-
-    >>> # Using explicit component references:
-    >>> fm = ObjFM(
-    ...     fm_name="multi_comp_fm",
-    ...     targets=["pump1", "pump2"],
-    ...     failure_cond=[
-    ...         {"attr": "pressure", "obj": "sensor1", "ope": ">=", "value": 100}
-    ...     ]
-    ... )
-
-    >>> # Custom logic functions:
-    >>> fm = ObjFM(
-    ...     fm_name="custom_logic_fm",
-    ...     targets=["pump1"],
-    ...     failure_cond=[[
-    ...         {"attr": "sensor1", "ope": ">=", "value": 10},
-    ...         {"attr": "sensor2", "ope": ">=", "value": 20}
-    ...     ]],
-    ...     cond_inner_logic=any,  # OR logic for inner conditions
-    ...     cond_outer_logic=all   # AND logic for outer conditions
-    ... )
+    See the ObjMode2S engine docstring for the generic surface, and the
+    historical examples in the user guide for condition shapes and
+    naming customisation (trans_name_prefix / trans_name_prefix_fun).
     """
 
-    VALID_BEHAVIOURS = ("internal", "external", "external_rep_indep")
+    #: Restore the historical constructor-kwargs passthrough.
+    _engine_strict_kwargs = False
+
+    #: Engine attribute -> historical alias, mirrored by
+    #: ``_sync_legacy_aliases()`` at every bridge-hook boundary and at
+    #: the end of ``__init__`` (post-construction surface: sequence
+    #: auto-discovery and user code read the historical names).
+    _GENERIC_TO_LEGACY = {
+        "mode_name": "fm_name",
+        "occ_state": "failure_state",
+        "not_occ_state": "repair_state",
+        "occ_cond": "failure_cond",
+        "not_occ_cond": "repair_cond",
+        "occ_effects": "failure_effects",
+        "not_occ_effects": "repair_effects",
+        "occ_effects_trans": "failure_effects_trans",
+        "not_occ_effects_trans": "repair_effects_trans",
+        "occ_param_name": "failure_param_name",
+        "not_occ_param_name": "repair_param_name",
+        "occ_param": "failure_param",
+        "not_occ_param": "repair_param",
+        "not_occ_var_params_order1": "repair_var_params_order1",
+    }
 
     def __init__(
         self,
@@ -1213,451 +2074,152 @@ class ObjFM(FmWiringMixin, PycComponent):
         step=None,
         **kwargs,
     ):
-        # __import__("ipdb").set_trace()
-        # Normalise mutable-default sentinels.
-        if targets is None:
-            targets = []
-        if failure_effects is None:
-            failure_effects = {}
-        if failure_effects_trans is None:
-            failure_effects_trans = {}
-        if failure_param_name is None:
-            failure_param_name = []
-        if failure_param is None:
-            failure_param = []
-        if repair_effects is None:
-            repair_effects = {}
-        if repair_effects_trans is None:
-            repair_effects_trans = {}
-        if repair_param_name is None:
-            repair_param_name = []
-        if repair_param is None:
-            repair_param = []
+        super().__init__(
+            fm_name,
+            # The engine reserves ``targets=None`` for its self-hosted
+            # mode; the façade keeps the historical semantics where
+            # ``None`` and ``[]`` are both the silent no-op.
+            targets=[] if targets is None else targets,
+            target_name=target_name,
+            behaviour=behaviour,
+            occ_state=failure_state,
+            occ_cond=failure_cond,
+            occ_effects=failure_effects,
+            occ_effects_trans=failure_effects_trans,
+            occ_param_name=failure_param_name,
+            occ_param=failure_param,
+            not_occ_state=repair_state,
+            not_occ_cond=repair_cond,
+            not_occ_effects=repair_effects,
+            not_occ_effects_trans=repair_effects_trans,
+            not_occ_param_name=repair_param_name,
+            not_occ_param=repair_param,
+            param_name_order_prefix=param_name_order_prefix,
+            trans_name_prefix=trans_name_prefix,
+            trans_name_prefix_fun=trans_name_prefix_fun,
+            drop_inactive_automata=drop_inactive_automata,
+            cond_inner_logic=cond_inner_logic,
+            cond_outer_logic=cond_outer_logic,
+            step=step,
+            **kwargs,
+        )
+        self._sync_legacy_aliases()
 
-        self.fm_name = fm_name
-        self.targets = [targets] if isinstance(targets, str) else targets
-        if target_name is None and len(self.targets) == 1:
-            target_name = self.targets[0]
-        self.target_name = target_name or self._factorize_target_names(targets)
+    def _sync_legacy_aliases(self):
+        """Mirror the generic engine attributes onto the historical
+        names (only those already set — the engine initialises them
+        progressively and the hook protocol pins what is visible at
+        each hook)."""
+        for generic, legacy in self._GENERIC_TO_LEGACY.items():
+            try:
+                setattr(self, legacy, getattr(self, generic))
+            except AttributeError:
+                pass
 
-        comp_name = f"{self.target_name}__{self.fm_name}"
+    # ------------------------------------------------------------------
+    # Engine template hooks -> historical hook protocol bridges.
+    # Every bridge starts by syncing the legacy aliases so the
+    # historical hooks see the attributes they have always seen, and
+    # returns/mirrors back the values legacy hooks mutate in place.
+    # ------------------------------------------------------------------
 
-        super().__init__(comp_name, **kwargs)
-        # if self.system().name() == "003":
-        #     __import__("ipdb").set_trace()
-
-        order_max = len(self.targets)
-
-        if behaviour not in self.VALID_BEHAVIOURS:
-            raise ValueError(
-                f"behaviour must be one of {self.VALID_BEHAVIOURS}, got '{behaviour}'"
-            )
-        self.behaviour = behaviour
-
-        # Create control variables for external behaviours
-        self.ctrl_vars = {}
-        if self.behaviour in ("external", "external_rep_indep"):
-            for target_name_cur in self.targets:
-                ctrl_var_name = f"ctrl_{self.fm_name}_{target_name_cur}"
-                ctrl_var = self.addVariable(ctrl_var_name, pyc.TVarType.t_bool, False)
-                self.ctrl_vars[target_name_cur] = ctrl_var
-
-        self.failure_cond = copy.deepcopy(failure_cond)
-        self.repair_cond = copy.deepcopy(repair_cond)
-
-        self.failure_state = failure_state
-        self.repair_state = repair_state
-
-        if isinstance(step, str):
-            step_name = step
-            step = self.system().step(step_name)
-            if step is None:
-                raise ValueError(f"Step {step_name} does not exist in this system")
-        self.step = step
-
-        self.cond_inner_logic = cond_inner_logic
-        self.cond_outer_logic = cond_outer_logic
-
-        self.var_params = {}
-        self.failure_effects = copy.deepcopy(failure_effects)
-        self.repair_effects = copy.deepcopy(repair_effects)
-        # Trans-based effects (mode="trans_based"): applied once at the
-        # instant the occ / rep transition fires, via a transition-edge
-        # sensitive method (see ``_wire_transition_effects``), unlike the
-        # state-clamped ``failure_effects`` / ``repair_effects``.
-        self.failure_effects_trans = copy.deepcopy(failure_effects_trans)
-        self.repair_effects_trans = copy.deepcopy(repair_effects_trans)
+    def _validate_trans_effects(self):
+        self._sync_legacy_aliases()
         self._validate_trans_effects_supported()
-        self.failure_param_name = (
-            [failure_param_name]
-            if isinstance(failure_param_name, str)
-            else copy.deepcopy(failure_param_name)
-        )
-        self.set_default_failure_param_name()
 
-        self.repair_param_name = (
-            [repair_param_name]
-            if isinstance(repair_param_name, str)
-            else copy.deepcopy(repair_param_name)
-        )
+    def _default_direction_param_names(self, direction):
+        self._sync_legacy_aliases()
+        if direction == "occ":
+            self.set_default_failure_param_name()
+            return self.failure_param_name
         self.set_default_repair_param_name()
+        return self.repair_param_name
 
-        self.param_name_order_prefix = param_name_order_prefix
-        self.trans_name_prefix = trans_name_prefix
-        self.trans_name_prefix_fun = trans_name_prefix_fun
-
-        self.failure_param = (
-            [failure_param]
-            if not isinstance(failure_param, list)
-            else copy.deepcopy(failure_param)
-        )
-        failure_param_diff = len(self.targets) - len(self.failure_param)
-        if failure_param_diff > 0:
+    def _default_direction_params(self, direction):
+        self._sync_legacy_aliases()
+        if direction == "occ":
             self.set_default_failure_param()
-        elif failure_param_diff < 0:
-            raise ValueError(
-                f"Failure mode of order {order_max} but you provide {len(self.failure_param)} failure parameters: {self.failure_param}"
-            )
+            return self.failure_param
+        self.set_default_repair_param()
+        return self.repair_param
 
-        self.repair_param = (
-            [repair_param]
-            if not isinstance(repair_param, list)
-            else copy.deepcopy(repair_param)
+    def _is_direction_law_active(self, direction, params):
+        if direction == "occ":
+            return self.is_occ_law_failure_active(params)
+        return self.is_occ_law_repair_active(params)
+
+    def _direction_law_bkd(self, direction, params):
+        if direction == "occ":
+            return self.set_occ_law_failure(params)
+        return self.set_occ_law_repair(params)
+
+    def _direction_cond(self, direction, target_comps, param=None, **kwrds):
+        self._sync_legacy_aliases()
+        if direction == "occ":
+            return self.get_failure_cond(
+                target_comps=target_comps, param=param, **kwrds
+            )
+        return self.get_repair_cond(target_comps=target_comps, param=param, **kwrds)
+
+    def _build_mode_automaton(
+        self,
+        aut_name,
+        not_occ_state_name,
+        occ_state_name,
+        occ_cond,
+        not_occ_cond,
+        occ_var_params,
+        not_occ_var_params,
+        occ_effects,
+        not_occ_effects,
+        not_occ_law,
+        occ_effects_trans=None,
+        not_occ_effects_trans=None,
+    ):
+        # Only forward the trans-effect kwargs when non-empty, so a
+        # third-party ObjFM subclass that overrides _build_fm_automaton
+        # with the pre-feature signature keeps working as long as it
+        # never opts into trans effects (it would otherwise raise
+        # TypeError on unexpected kwargs). With the CCF guard in
+        # _validate_trans_effects_supported these lists are non-empty
+        # only for single-target internal or external FMs.
+        trans_kwargs = (
+            {
+                "failure_effects_trans": occ_effects_trans,
+                "repair_effects_trans": not_occ_effects_trans,
+            }
+            if (occ_effects_trans or not_occ_effects_trans)
+            else {}
         )
-        repair_param_diff = len(self.targets) - len(self.repair_param)
-        if repair_param_diff > 0:
-            self.set_default_repair_param()
-        elif repair_param_diff < 0:
-            raise ValueError(
-                f"Failure mode of order {order_max} but you provide {len(self.repair_param)} repair parameters: {self.repair_param}"
-            )
+        return self._build_fm_automaton(
+            aut_name=aut_name,
+            repair_state_name=not_occ_state_name,
+            failure_state_name=occ_state_name,
+            failure_cond=occ_cond,
+            repair_cond=not_occ_cond,
+            failure_var_params=occ_var_params,
+            repair_var_params=not_occ_var_params,
+            failure_effects=occ_effects,
+            repair_effects=not_occ_effects,
+            repair_law=not_occ_law,
+            **trans_kwargs,
+        )
 
-        # Store order 1 repair params for external_rep_indep behaviour
-        self.repair_var_params_order1 = None
+    def _build_target_automaton(
+        self, target_name, return_occ_law, occ_effects=None, not_occ_effects=None
+    ):
+        self._sync_legacy_aliases()
+        return self._create_target_automaton(
+            target_name,
+            return_occ_law,
+            failure_effects=occ_effects,
+            repair_effects=not_occ_effects,
+        )
 
-        # Track impacting automata for each target in external modes
-        self.target_impacting_automata = {t: [] for t in self.targets}
-
-        for order in range(1, order_max + 1):
-
-            failure_param_cur = self.failure_param[order - 1]
-            if not isinstance(failure_param_cur, tuple):
-                failure_param_cur = (failure_param_cur,)
-
-            failure_var_params_cur = {}
-            for failure_param_name_cur, param_value in zip(
-                self.failure_param_name, failure_param_cur
-            ):
-                failure_param_name_cur_tmp = order_param_name(
-                    failure_param_name_cur,
-                    order,
-                    order_max,
-                    fmt=self.param_name_order_prefix,
-                )
-
-                failure_var_param = self.addVariable(
-                    failure_param_name_cur_tmp, pyc.TVarType.t_double, param_value
-                )
-                failure_var_params_cur.update(
-                    {failure_param_name_cur: failure_var_param}
-                )
-
-            repair_param_cur = self.repair_param[order - 1]
-            if not isinstance(repair_param_cur, tuple):
-                repair_param_cur = (repair_param_cur,)
-
-            repair_var_params_cur = {}
-            for repair_param_name_cur, param_value in zip(
-                self.repair_param_name, repair_param_cur
-            ):
-                repair_param_name_cur_tmp = order_param_name(
-                    repair_param_name_cur,
-                    order,
-                    order_max,
-                    fmt=self.param_name_order_prefix,
-                )
-
-                repair_var_param = self.addVariable(
-                    repair_param_name_cur_tmp, pyc.TVarType.t_double, param_value
-                )
-                repair_var_params_cur.update({repair_param_name_cur: repair_var_param})
-
-            # Store order 1 params
-            if order == 1:
-                self.repair_var_params_order1 = repair_var_params_cur
-
-            if (
-                drop_inactive_automata
-                and not self.is_occ_law_failure_active(failure_var_params_cur)
-                and not self.is_occ_law_repair_active(repair_var_params_cur)
-            ):
-                continue
-
-            for target_set_idx in itertools.combinations(range(order_max), order):
-
-                # Prepare effects based on behaviour.
-                # external: level (state) effects on the target are handled by
-                #   the centralized ctrl_var sensitive method below (ObjFM
-                #   transitions carry no direct level effects on ctrl_vars);
-                #   trans-based one-shot effects DO apply, wired on the ObjFM's
-                #   OWN occ / rep transition and writing the target's persistent
-                #   gate once per crossing (both-pulse inter-component), resolved
-                #   against the targets exactly like the internal branch.
-                # external_rep_indep: trigger model (ObjFM.occ sets ctrl=True
-                #   directly on the transition; ObjFM.rep does NOT touch ctrl,
-                #   the target owns the reset on its own repair transition).
-                #   Trans-based effects are rejected upfront for it (and for
-                #   CCF / ObjFMInst) by ``_validate_trans_effects_supported``,
-                #   so those lists stay empty in the paths that never opt in.
-                failure_effects_trans_cur = []
-                repair_effects_trans_cur = []
-                if self.behaviour == "external":
-                    failure_effects_cur = []
-                    repair_effects_cur = []
-                elif self.behaviour == "external_rep_indep":
-                    failure_effects_cur = [
-                        {"var": self.ctrl_vars[self.targets[idx]], "value": True}
-                        for idx in target_set_idx
-                    ]
-                    repair_effects_cur = []
-                else:  # internal behaviour
-                    failure_effects_cur = []
-                    for var, value in self.failure_effects.items():
-                        for target_idx in target_set_idx:
-                            comp_cur = self.system().component(self.targets[target_idx])
-
-                            if hasattr(comp_cur, var):
-                                comp_var = getattr(comp_cur, var)
-                            elif var in [v.basename() for v in comp_cur.variables()]:
-                                comp_var = comp_cur.variable(var)
-                            else:
-                                raise ValueError(
-                                    f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
-                                )
-                            failure_effects_cur.append(
-                                {"var": comp_var, "value": value}
-                            )
-
-                    repair_effects_cur = []
-                    for var, value in self.repair_effects.items():
-                        for target_idx in target_set_idx:
-                            comp_cur = self.system().component(self.targets[target_idx])
-
-                            if hasattr(comp_cur, var):
-                                comp_var = getattr(comp_cur, var)
-                            elif var in [v.basename() for v in comp_cur.variables()]:
-                                comp_var = comp_cur.variable(var)
-                            else:
-                                raise ValueError(
-                                    f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
-                                )
-                            repair_effects_cur.append({"var": comp_var, "value": value})
-
-                # Trans-based (one-shot edge) effects: resolved IDENTICALLY for
-                # internal and external (var_name -> target variable), wired on
-                # the ObjFM occ / rep transition edge by
-                # ``_wire_transition_effects`` rather than on the state. For
-                # external the pulse writes the TARGET's persistent gate,
-                # coexisting with the level ctrl_var (both-pulse inter-component).
-                # Hoisted out of the behaviour branches (was duplicated in the
-                # internal and external branches). external_rep_indep keeps the
-                # trans dicts empty via ``_validate_trans_effects_supported``, so
-                # this loop is an inert no-op there (empty dicts resolve to []).
-                for target_idx in target_set_idx:
-                    comp_cur = self.system().component(self.targets[target_idx])
-                    failure_effects_trans_cur += self._resolve_target_effects(
-                        comp_cur,
-                        self.targets[target_idx],
-                        self.failure_effects_trans,
-                        kind="failure_effects_trans",
-                    )
-                    repair_effects_trans_cur += self._resolve_target_effects(
-                        comp_cur,
-                        self.targets[target_idx],
-                        self.repair_effects_trans,
-                        kind="repair_effects_trans",
-                    )
-
-                failure_state_name_cur = self.failure_state
-                repair_state_name_cur = self.repair_state
-                aut_name_cur = fm_name
-                if order_max > 1:
-                    trans_name_prefix_cur = cc_comb_suffix(
-                        target_set_idx,
-                        order_max,
-                        trans_name_prefix=self.trans_name_prefix,
-                        trans_name_prefix_fun=self.trans_name_prefix_fun,
-                    )
-                    aut_name_cur += trans_name_prefix_cur
-                    failure_state_name_cur += trans_name_prefix_cur
-                    repair_state_name_cur += trans_name_prefix_cur
-
-                target_comps_cur = [
-                    self.system().component(self.targets[idx]) for idx in target_set_idx
-                ]
-
-                failure_cond_cur = self.get_failure_cond(
-                    target_comps=target_comps_cur, param=failure_var_params_cur
-                )
-                repair_cond_cur = self.get_repair_cond(
-                    target_comps=target_comps_cur, param=repair_var_params_cur
-                )
-
-                if self.behaviour in ("external", "external_rep_indep"):
-
-                    def make_external_cond(
-                        base_cond, targets, fm_name, required_state_name
-                    ):
-                        def cond():
-                            # Check base condition
-                            if not base_cond():
-                                return False
-                            # Check all targets are in required state
-                            for t in targets:
-                                if fm_name not in t.automata_d:
-                                    return False
-                                st = t.automata_d[fm_name].get_state_by_name(
-                                    required_state_name
-                                )
-                                if not st._bkd.isActive():
-                                    return False
-                            return True
-
-                        return cond
-
-                    # Failure: targets must be in repair state (available).
-                    # The target automaton's state is name-prefixed since
-                    # the multi-ObjFM-per-target fix; mirror that here.
-                    failure_cond_cur = make_external_cond(
-                        failure_cond_cur,
-                        target_comps_cur,
-                        self.fm_name,
-                        f"{self.fm_name}__{self.repair_state}",
-                    )
-
-                    if self.behaviour == "external":
-                        # Repair: targets must be in failure state (to be repaired).
-                        repair_cond_cur = make_external_cond(
-                            repair_cond_cur,
-                            target_comps_cur,
-                            self.fm_name,
-                            f"{self.fm_name}__{self.failure_state}",
-                        )
-                    # external_rep_indep: ObjFM repair is unconditional
-                    # (trigger model — instantaneous delay(0), see
-                    # occ_law_21 override below).
-                    else:
-                        repair_cond_cur = lambda: True
-
-                # ObjFM repair law: instantaneous in external_rep_indep
-                # (trigger — the ObjFM emits a one-shot signal then resets).
-                if self.behaviour == "external_rep_indep":
-                    objfm_repair_law = {"cls": "delay", "time": 0}
-                else:
-                    objfm_repair_law = self.set_occ_law_repair(repair_var_params_cur)
-
-                # Only forward the trans-effect kwargs when non-empty, so a
-                # third-party ObjFM subclass that overrides _build_fm_automaton
-                # with the pre-feature signature keeps working as long as it
-                # never opts into trans effects (it would otherwise raise
-                # TypeError on unexpected kwargs). With the CCF guard in
-                # _validate_trans_effects_supported these lists are non-empty
-                # only for single-target internal or external FMs.
-                trans_kwargs = (
-                    {
-                        "failure_effects_trans": failure_effects_trans_cur,
-                        "repair_effects_trans": repair_effects_trans_cur,
-                    }
-                    if (failure_effects_trans_cur or repair_effects_trans_cur)
-                    else {}
-                )
-                aut = self._build_fm_automaton(
-                    aut_name=aut_name_cur,
-                    repair_state_name=repair_state_name_cur,
-                    failure_state_name=failure_state_name_cur,
-                    failure_cond=failure_cond_cur,
-                    repair_cond=repair_cond_cur,
-                    failure_var_params=failure_var_params_cur,
-                    repair_var_params=repair_var_params_cur,
-                    failure_effects=failure_effects_cur,
-                    repair_effects=repair_effects_cur,
-                    repair_law=objfm_repair_law,
-                    **trans_kwargs,
-                )
-
-                # Record impacting automata for centralized control
-                if self.behaviour in ("external", "external_rep_indep"):
-                    for idx in target_set_idx:
-                        target_name = self.targets[idx]
-                        self.target_impacting_automata[target_name].append(
-                            (aut, failure_state_name_cur)
-                        )
-
-        # Centralized ctrl_var management for `external` only.
-        # `external_rep_indep` does NOT use this: ObjFM.occ sets ctrl=True via
-        # a direct effect on the transition (trigger model), and target.rep
-        # clears it via the target automaton's own repair effect. Re-introducing
-        # the OR-based sensitive method here would reset ctrl_var as soon as
-        # the ObjFM triggers back to rep, breaking the model.
-        if self.behaviour == "external":
-            for (
-                target_name,
-                impacting_info,
-            ) in self.target_impacting_automata.items():
-                ctrl_var = self.ctrl_vars[target_name]
-
-                def make_ctrl_method(cv, info_list):
-                    def ctrl_method():
-                        should_be_failed = any(
-                            a.get_state_by_name(st_name)._bkd.isActive()
-                            for a, st_name in info_list
-                        )
-                        if cv.value() != should_be_failed:
-                            cv.setValue(should_be_failed)
-
-                    return ctrl_method
-
-                method = make_ctrl_method(ctrl_var, impacting_info)
-                method_name = f"ctrl_sync__{self.name()}_{target_name}"
-
-                for aut, _ in impacting_info:
-                    aut._bkd.addSensitiveMethod(method_name, method)
-
-                self.addStartMethod(method_name, method)
-
-        # In external_rep_indep, the target's self-repair uses the order-1
-        # repair law. If that law is inactive (mu_1 = 0 / ttr_1 unset) the
-        # targets would never repair — which is almost certainly a config
-        # mistake. Raise a clear error rather than silently produce a
-        # one-shot model.
-        if self.behaviour == "external_rep_indep":
-            if (
-                self.repair_var_params_order1 is None
-                or not self.is_occ_law_repair_active(self.repair_var_params_order1)
-            ):
-                raise ValueError(
-                    f"behaviour='external_rep_indep' requires the order-1 "
-                    f"repair law to be active for FM '{self.fm_name}'. "
-                    f"Provide a non-zero repair_param for order 1."
-                )
-
-        # Create automata in target components for external behaviours
-        if self.behaviour in ("external", "external_rep_indep"):
-            for target_name_cur in self.targets:
-                # Create fresh dict each time to avoid mutation issues
-                if self.behaviour == "external":
-                    repair_occ_law = {"cls": "delay", "time": 0}
-                else:  # external_rep_indep
-                    repair_occ_law = self.set_occ_law_repair(
-                        self.repair_var_params_order1
-                    )
-
-                self._create_target_automaton(
-                    target_name_cur,
-                    repair_occ_law,
-                    failure_effects=self.failure_effects,
-                    repair_effects=self.repair_effects,
-                )
+    # ------------------------------------------------------------------
+    # Historical hook protocol (public extension surface — kept
+    # verbatim; subclasses override these).
+    # ------------------------------------------------------------------
 
     def _build_fm_automaton(
         self,
@@ -1676,12 +2238,12 @@ class ObjFM(FmWiringMixin, PycComponent):
     ):
         """Build the automaton for one cc-combination of this failure mode.
 
-        Extension hook: ``__init__`` calls this once per active
-        cc-combination, after having resolved the combination-specific
-        names, conditions, parameter variables, effects (records format)
-        and repair law. The default implementation builds the classic
-        two-state occ/rep automaton via :meth:`add_aut2st` — the exact
-        behaviour of ``ObjFMExp`` / ``ObjFMDelay``.
+        Extension hook: called once per active cc-combination, after the
+        combination-specific names, conditions, parameter variables,
+        effects (records format) and repair law are resolved. The
+        default implementation builds the classic two-state occ/rep
+        automaton (the exact behaviour of ``ObjFMExp`` / ``ObjFMDelay``)
+        through the engine.
 
         Subclasses whose occurrence model does not fit a two-state
         single-target automaton (e.g. :class:`ObjFMInst` and its 3-state
@@ -1691,44 +2253,28 @@ class ObjFM(FmWiringMixin, PycComponent):
         queryable by name — the external behaviours rely on it.
 
         ``failure_effects_trans`` / ``repair_effects_trans`` (records
-        format) are trans-based (mode="trans_based") effects wired on the
-        occ / rep transition edge — fired once per crossing — instead of
-        clamped on the state. ``add_aut2st`` names the failure transition
-        after the failure state (``trans_name_12_fmt="{st2}"``) and the
-        repair transition after the repair state (``trans_name_21_fmt=
-        "{st1}"``), so those two names are the wiring targets below.
+        format) are trans-based (mode="trans_based") effects wired on
+        the occ / rep transition edge — fired once per crossing —
+        instead of clamped on the state.
         """
-        aut = self.add_aut2st(
-            name=aut_name,
-            st1=repair_state_name,
-            st2=failure_state_name,
-            init_st2=False,
-            trans_name_12_fmt="{st2}",
-            cond_occ_12=failure_cond,
-            occ_law_12=self.set_occ_law_failure(failure_var_params),
-            occ_interruptible_12=True,
-            effects_st2=failure_effects,
-            effects_st2_format="records",
-            trans_name_21_fmt="{st1}",
-            cond_occ_21=repair_cond,
-            occ_law_21=repair_law,
-            occ_interruptible_21=True,
-            effects_st1=repair_effects,
-            effects_st1_format="records",
-            step=self.step,
+        # Qualified call: the engine implementation, not the façade
+        # override above (a subclass overriding BOTH hooks must not
+        # recurse).
+        return ObjMode2S._build_mode_automaton(
+            self,
+            aut_name=aut_name,
+            not_occ_state_name=repair_state_name,
+            occ_state_name=failure_state_name,
+            occ_cond=failure_cond,
+            not_occ_cond=repair_cond,
+            occ_var_params=failure_var_params,
+            not_occ_var_params=repair_var_params,
+            occ_effects=failure_effects,
+            not_occ_effects=repair_effects,
+            not_occ_law=repair_law,
+            occ_effects_trans=failure_effects_trans,
+            not_occ_effects_trans=repair_effects_trans,
         )
-        # Trans-based effects: one-shot edge callbacks (no-op when empty).
-        self._wire_transition_effects(
-            aut,
-            failure_state_name,
-            failure_effects_trans,
-            target_state=failure_state_name,
-        )
-        self._wire_transition_effects(aut, repair_state_name, repair_effects_trans)
-        return aut
-
-    # ``_wire_transition_effects`` and ``_resolve_target_effects`` are
-    # inherited from ``FmWiringMixin`` (cod3s/pycatshoo/fm_wiring.py).
 
     def _validate_trans_effects_supported(self):
         """Reject trans-based effects on behaviours that cannot host a
@@ -1808,193 +2354,29 @@ class ObjFM(FmWiringMixin, PycComponent):
     ):
         """Create a synchronized automaton in the target component.
 
-        Args:
+        Extension hook (historical signature). Args:
             target_name: Name of the target component
             repair_occ_law: Occurrence law for the repair transition
                 - {"cls": "delay", "time": 0} for external behaviour
-                - {"cls": "exp", "rate": mu_var} for external_rep_indep behaviour
-            failure_effects: Effects to apply when failure occurs (dict of var_name: value)
-            repair_effects: Effects to apply when repair occurs (dict of var_name: value)
+                - {"cls": "exp", "rate": mu_var} for external_rep_indep
+            failure_effects: Effects applied when failure occurs
+            repair_effects: Effects applied when repair occurs
         """
-        if failure_effects is None:
-            failure_effects = {}
-        if repair_effects is None:
-            repair_effects = {}
-        target_comp = self.system().component(target_name)
-
-        # Check for name conflict
-        existing_aut_names = [aut.basename() for aut in target_comp.automata()]
-        if self.fm_name in existing_aut_names:
-            raise ValueError(
-                f"Target '{target_name}' already has an automaton named '{self.fm_name}'. "
-                f"Cannot create external FM automaton."
-            )
-
-        ctrl_var = self.ctrl_vars[target_name]
-
-        # Condition to transition to failure state
-        def occ_condition():
-            return ctrl_var.value() is True
-
-        # Condition for repair transition
-        if self.behaviour == "external":
-            # Synchronized with ObjFM
-            def rep_condition():
-                return ctrl_var.value() is False
-
-        else:  # external_rep_indep
-            # Reuse the user's original repair_cond on this target alone.
-            # We pass repair_var_params_order1 because the target's repair
-            # law is the order-1 law (mu_1 / ttr_1) — keeps the cond and the
-            # law referring to the same parameters.
-            rep_condition = self.get_repair_cond(
-                target_comps=[target_comp],
-                param=self.repair_var_params_order1,
-            )
-
-        final_failure_effects = self._resolve_target_effects(
-            target_comp, target_name, failure_effects, kind="failure_effects"
+        return ObjMode2S._build_target_automaton(
+            self,
+            target_name,
+            repair_occ_law,
+            occ_effects=failure_effects,
+            not_occ_effects=repair_effects,
         )
-        final_repair_effects = self._resolve_target_effects(
-            target_comp, target_name, repair_effects, kind="repair_effects"
-        )
-
-        # Prefix the state and transition names with the ObjFM's
-        # ``fm_name`` so the target can host several ObjFM in
-        # ``external`` / ``external_rep_indep`` mode without colliding
-        # on the bare ``occ`` / ``rep`` namespace. The resulting
-        # sequence trace also disambiguates which ObjFM fired the event
-        # (e.g. ``C1.frun__occ`` instead of ``C1.occ``).
-        st_rep_prefixed = f"{self.fm_name}__{self.repair_state}"
-        st_occ_prefixed = f"{self.fm_name}__{self.failure_state}"
-        target_aut = target_comp.add_aut2st(
-            name=self.fm_name,
-            st1=st_rep_prefixed,
-            st2=st_occ_prefixed,
-            init_st2=False,
-            # ``st1`` / ``st2`` are already prefixed, so the bare ``{st2}``
-            # / ``{st1}`` format yields the prefixed transition name.
-            trans_name_12_fmt="{st2}",
-            cond_occ_12=occ_condition,
-            occ_law_12={"cls": "delay", "time": 0},  # Always instantaneous
-            occ_interruptible_12=True,
-            effects_st2=final_failure_effects,
-            effects_st2_format="records",
-            trans_name_21_fmt="{st1}",
-            cond_occ_21=rep_condition,
-            occ_law_21=repair_occ_law,
-            occ_interruptible_21=True,
-            effects_st1=final_repair_effects,
-            effects_st1_format="records",
-            step=self.step,
-        )
-
-        # In external_rep_indep, the ObjFM does NOT reset ctrl_var on its own
-        # repair (trigger model). The target clears ctrl_var when its automaton
-        # transitions back to the repair state. We use a sensitive method on
-        # the target's automaton (NOT on the variable) to avoid the cascading
-        # re-evaluation that would happen if ctrl_var=False was placed in
-        # effects_st1 (which registers the effect on the variable itself,
-        # creating a conflict with the ObjFM.occ effect at simulation start).
-        if self.behaviour == "external_rep_indep":
-            rep_state_bkd = target_aut.get_state_by_name(st_rep_prefixed)._bkd
-
-            def reset_ctrl_on_target_repair():
-                if rep_state_bkd.isActive() and ctrl_var.value() is True:
-                    ctrl_var.setValue(False)
-
-            target_aut._bkd.addSensitiveMethod(
-                f"reset_ctrl__{self.fm_name}__{target_name}",
-                reset_ctrl_on_target_repair,
-            )
 
     def get_failure_cond(self, target_comps, **kwrds):
-
-        cond = sanitize_cond_format(self.failure_cond)
-
-        if isinstance(self.failure_cond, list):
-
-            cond_bis_list = [
-                prepare_attr_tree(cond, obj_default=comp, system=self.system())
-                for comp in target_comps
-            ]
-
-            def failure_cond_fun():
-                return all(
-                    [
-                        self.cond_outer_logic(
-                            [
-                                self.cond_inner_logic(
-                                    [
-                                        get_operator_function(c_inner.get("ope", "=="))(
-                                            getattr(
-                                                c_inner["attr"],
-                                                c_inner["attr_val_name"],
-                                            )(),
-                                            c_inner["value"],
-                                        )
-                                        for c_inner in c_outer
-                                    ]
-                                )
-                                for c_outer in cond_bis_cur
-                            ]
-                        )
-                        for cond_bis_cur in cond_bis_list
-                    ]
-                )
-
-        elif callable(self.failure_cond):
-            failure_cond_fun = self.failure_cond
-        else:
-
-            def failure_cond_fun():
-                return self.failure_cond
-
-        return failure_cond_fun
+        # Same compilation as the engine's generic direction condition
+        # (the historical duplicated bodies were deduplicated there).
+        return ObjMode2S._direction_cond(self, "occ", target_comps)
 
     def get_repair_cond(self, target_comps, **kwrds):
-
-        cond = sanitize_cond_format(self.repair_cond)
-
-        if isinstance(self.repair_cond, list):
-
-            cond_bis_list = [
-                prepare_attr_tree(cond, obj_default=comp, system=self.system())
-                for comp in target_comps
-            ]
-
-            def repair_cond_fun():
-                return all(
-                    [
-                        self.cond_outer_logic(
-                            [
-                                self.cond_inner_logic(
-                                    [
-                                        get_operator_function(c_inner.get("ope", "=="))(
-                                            getattr(
-                                                c_inner["attr"],
-                                                c_inner["attr_val_name"],
-                                            )(),
-                                            c_inner["value"],
-                                        )
-                                        for c_inner in c_outer
-                                    ]
-                                )
-                                for c_outer in cond_bis_cur
-                            ]
-                        )
-                        for cond_bis_cur in cond_bis_list
-                    ]
-                )
-
-        elif callable(self.repair_cond):
-            repair_cond_fun = self.repair_cond
-        else:
-
-            def repair_cond_fun():
-                return self.repair_cond
-
-        return repair_cond_fun
+        return ObjMode2S._direction_cond(self, "not_occ", target_comps)
 
     # TO BE OVERLOADED IF NEEDED
     def set_default_failure_param_name(self):
@@ -2009,81 +2391,6 @@ class ObjFM(FmWiringMixin, PycComponent):
 
     def is_occ_law_repair_active(self, params):
         return True
-
-    @staticmethod
-    def _factorize_target_names(
-        targets: list[str], rep_char="X", ignored_char=["_"], concat_char=["__"]
-    ) -> str:
-        """
-        Creates a factorized name from a list of target component names.
-
-        This utility method generates a compact representation of multiple target
-        names by identifying common patterns and replacing differing characters
-        with a placeholder. This is particularly useful for failure modes that
-        affect multiple similar components.
-
-        The algorithm works as follows:
-        1. If targets have different lengths, concatenate with separator
-        2. For same-length targets, compare character by character
-        3. Keep common characters, replace differences with rep_char
-        4. Ignore specified characters (like underscores) during comparison
-
-        Parameters
-        ----------
-        targets : list[str]
-            List of target component names to factorize
-        rep_char : str, optional
-            Character to use for differing positions (default: "X")
-        ignored_char : list[str], optional
-            Characters to ignore during comparison (default: ["_"])
-        concat_char : list[str], optional
-            Characters to use for concatenation when lengths differ (default: ["__"])
-
-        Returns
-        -------
-        str
-            Factorized name representing all targets
-
-        Examples
-        --------
-        >>> _factorize_target_names(["pump1", "pump2", "pump3"])
-        "pumpX"
-
-        >>> _factorize_target_names(["motor_A1", "motor_B1"])
-        "motor_X1"
-
-        >>> _factorize_target_names(["component1", "very_long_name"])
-        "component1__very_long_name"
-        """
-        if not targets:
-            return ""
-        if len(targets) == 1:
-            return targets[0]
-
-        first_len = len(targets[0])
-        # If targets have different lengths, concatenate them
-        if not all(len(t) == first_len for t in targets):
-            return concat_char[0].join(targets)
-
-        # Character-by-character comparison for same-length targets
-        result_chars = []
-        for i in range(first_len):
-            ref_char = targets[0][i]
-
-            # Skip ignored characters (keep them as-is)
-            if ref_char in ignored_char:
-                result_chars.append(ref_char)
-                continue
-
-            # Check if character is common across all targets
-            is_common = all(t[i] == ref_char for t in targets)
-
-            if is_common:
-                result_chars.append(ref_char)
-            else:
-                result_chars.append(rep_char)
-
-        return "".join(result_chars)
 
 
 class ObjFMExp(ObjFM):
