@@ -2,10 +2,11 @@
 
 Every cell of the (occ_law x not_occ_law) matrix must either construct
 or reject with a clear error at construction — never build a silent
-wrong model. At internal / order 1 all nine cells construct (the
-restricted cells are inst x external behaviours and inst-return x CC,
-locked by ``test_mode2s_inst.py``). Rejection cells are asserted
-without ever simulating.
+wrong model. At internal / order 1 all nine cells construct; since
+1.14.1 inst cells also construct with the external behaviours (parity
+coverage in ``test_mode2s_inst_external.py``). The remaining restricted
+cell is inst-return x CC, locked by ``test_mode2s_inst.py``. Rejection
+cells are asserted without ever simulating.
 
 Also includes the isimu same-instant cascade regression (G11): an inst
 branch submitted at an instant may create a new inst pending at the

@@ -1107,19 +1107,11 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         self.not_occ_parked_state = not_occ_parked_state
 
         # Native inst guards (law-spec-driven; façade routing keeps its
-        # own historical rules through the hook overrides).
-        native_inst_dirs = [
-            d
-            for d, law in (("occ", self.occ_law), ("not_occ", self.not_occ_law))
-            if isinstance(law, ModeLawInst)
-        ]
-        if native_inst_dirs and behaviour != "internal":
-            raise ValueError(
-                f"Mode {mode_name!r}: inst laws are only supported with "
-                f"behaviour='internal' (got {behaviour!r}) — the "
-                f"external/external_rep_indep synchronisation of inst "
-                f"draws is deferred."
-            )
+        # own historical rules through the hook overrides). inst x
+        # external/external_rep_indep is allowed since 1.14.1: the
+        # external machinery composes before the inst routing, exactly
+        # as the ObjFMInst façade has always exercised it (draws are
+        # independent per combination automaton on a shared front).
         if isinstance(self.not_occ_law, ModeLawInst) and len(self.targets) > 1:
             raise ValueError(
                 f"Mode {mode_name!r}: inst on the return direction "

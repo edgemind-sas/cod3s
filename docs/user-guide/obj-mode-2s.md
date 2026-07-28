@@ -57,11 +57,14 @@ unchanged.
 | `delay` | ✔ | ✔ (≡ ObjFMDelay) | ✔ |
 | `inst` | ✔ (≡ ObjFMInst) | ✔ | ✔ (livelock-guarded) |
 
-All nine cells build with `behaviour="internal"`. Restrictions
-(rejected with clear errors, liftable later): inst laws ×
-`external`/`external_rep_indep`; inst on the **return** direction × CC
-order > 1; trans-based effects on inst directions; inst laws in
-self-hosted mode.
+All nine cells build with `behaviour="internal"`. Since 1.14.1 inst
+laws also build with `external`/`external_rep_indep`: the external
+condition machinery composes before the inst routing, exactly as the
+`ObjFMInst` façade has always exercised it — each combination automaton
+draws independently on a shared demand front. Remaining restrictions
+(rejected with clear errors, liftable later): inst on the **return**
+direction × CC order > 1; trans-based effects on inst directions; inst
+laws in self-hosted mode.
 
 ## Unified `inst` semantics
 

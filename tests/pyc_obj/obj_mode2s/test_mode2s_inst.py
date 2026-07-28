@@ -223,18 +223,21 @@ def test_inst_inst_allowed_and_guarded(pyc_session):
 
 
 class TestNativeInstGuards:
-    def test_inst_rejected_with_external_behaviours(self, pyc_session):
-        system = PycSystem(name="InstExtGuard")
+    def test_inst_allowed_with_external_behaviours(self, pyc_session):
+        # Spec change 1.14.1: the inst x external guard is lifted (the
+        # ObjFMInst façade has always exercised this path in external).
+        # Deep parity coverage lives in test_mode2s_inst_external.py.
+        system = PycSystem(name="InstExtAllowed")
         for n in ("E1", "E2"):
             Equipment(n)
-        with pytest.raises(ValueError, match="internal"):
-            ObjMode2S(
-                mode_name="miss",
-                targets=["E1", "E2"],
-                behaviour="external",
-                occ_law={"cls": "inst", "prob": [0.3, 0.1]},
-                not_occ_law={"cls": "exp", "rate": [0.5, 0.5]},
-            )
+        mode = ObjMode2S(
+            mode_name="miss",
+            targets=["E1", "E2"],
+            behaviour="external",
+            occ_law={"cls": "inst", "prob": [0.3, 0.1]},
+            not_occ_law={"cls": "exp", "rate": [0.5, 0.5]},
+        )
+        assert sorted(mode.automata_d) == ["miss__cc_1", "miss__cc_1_2", "miss__cc_2"]
 
     def test_inst_return_rejected_with_cc(self, pyc_session):
         system = PycSystem(name="InstRetCCGuard")

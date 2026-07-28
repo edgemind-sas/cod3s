@@ -359,7 +359,11 @@ def _build_native_system():
 
 def _law_desc(occ_law):
     """Normalise a transition law for comparison: law class + parameter,
-    where a backend variable parameter is represented by its basename."""
+    where a backend variable parameter is represented by its basename.
+    Inst draw transitions carry no wrapper-level law (bound directly to
+    the backend distribution): represented as ("None",)."""
+    if occ_law is None:
+        return ("None",)
 
     def norm(v):
         return v.basename() if hasattr(v, "basename") else v
