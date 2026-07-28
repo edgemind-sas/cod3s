@@ -185,12 +185,35 @@ class TestLegacyOccLaw:
                 }
             ],
         )
-        # cls=ObjFMExp wins, occ_law is preserved as extra (rejected by ObjFMExpSpec)
-        # Actually with extra=forbid, occ_law triggers a validation error
-        # That's acceptable behaviour: don't mix the two.
-        # Update: the validator only runs when cls is absent, so occ_law passes through
-        # as extra=forbid → error. Verify that's the case.
+        # cls=ObjFMExp wins, the legacy STRING occ_law is dropped silently
+        # (writers transition without churn).
         assert study.failure_modes[0].cls == "ObjFMExp"
+
+    def test_structured_occ_law_is_preserved(self):
+        """1.14.2 regression: the native ObjMode2S wire carries occ_law as a
+        STRUCTURED ModeLaw spec (a mapping) — the legacy-string migration
+        must NOT swallow it (it used to pop it unconditionally, silently
+        deleting the law from the wire: silent-wrong-model channel)."""
+        law = {"cls": "exp", "rate": [1e-3, 0.0]}
+        study = StudyYaml(
+            name="s",
+            failure_modes=[
+                {
+                    "cls": "ObjMode2S",
+                    "fm_name": "m",
+                    "targets": ["C1", "C2"],
+                    "occ_state": "occ",
+                    "not_occ_state": "rep",
+                    "occ_law": law,
+                    "not_occ_law": {"cls": "exp", "rate": [0.1, 0.0]},
+                }
+            ],
+        )
+        fm = study.failure_modes[0]
+        assert fm.cls == "ObjMode2S"
+        extras = fm.__pydantic_extra__ or {}
+        assert extras.get("occ_law") == law
+        assert fm.model_dump()["occ_law"] == law
 
 
 # ---------------------------------------------------------------------------

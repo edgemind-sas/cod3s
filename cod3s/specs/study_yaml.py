@@ -703,9 +703,16 @@ class StudyYaml(pydantic.BaseModel):
         """Translate legacy ``occ_law: "exp"|"delay"`` to ``cls`` discriminator.
 
         Older study.yaml files (cf. tests/usecases/.../study.yaml)
-        used ``occ_law`` to select between exponential and delay laws.
-        Map it to the new ``cls`` discriminator at parse time so
-        existing files keep loading.
+        used ``occ_law`` to select between exponential and delay laws —
+        a plain STRING. Map it to the new ``cls`` discriminator at parse
+        time so existing files keep loading.
+
+        Since 1.14.x the native ``ObjMode2S`` wire legitimately carries
+        ``occ_law`` as a STRUCTURED ModeLaw spec (a mapping, e.g.
+        ``{cls: exp, rate: [...]}``). Only legacy string values are
+        migrated/popped here; a mapping is left untouched (1.14.2 fix —
+        the previous unconditional ``pop`` silently swallowed the native
+        law spec, a silent-wrong-model channel).
         """
         if not isinstance(data, dict):
             return data
@@ -715,10 +722,16 @@ class StudyYaml(pydantic.BaseModel):
         for fm in modes:
             if not isinstance(fm, dict):
                 continue
-            occ_law = fm.pop("occ_law", None)
+            occ_law = fm.get("occ_law")
+            if not isinstance(occ_law, str) and occ_law is not None:
+                # Structured ModeLaw spec (native ObjMode2S wire): not
+                # the legacy discriminator — leave it in place.
+                continue
+            fm.pop("occ_law", None)
             if "cls" in fm:
-                # cls takes precedence; occ_law is dropped silently to
-                # let writers transition without churn.
+                # cls takes precedence; a legacy string occ_law is
+                # dropped silently to let writers transition without
+                # churn.
                 continue
             if occ_law == "exp":
                 fm["cls"] = "ObjFMExp"
