@@ -1841,7 +1841,39 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         structured trees are resolved per target and ANDed across
         targets; callables pass through; other values are truthy
         constants.
+
+        When the direction carries an ``exp`` law spec and ``param``
+        holds the per-order variables, the compiled guard is composed
+        with the LATE-BOUND law activity (``rate > 0``) — the exact
+        mirror of ``ObjFMExp.get_failure_cond`` / ``get_repair_cond``
+        (``param[...].bValue() and cond``). Without it, a zero-rate
+        direction stays scheduled and draws exp(0) = +inf, consuming
+        one RNG sample the façade never consumes: every subsequent
+        draw of the SYSTEM shifts, silently breaking seeded façade ≡
+        native parity (found by the cod3s-platform emission-parity
+        validation on a real study, 2026-07-28). ``delay``/``inst``
+        laws are always-active (``is_active_value``) and stay ungated,
+        matching ObjFMDelay/ObjFMInst.
         """
+        base_cond = self._compile_direction_cond(direction, target_comps)
+        law = self._direction_law(direction)
+        param_names = (
+            self.occ_param_name if direction == "occ" else self.not_occ_param_name
+        )
+        if law is None or param is None or not param_names:
+            return base_cond
+        var = param.get(param_names[0])
+        if var is None or (law.is_active_value(1) and law.is_active_value(0)):
+            # Always-active law (delay / inst): no gate, façade parity.
+            return base_cond
+
+        def law_gated_cond():
+            return law.is_active_value(var.value()) and base_cond()
+
+        return law_gated_cond
+
+    def _compile_direction_cond(self, direction, target_comps):
+        """Compile the raw ``direction`` condition (no law-activity gate)."""
         cond_spec = self.occ_cond if direction == "occ" else self.not_occ_cond
 
         cond_sanitized = sanitize_cond_format(cond_spec)
