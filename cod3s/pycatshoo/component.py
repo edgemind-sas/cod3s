@@ -1105,6 +1105,11 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         #: armed ``not_occ`` state); symmetrically for the return edge.
         self.occ_parked_state = occ_parked_state
         self.not_occ_parked_state = not_occ_parked_state
+        #: Explicit inactive CC orders per direction ((direction, order)),
+        #: recorded from ``None`` vector entries at variable-build time
+        #: (1.14.4). Consulted by the drop gate ahead of the law's own
+        #: activity rule.
+        self._inactive_orders: set = set()
 
         # Native inst guards (law-spec-driven; façade routing keeps its
         # own historical rules through the hook overrides). inst x
@@ -1267,10 +1272,33 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             if order == 1:
                 self.not_occ_var_params_order1 = not_occ_var_params_cur
 
+            occ_none = ("occ", order) in self._inactive_orders
+            not_occ_none = ("not_occ", order) in self._inactive_orders
+
+            def _dir_inactive(direction, params, marked):
+                return marked or not self._is_direction_law_active(direction, params)
+
+            # An explicit None on exactly ONE direction of a combination that
+            # would still be built is a silent-wrong-model channel (the None
+            # direction would run at value 0 — for delay: IMMEDIATE). Refuse.
+            # Only evaluated when a marker exists: the façade path never sets
+            # markers, preserving the historical LAZY hook evaluation order
+            # (is_occ_law_repair_active is not called when occ is active —
+            # pinned by test_objfm_subclass_compat).
+            if occ_none != not_occ_none and not (
+                _dir_inactive("occ", occ_var_params_cur, occ_none)
+                and _dir_inactive("not_occ", not_occ_var_params_cur, not_occ_none)
+            ):
+                raise ValueError(
+                    f"Mode {self.mode_name!r}: CC order {order} marks exactly one "
+                    f"direction inactive (None) while the other is active — mark "
+                    f"both directions None for an undeclared order, or give both "
+                    f"a value."
+                )
             if (
                 drop_inactive_automata
-                and not self._is_direction_law_active("occ", occ_var_params_cur)
-                and not self._is_direction_law_active("not_occ", not_occ_var_params_cur)
+                and _dir_inactive("occ", occ_var_params_cur, occ_none)
+                and _dir_inactive("not_occ", not_occ_var_params_cur, not_occ_none)
             ):
                 continue
 
@@ -1680,6 +1708,14 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 order_max,
                 fmt=self.param_name_order_prefix,
             )
+            # ``None`` = explicit inactive-order marker (1.14.4): the
+            # variable still exists (indicators may reference it) at 0.0,
+            # and the order is recorded so the drop gate skips the
+            # combination automata regardless of the law's activity rule
+            # (a delay 0 is IMMEDIATE, never an implicit inactive).
+            if param_value is None:
+                self._inactive_orders.add((direction, order))
+                param_value = 0.0
             var_param = self.addVariable(
                 param_var_name, pyc.TVarType.t_double, param_value
             )

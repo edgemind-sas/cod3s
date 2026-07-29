@@ -34,10 +34,16 @@ def ensure_non_negative(value, what):
     """Shared scalar-or-vector non-negativity validator.
 
     Raises ``ValueError`` with a law-specific message when any entry is
-    negative. Returns the value unchanged (pydantic validator contract).
+    negative. ``None`` entries are the EXPLICIT inactive-order marker
+    (1.14.4): the combination automata of that CC order are not built —
+    the only way to express an undeclared order under a ``delay`` law,
+    whose value 0 is a valid IMMEDIATE transition, never an implicit
+    "inactive" like the exp rate 0. Returns the value unchanged.
     """
     values = value if isinstance(value, list) else [value]
     for v in values:
+        if v is None:
+            continue
         if v < 0:
             raise ValueError(
                 f"{what} must be >= 0, got {v} (sign mistake in the " f"configuration?)"
@@ -67,11 +73,13 @@ class _ModeLawBase(pydantic.BaseModel):
         """Whether a per-order parameter value makes the law active.
 
         Active = worth building the combination automaton when
-        ``drop_inactive_automata`` is on. Default: always active
-        (``delay`` — time 0 is a valid delay; ``inst`` — prob 0 is a
-        valid never-drawing mode). ``exp`` overrides: rate 0 = inactive.
+        ``drop_inactive_automata`` is on. ``None`` = the EXPLICIT
+        inactive-order marker (1.14.4), inactive for every law.
+        Otherwise default: always active (``delay`` — time 0 is a valid
+        delay; ``inst`` — prob 0 is a valid never-drawing mode).
+        ``exp`` overrides: rate 0 = inactive.
         """
-        return True
+        return value is not None
 
     def to_bkd_law(self, param):
         """Return the backend law dict, parametrized by ``param``
@@ -85,7 +93,7 @@ class ModeLawExp(_ModeLawBase):
     param_field: typing.ClassVar[str] = "rate"
 
     cls: typing.Literal["exp"] = "exp"
-    rate: float | list[float] = pydantic.Field(
+    rate: float | list[float | None] = pydantic.Field(
         ...,
         description=(
             "Rate. A list is the per-CC-order vector (strict length == "
@@ -99,7 +107,7 @@ class ModeLawExp(_ModeLawBase):
         return ensure_non_negative(v, "exp law rate")
 
     def is_active_value(self, value):
-        return value > 0
+        return value is not None and value > 0
 
 
 class ModeLawDelay(_ModeLawBase):
@@ -108,7 +116,7 @@ class ModeLawDelay(_ModeLawBase):
     param_field: typing.ClassVar[str] = "time"
 
     cls: typing.Literal["delay"] = "delay"
-    time: float | list[float] = pydantic.Field(
+    time: float | list[float | None] = pydantic.Field(
         ...,
         description=(
             "Deterministic delay. A list is the per-CC-order vector "
@@ -135,7 +143,7 @@ class ModeLawInst(_ModeLawBase):
     param_field: typing.ClassVar[str] = "prob"
 
     cls: typing.Literal["inst"] = "inst"
-    prob: float | list[float] = pydantic.Field(
+    prob: float | list[float | None] = pydantic.Field(
         ...,
         description=(
             "Draw probability in [0, 1]. A list is the per-CC-order "
@@ -148,6 +156,8 @@ class ModeLawInst(_ModeLawBase):
     def _prob_in_unit_interval(cls, v):
         probs = v if isinstance(v, list) else [v]
         for p in probs:
+            if p is None:
+                continue
             if not (0 <= p <= 1):
                 raise ValueError(f"inst law prob must be within [0, 1], got {p}")
         return v
