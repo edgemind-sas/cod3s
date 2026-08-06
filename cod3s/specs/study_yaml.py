@@ -60,7 +60,10 @@ import pydantic
 #: - 1.0.1: added optional ``failure_effects_trans`` /
 #:   ``repair_effects_trans`` (trans-based one-shot effects) on
 #:   ``FailureModeBaseSpec`` — patch (optional fields defaulting to {}).
-STUDY_YAML_VERSION = "1.0.1"
+#: - 1.0.2: added optional ``step`` (PDMP phase the mode's effect
+#:   methods are placed in) on ``FailureModeBaseSpec`` — patch
+#:   (optional field defaulting to None).
+STUDY_YAML_VERSION = "1.0.2"
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +150,19 @@ class FailureModeBaseSpec(pydantic.BaseModel):
     drop_inactive_automata: bool = pydantic.Field(
         True,
         description="Whether to skip creating automata with inactive (zero-rate) occ laws.",
+    )
+
+    step: str | None = pydantic.Field(
+        None,
+        description=(
+            "Name of the PDMP step (PyCATSHOO phase, declared with "
+            "``system.addStep(...)``) the mode's effect methods are placed "
+            "in. Resolved by name against the system at construction time "
+            "(cf. ``cod3s.ObjMode2S.__init__``), which raises if no such "
+            "step exists. ``None`` (default) leaves the effect methods "
+            "outside any explicit phase — the historical behaviour of a "
+            "system that declares no step."
+        ),
     )
 
     enabled: bool = pydantic.Field(

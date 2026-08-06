@@ -14,6 +14,7 @@ from cod3s.specs.study_yaml import (
     ObjFMDelaySpec,
     ObjFMExpSpec,
     ObjFMGenericSpec,
+    ObjFMInstSpec,
     ResultsConfig,
     ScheduleEntry,
     SimulationConfig,
@@ -106,6 +107,70 @@ class TestObjFMGenericSpec:
         """ObjFMExp / ObjFMDelay must use their typed specs."""
         with pytest.raises(ValueError, match="typed spec"):
             ObjFMGenericSpec(fm_name="m", targets=["C"], cls="ObjFMExp")
+
+
+class TestFailureModeStep:
+    """``step``: the PDMP phase the mode's effect methods are placed in.
+
+    Reachable from the wire since 1.0.2 — it was a ``ObjMode2S``
+    constructor kwarg with no way to declare it in a study.yaml, and
+    ``extra="forbid"`` on the base rejected the key outright.
+    """
+
+    @pytest.mark.parametrize("spec_cls", [ObjFMExpSpec, ObjFMDelaySpec, ObjFMInstSpec])
+    def test_default_is_none(self, spec_cls):
+        """No phase declared = the historical behaviour, untouched."""
+        spec = spec_cls(fm_name="m", targets=["C"])
+        assert spec.step is None
+        # ``add_failure_modes`` dumps with exclude={"cls", "enabled"} and
+        # passes the rest to the constructor: ``step=None`` must be there
+        # (every registered FM class defaults it to None).
+        assert spec.model_dump(exclude={"cls", "enabled"})["step"] is None
+
+    @pytest.mark.parametrize("spec_cls", [ObjFMExpSpec, ObjFMDelaySpec, ObjFMInstSpec])
+    def test_value_reaches_the_constructor_kwargs(self, spec_cls):
+        spec = spec_cls(fm_name="m", targets=["C"], step="failure_propagation")
+        assert spec.step == "failure_propagation"
+        kwargs = spec.model_dump(exclude={"cls", "enabled"})
+        assert kwargs["step"] == "failure_propagation"
+
+    def test_generic_spec_declares_it_once(self):
+        """ObjFMGenericSpec allows extras: check the two paths agree.
+
+        ``step`` is a declared field on the base, so it must NOT also
+        land in ``__pydantic_extra__`` (a duplicate key in the dump
+        would be a silent-disagreement channel).
+        """
+        spec = ObjFMGenericSpec(
+            fm_name="m", targets=["C"], cls="ObjFMCustom", step="phase_1"
+        )
+        assert spec.step == "phase_1"
+        assert "step" not in (spec.__pydantic_extra__ or {})
+        assert spec.model_dump()["step"] == "phase_1"
+
+    def test_generic_spec_type_checked(self):
+        """Being declared, ``step`` is now validated on the generic spec too."""
+        with pytest.raises(pydantic.ValidationError):
+            ObjFMGenericSpec(fm_name="m", targets=["C"], cls="ObjFMCustom", step=12)
+
+    def test_study_yaml_end_to_end(self):
+        study = StudyYaml(
+            name="s",
+            failure_modes=[
+                {
+                    "fm_name": "m",
+                    "targets": ["C"],
+                    "cls": "ObjFMDelay",
+                    "step": "failure_propagation",
+                }
+            ],
+        )
+        assert study.failure_modes[0].step == "failure_propagation"
+
+    def test_typo_still_rejected(self):
+        """``extra="forbid"`` is intact — only ``step`` was admitted."""
+        with pytest.raises(pydantic.ValidationError):
+            ObjFMExpSpec(fm_name="m", targets=["C"], stepp="failure_propagation")
 
 
 class TestFailureModeUnion:
