@@ -432,6 +432,181 @@ class TestStudyYaml:
         assert s2.failure_modes[0].failure_param == [1e-5, 8e-6]
 
 
+#: A study in the shape the anchor idiom actually takes: a ``x-`` key
+#: holding the definitions, a ``<<:`` merge and a scalar alias consuming
+#: them from a typed section. Modelled on the repo's own
+#: ``tests/usecases/indus_4_0_Electrolyseur/test_run_cod3s_negativeH2``.
+ANCHORED_STUDY_YAML = """
+name: "anchored"
+
+x-custom_config:
+  plot_layout_base: &plot_layout_base
+    markers: false
+    layout:
+      xaxis_title: "Temps (h)"
+      showlegend: false
+    write_options:
+      width: 800
+      height: 400
+
+  color_palette:
+    orange: &cs_orange ["#ff7f0e"]
+    green: &cs_green ["#2ca02c"]
+
+simulation:
+  nb_runs: 2
+
+results:
+  plot_indicators:
+    - id: "Electro"
+      color_discrete_sequence: *cs_orange
+      <<: *plot_layout_base
+
+    - id: "Tank"
+      color_discrete_sequence: *cs_green
+      <<: *plot_layout_base
+"""
+
+
+class TestExtensionKeys:
+    """Top-level ``x-`` keys: the escape hatch for YAML anchor holders.
+
+    ``StudyYaml`` is ``extra="forbid"`` so a misspelled section is an
+    error — but that also made the standard anchor idiom unexpressible:
+    a study factoring repeated plot styling has nowhere to *define* the
+    anchors, every section of the schema being typed. Since 1.0.3 a
+    top-level ``x-`` key is dropped before validation. It must stay
+    exactly that narrow.
+    """
+
+    def test_extension_key_accepted(self):
+        s = StudyYaml.model_validate({"name": "s", "x-anchors": {"a": 1}})
+        assert s.name == "s"
+
+    def test_extension_key_absent_from_the_validated_model(self):
+        """Stripped, not retained: nothing may read it back as an API."""
+        s = StudyYaml.model_validate({"name": "s", "x-anchors": {"a": 1}})
+        assert s.__pydantic_extra__ is None
+        assert not hasattr(s, "x-anchors")
+        assert "x-anchors" not in s.model_dump()
+        assert "anchors" not in s.model_dump()
+
+    def test_any_value_shape_accepted(self):
+        """The key is dropped whatever it holds — it is never inspected."""
+        s = StudyYaml.model_validate(
+            {
+                "name": "s",
+                "x-mapping": {"a": 1},
+                "x-list": [1, 2],
+                "x-scalar": "text",
+                "x-null": None,
+            }
+        )
+        assert s.model_dump()["name"] == "s"
+
+    def test_typo_still_rejected(self):
+        """The whole point: the hatch is explicit, not a loosening."""
+        with pytest.raises(pydantic.ValidationError, match="simulaton"):
+            StudyYaml.model_validate({"name": "s", "simulaton": {"nb_runs": 1}})
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "_anchors",  # the underscore convention: one convention only
+            "X-anchors",  # matched case-sensitively
+            "xanchors",  # the separator is part of the prefix
+            "x_anchors",
+            "custom_config",  # the pre-1.0.3 spelling of the idiom
+        ],
+    )
+    def test_only_the_x_dash_prefix_is_admitted(self, key):
+        with pytest.raises(pydantic.ValidationError, match="extra_forbidden"):
+            StudyYaml.model_validate({"name": "s", key: {"a": 1}})
+
+    def test_nested_forbid_models_are_unchanged(self):
+        """Root-only: anchors are document-scoped, so the root suffices."""
+        with pytest.raises(pydantic.ValidationError, match="extra_forbidden"):
+            StudyYaml.model_validate({"name": "s", "results": {"x-anchors": {"a": 1}}})
+
+    def test_input_mapping_is_not_mutated(self):
+        """Validating must not strip the key from the caller's own dict."""
+        data = {"name": "s", "x-anchors": {"a": 1}}
+        StudyYaml.model_validate(data)
+        assert data["x-anchors"] == {"a": 1}
+
+    def test_round_trip(self):
+        """A dump of a study parsed with extension keys re-validates."""
+        s = StudyYaml.model_validate({"name": "s", "x-anchors": {"a": 1}})
+        assert StudyYaml.model_validate(s.model_dump()).name == "s"
+
+    def test_anchors_resolve_through_a_realistic_study(self):
+        """The idiom end-to-end: ``<<:`` merge + scalar alias."""
+        study = StudyYaml.model_validate(yaml.safe_load(ANCHORED_STUDY_YAML))
+
+        assert study.simulation.nb_runs == 2
+        assert [p.id for p in study.results.plot_indicators] == ["Electro", "Tank"]
+
+        electro, tank = study.results.plot_indicators
+        # Scalar alias — a distinct value per entry.
+        assert electro.model_dump()["color_discrete_sequence"] == ["#ff7f0e"]
+        assert tank.model_dump()["color_discrete_sequence"] == ["#2ca02c"]
+        # ``<<:`` merge — the shared layout landed on both.
+        for plot in (electro, tank):
+            dump = plot.model_dump()
+            assert dump["markers"] is False
+            assert dump["layout"]["xaxis_title"] == "Temps (h)"
+            assert plot.write_options == {"width": 800, "height": 400}
+
+        # And the holder itself did not survive into the model.
+        assert "x-custom_config" not in study.model_dump()
+
+    def test_interaction_with_the_legacy_occ_law_validator(self):
+        """Both ``mode="before"`` validators run, in either order.
+
+        ``_drop_extension_keys`` is declared last so Pydantic runs it
+        first (reverse definition order), but the two are independent:
+        this locks that a study using the anchor idiom AND the legacy
+        ``occ_law`` discriminator — anchored from the ``x-`` holder —
+        parses exactly as each would alone.
+        """
+        study = StudyYaml.model_validate(yaml.safe_load("""
+                name: "legacy + anchors"
+
+                x-defaults:
+                  fm_base: &fm_base
+                    occ_law: "exp"
+                    repair_param: 0.167
+
+                failure_modes:
+                  - fm_name: "df_a"
+                    targets: ["C1"]
+                    failure_param: 1.0e-5
+                    <<: *fm_base
+
+                  - fm_name: "df_b"
+                    targets: ["C2"]
+                    failure_param: 4.0e-6
+                    <<: *fm_base
+                """))
+        assert [fm.cls for fm in study.failure_modes] == ["ObjFMExp", "ObjFMExp"]
+        assert all(isinstance(fm, ObjFMExpSpec) for fm in study.failure_modes)
+        assert [fm.repair_param for fm in study.failure_modes] == [[0.167], [0.167]]
+        assert "x-defaults" not in study.model_dump()
+
+    def test_unknown_legacy_occ_law_still_raises_through_the_hatch(self):
+        """The extension key must not shadow a downstream validation error."""
+        with pytest.raises(pydantic.ValidationError, match="unknown "):
+            StudyYaml.model_validate(
+                {
+                    "name": "s",
+                    "x-anchors": {"a": 1},
+                    "failure_modes": [
+                        {"fm_name": "m", "targets": ["C"], "occ_law": "weibull"}
+                    ],
+                }
+            )
+
+
 class TestLoadFromExistingFixture:
     """Validate that an existing legacy study.yaml from the repo loads cleanly."""
 

@@ -27,6 +27,33 @@ Layout (top-level YAML):
       seed: 42
     results: {...}            # ResultsConfig (optional)
     hooks: {...}              # HookSpec (optional)
+    x-anything: ...           # extension key — ignored (see below)
+
+``StudyYaml`` is ``extra="forbid"``: a misspelled section (``simulaton:``)
+is an error rather than a silently ignored key. The one exception is a
+**top-level extension key**, any key prefixed ``x-``
+(:data:`STUDY_YAML_EXTENSION_PREFIX`), which is dropped before
+validation. It exists so a study can hold YAML anchors it factors plot
+styling or failure-mode defaults through — anchors need a node to be
+*defined* on, and every section of this schema is typed:
+
+.. code-block:: yaml
+
+    x-custom_config:
+      plot_layout_base: &plot_layout_base
+        markers: false
+      color_palette:
+        orange: &cs_orange ["#ff7f0e"]
+
+    results:
+      plot_indicators:
+        - id: "Electro"
+          color_discrete_sequence: *cs_orange
+          <<: *plot_layout_base
+
+Nothing reads an ``x-`` key: PyYAML resolves anchors and aliases while
+parsing, so by the time a spec is validated the definitions have already
+done their work. See ``StudyYaml._drop_extension_keys``.
 
 Backward-compat: a study.yaml that uses the **legacy** ``occ_law``
 discriminator (``"exp"`` / ``"delay"``) instead of ``cls`` is accepted
@@ -63,7 +90,29 @@ import pydantic
 #: - 1.0.2: added optional ``step`` (PDMP phase the mode's effect
 #:   methods are placed in) on ``FailureModeBaseSpec`` — patch
 #:   (optional field defaulting to None).
-STUDY_YAML_VERSION = "1.0.2"
+#: - 1.0.3: admitted top-level ``x-`` extension keys on ``StudyYaml``
+#:   (dropped before validation) — patch (an optional, ignorable key
+#:   family; no existing field changes shape or meaning).
+STUDY_YAML_VERSION = "1.0.3"
+
+#: Prefix marking a **top-level** study key as an extension field.
+#:
+#: The convention is the one OpenAPI and docker-compose use for the same
+#: purpose. ``StudyYaml`` drops such keys before validation; every other
+#: unknown key is still refused by ``extra="forbid"``. Matched
+#: case-sensitively and only at the root — a nested spec has no reason to
+#: carry one, since YAML anchors are document-scoped and can always be
+#: defined at the root.
+STUDY_YAML_EXTENSION_PREFIX = "x-"
+
+
+def _is_extension_key(key: Any) -> bool:
+    """Whether ``key`` is a top-level extension key (``x-…``).
+
+    Non-string keys are possible in YAML (``2: …`` parses as an int) and
+    are never extension keys.
+    """
+    return isinstance(key, str) and key.startswith(STUDY_YAML_EXTENSION_PREFIX)
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +735,11 @@ class StudyYaml(pydantic.BaseModel):
     has only optional fields). A study.yaml with no failure_modes /
     indicators / events / targets is a valid (degenerate) study that
     just runs the bare system.
+
+    Unknown keys are refused (``extra="forbid"``) so a misspelled
+    section surfaces as an error instead of being silently ignored. Top
+    level ``x-`` keys are the single exception: they are dropped before
+    validation (cf. ``_drop_extension_keys``).
     """
 
     model_config = pydantic.ConfigDict(extra="forbid")
@@ -760,6 +814,40 @@ class StudyYaml(pydantic.BaseModel):
                     f"or one of the spec classes registered via register_fm_class."
                 )
         return data
+
+    # NOTE: Pydantic runs ``mode="before"`` model validators in REVERSE
+    # definition order, so being declared last makes this one run FIRST —
+    # every other validator then sees a mapping already free of extension
+    # keys. Keep it last if you add another ``mode="before"`` validator.
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _drop_extension_keys(cls, data: Any) -> Any:
+        """Drop top-level ``x-`` keys before ``extra="forbid"`` sees them.
+
+        A study that factors repeated plot styling (or failure-mode
+        defaults) through YAML anchors needs a node to *define* those
+        anchors on, and every section of this schema is typed — so
+        without an escape hatch the idiom is unexpressible. ``x-`` is the
+        established extension-field convention (OpenAPI,
+        docker-compose); cf. :data:`STUDY_YAML_EXTENSION_PREFIX`.
+
+        The keys are **stripped, not retained**: PyYAML resolves anchors
+        and aliases while parsing, so an ``x-`` mapping has already done
+        its work by the time this runs. Keeping it would turn YAML
+        plumbing into an API surface, and could not restore the anchors
+        on a ``model_dump()`` round-trip anyway (the aliases are expanded
+        in place, never re-factored).
+
+        Only the root is treated this way, and only these keys are: a
+        misspelled section (``simulaton:``) is still an error. The
+        incoming mapping is not mutated — a copy is returned when there
+        is something to drop.
+        """
+        if not isinstance(data, dict):
+            return data
+        if not any(_is_extension_key(key) for key in data):
+            return data
+        return {key: value for key, value in data.items() if not _is_extension_key(key)}
 
     @pydantic.model_validator(mode="after")
     def _check_unique_fm_names(self) -> "StudyYaml":

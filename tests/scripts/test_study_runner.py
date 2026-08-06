@@ -350,6 +350,53 @@ class TestRunStudyEndToEnd:
         )
         system.simulate.assert_called_once()
 
+    def test_load_study_with_yaml_anchors_from_path(self, tmp_path):
+        """A study.yaml holding its anchors under ``x-`` loads and runs.
+
+        The whole path: ``load_study_specs`` (PyYAML resolves the
+        anchors) → ``StudyYaml.model_validate`` (drops the ``x-``
+        holder) → ``run_study``. Before 1.0.3 the holder key was refused
+        outright by ``extra="forbid"`` and the study never built.
+        """
+        study_path = tmp_path / "study.yaml"
+        study_path.write_text("""
+name: "anchored"
+
+x-custom_config:
+  plot_layout_base: &plot_layout_base
+    markers: false
+    write_options: {width: 800}
+  color_palette:
+    orange: &cs_orange ["#ff7f0e"]
+
+simulation:
+  nb_runs: 1
+
+results:
+  plot_indicators:
+    - id: "Electro"
+      color_discrete_sequence: *cs_orange
+      <<: *plot_layout_base
+""")
+
+        system = MagicMock()
+        system.comp = {}
+
+        class StubBuilder:
+            def build(self, *, logger=None):
+                return system
+
+        run_study(
+            system_builder=StubBuilder(),
+            study=study_path,
+            results_dir=tmp_path,
+        )
+        system.simulate.assert_called_once()
+        # The aliased styling reached ``indic_px_line``.
+        plot_kwargs = system.indic_px_line.call_args.kwargs
+        assert plot_kwargs["color_discrete_sequence"] == ["#ff7f0e"]
+        assert plot_kwargs["markers"] is False
+
     def test_invalid_study_raises_pydantic_error(self, tmp_path):
         """A malformed study dict surfaces a Pydantic ValidationError early."""
         with pytest.raises(Exception):  # ValidationError or ValueError
