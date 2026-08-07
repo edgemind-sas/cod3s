@@ -93,7 +93,12 @@ import pydantic
 #: - 1.0.3: admitted top-level ``x-`` extension keys on ``StudyYaml``
 #:   (dropped before validation) — patch (an optional, ignorable key
 #:   family; no existing field changes shape or meaning).
-STUDY_YAML_VERSION = "1.0.3"
+#: - 1.0.4: uniqueness is keyed on runtime identity — ``(target,
+#:   fm_name)`` for failure modes instead of ``fm_name`` alone, and a
+#:   new check on ``events.name``, both over enabled entries only —
+#:   patch (no field added, removed or changed in meaning; the rule was
+#:   keyed on a premise the runtime does not hold).
+STUDY_YAML_VERSION = "1.0.4"
 
 #: Prefix marking a **top-level** study key as an extension field.
 #:
@@ -851,15 +856,63 @@ class StudyYaml(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="after")
     def _check_unique_fm_names(self) -> "StudyYaml":
-        """Reject duplicate fm_name (the runtime uses fm_name as id)."""
-        seen: set[str] = set()
+        """Reject two enabled failure modes of one name on one target.
+
+        A failure mode is NOT identified by ``fm_name`` alone. The runtime
+        names its component ``{target_name}__{mode_name}`` (cf.
+        ``ObjMode2S.__init__``), so the same ``fm_name`` on two different
+        targets builds two distinct components and collides with nothing.
+        A study may therefore reuse one name across targets, which is how a
+        family of like failures is normally written.
+
+        What must stay unique is the pair: one target must not carry two
+        modes of the same name, or ``the <name> mode of <component>`` stops
+        designating anything -- and indicators refer to modes by name.
+        Checked per target rather than per target *set*, so an overlap
+        between a multi-target mode and a single-target one of the same
+        name is caught too.
+
+        ``enabled: false`` entries are skipped: they are never instantiated,
+        and keeping disabled parameter variants side by side is a normal way
+        to hold alternative scenarios in one study.
+        """
+        seen: set[tuple[str, str]] = set()
         for fm in self.failure_modes:
-            if fm.fm_name in seen:
+            if not fm.enabled:
+                continue
+            for target in fm.targets:
+                if (target, fm.fm_name) in seen:
+                    raise ValueError(
+                        f"Duplicate failure_modes.fm_name {fm.fm_name!r} on "
+                        f"target {target!r}. One component must not carry two "
+                        f"enabled failure modes of the same name; the same "
+                        f"name on OTHER targets is fine."
+                    )
+                seen.add((target, fm.fm_name))
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _check_unique_event_names(self) -> "StudyYaml":
+        """Reject two enabled events of one name.
+
+        The mirror of the rule above, and the case where a collision is
+        real: ``system.add_events`` passes ``name`` straight to
+        ``add_component``, so an event's name IS its component name, with no
+        target prefix to separate two of them. Two enabled events of one
+        name overwrite each other in ``system.comp`` silently, and the
+        second is the one anything looks up.
+        """
+        seen: set[str] = set()
+        for event in self.events:
+            if not event.enabled:
+                continue
+            if event.name in seen:
                 raise ValueError(
-                    f"Duplicate failure_modes.fm_name {fm.fm_name!r}. "
-                    f"Each ObjFM must have a unique name across the study."
+                    f"Duplicate events.name {event.name!r}. An event's name "
+                    f"is its component name, so two enabled events cannot "
+                    f"share one."
                 )
-            seen.add(fm.fm_name)
+            seen.add(event.name)
         return self
 
     @pydantic.model_validator(mode="after")

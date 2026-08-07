@@ -387,15 +387,89 @@ class TestStudyYaml:
         with pytest.raises(ValueError):
             StudyYaml(name="s", bogus_field="x")
 
-    def test_duplicate_fm_name_rejected(self):
+    def test_duplicate_fm_name_on_one_target_rejected(self):
+        """The collision that is real: one component, two modes of one name."""
         with pytest.raises(ValueError, match="Duplicate"):
             StudyYaml(
                 name="s",
                 failure_modes=[
                     {"fm_name": "m1", "targets": ["A"], "cls": "ObjFMExp"},
-                    {"fm_name": "m1", "targets": ["B"], "cls": "ObjFMExp"},
+                    {"fm_name": "m1", "targets": ["A"], "cls": "ObjFMExp"},
                 ],
             )
+
+    def test_the_same_fm_name_on_other_targets_is_accepted(self):
+        """The runtime names a mode ``{target}__{fm_name}``, so these are two
+        distinct components and collide with nothing. Writing one name across
+        a family of like failures is normal."""
+        study = StudyYaml(
+            name="s",
+            failure_modes=[
+                {"fm_name": "m1", "targets": ["A"], "cls": "ObjFMExp"},
+                {"fm_name": "m1", "targets": ["B"], "cls": "ObjFMExp"},
+            ],
+        )
+        assert [fm.targets for fm in study.failure_modes] == [["A"], ["B"]]
+
+    def test_a_multi_target_mode_overlapping_a_single_one_is_rejected(self):
+        """Checked per target, not per target SET: ``A`` would carry two."""
+        with pytest.raises(ValueError, match="Duplicate"):
+            StudyYaml(
+                name="s",
+                failure_modes=[
+                    {"fm_name": "m1", "targets": ["A", "B"], "cls": "ObjFMExp"},
+                    {"fm_name": "m1", "targets": ["A"], "cls": "ObjFMExp"},
+                ],
+            )
+
+    def test_a_disabled_duplicate_is_ignored(self):
+        """Disabled entries are never instantiated, and holding alternative
+        parameter variants side by side is a normal way to keep scenarios."""
+        study = StudyYaml(
+            name="s",
+            failure_modes=[
+                {"fm_name": "m1", "targets": ["A"], "cls": "ObjFMExp"},
+                {
+                    "fm_name": "m1",
+                    "targets": ["A"],
+                    "cls": "ObjFMDelay",
+                    "enabled": False,
+                },
+            ],
+        )
+        assert [fm.enabled for fm in study.failure_modes] == [True, False]
+
+    def test_duplicate_event_name_rejected(self):
+        """An event's name IS its component name -- no target prefix keeps two
+        apart, so the second would silently overwrite the first."""
+        with pytest.raises(ValueError, match="Duplicate"):
+            StudyYaml(
+                name="s",
+                events=[
+                    {"name": "top", "cond": True},
+                    {"name": "top", "cond": False},
+                ],
+            )
+
+    def test_a_disabled_duplicate_event_is_ignored(self):
+        study = StudyYaml(
+            name="s",
+            events=[
+                {"name": "top", "cond": True},
+                {"name": "top", "cond": False, "enabled": False},
+            ],
+        )
+        assert len(study.events) == 2
+
+    def test_distinct_event_names_are_accepted(self):
+        study = StudyYaml(
+            name="s",
+            events=[
+                {"name": "top", "cond": True},
+                {"name": "other", "cond": True},
+            ],
+        )
+        assert [e.name for e in study.events] == ["top", "other"]
 
     def test_failure_param_arity_check(self):
         with pytest.raises(ValueError, match="entries but only"):
