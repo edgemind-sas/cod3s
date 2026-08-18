@@ -28,6 +28,7 @@ from cod3s.specs.study_yaml import (
     SimulationConfig,
     StudyYaml,
     TargetSpec,
+    STUDY_YAML_EXTENSION_PREFIX,
     STUDY_YAML_VERSION,
 )
 
@@ -49,5 +50,6 @@ __all__ = [
     "SimulationConfig",
     "StudyYaml",
     "TargetSpec",
+    "STUDY_YAML_EXTENSION_PREFIX",
     "STUDY_YAML_VERSION",
 ]

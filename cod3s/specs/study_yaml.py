@@ -27,6 +27,33 @@ Layout (top-level YAML):
       seed: 42
     results: {...}            # ResultsConfig (optional)
     hooks: {...}              # HookSpec (optional)
+    x-anything: ...           # extension key — ignored (see below)
+
+``StudyYaml`` is ``extra="forbid"``: a misspelled section (``simulaton:``)
+is an error rather than a silently ignored key. The one exception is a
+**top-level extension key**, any key prefixed ``x-``
+(:data:`STUDY_YAML_EXTENSION_PREFIX`), which is dropped before
+validation. It exists so a study can hold YAML anchors it factors plot
+styling or failure-mode defaults through — anchors need a node to be
+*defined* on, and every section of this schema is typed:
+
+.. code-block:: yaml
+
+    x-custom_config:
+      plot_layout_base: &plot_layout_base
+        markers: false
+      color_palette:
+        orange: &cs_orange ["#ff7f0e"]
+
+    results:
+      plot_indicators:
+        - id: "Electro"
+          color_discrete_sequence: *cs_orange
+          <<: *plot_layout_base
+
+Nothing reads an ``x-`` key: PyYAML resolves anchors and aliases while
+parsing, so by the time a spec is validated the definitions have already
+done their work. See ``StudyYaml._drop_extension_keys``.
 
 Backward-compat: a study.yaml that uses the **legacy** ``occ_law``
 discriminator (``"exp"`` / ``"delay"``) instead of ``cls`` is accepted
@@ -60,7 +87,37 @@ import pydantic
 #: - 1.0.1: added optional ``failure_effects_trans`` /
 #:   ``repair_effects_trans`` (trans-based one-shot effects) on
 #:   ``FailureModeBaseSpec`` — patch (optional fields defaulting to {}).
-STUDY_YAML_VERSION = "1.0.1"
+#: - 1.0.2: added optional ``step`` (PDMP phase the mode's effect
+#:   methods are placed in) on ``FailureModeBaseSpec`` — patch
+#:   (optional field defaulting to None).
+#: - 1.0.3: admitted top-level ``x-`` extension keys on ``StudyYaml``
+#:   (dropped before validation) — patch (an optional, ignorable key
+#:   family; no existing field changes shape or meaning).
+#: - 1.0.4: uniqueness is keyed on runtime identity — ``(target,
+#:   fm_name)`` for failure modes instead of ``fm_name`` alone, and a
+#:   new check on ``events.name``, both over enabled entries only —
+#:   patch (no field added, removed or changed in meaning; the rule was
+#:   keyed on a premise the runtime does not hold).
+STUDY_YAML_VERSION = "1.0.4"
+
+#: Prefix marking a **top-level** study key as an extension field.
+#:
+#: The convention is the one OpenAPI and docker-compose use for the same
+#: purpose. ``StudyYaml`` drops such keys before validation; every other
+#: unknown key is still refused by ``extra="forbid"``. Matched
+#: case-sensitively and only at the root — a nested spec has no reason to
+#: carry one, since YAML anchors are document-scoped and can always be
+#: defined at the root.
+STUDY_YAML_EXTENSION_PREFIX = "x-"
+
+
+def _is_extension_key(key: Any) -> bool:
+    """Whether ``key`` is a top-level extension key (``x-…``).
+
+    Non-string keys are possible in YAML (``2: …`` parses as an int) and
+    are never extension keys.
+    """
+    return isinstance(key, str) and key.startswith(STUDY_YAML_EXTENSION_PREFIX)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +204,19 @@ class FailureModeBaseSpec(pydantic.BaseModel):
     drop_inactive_automata: bool = pydantic.Field(
         True,
         description="Whether to skip creating automata with inactive (zero-rate) occ laws.",
+    )
+
+    step: str | None = pydantic.Field(
+        None,
+        description=(
+            "Name of the PDMP step (PyCATSHOO phase, declared with "
+            "``system.addStep(...)``) the mode's effect methods are placed "
+            "in. Resolved by name against the system at construction time "
+            "(cf. ``cod3s.ObjMode2S.__init__``), which raises if no such "
+            "step exists. ``None`` (default) leaves the effect methods "
+            "outside any explicit phase — the historical behaviour of a "
+            "system that declares no step."
+        ),
     )
 
     enabled: bool = pydantic.Field(
@@ -670,6 +740,11 @@ class StudyYaml(pydantic.BaseModel):
     has only optional fields). A study.yaml with no failure_modes /
     indicators / events / targets is a valid (degenerate) study that
     just runs the bare system.
+
+    Unknown keys are refused (``extra="forbid"``) so a misspelled
+    section surfaces as an error instead of being silently ignored. Top
+    level ``x-`` keys are the single exception: they are dropped before
+    validation (cf. ``_drop_extension_keys``).
     """
 
     model_config = pydantic.ConfigDict(extra="forbid")
@@ -745,17 +820,99 @@ class StudyYaml(pydantic.BaseModel):
                 )
         return data
 
+    # NOTE: Pydantic runs ``mode="before"`` model validators in REVERSE
+    # definition order, so being declared last makes this one run FIRST —
+    # every other validator then sees a mapping already free of extension
+    # keys. Keep it last if you add another ``mode="before"`` validator.
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _drop_extension_keys(cls, data: Any) -> Any:
+        """Drop top-level ``x-`` keys before ``extra="forbid"`` sees them.
+
+        A study that factors repeated plot styling (or failure-mode
+        defaults) through YAML anchors needs a node to *define* those
+        anchors on, and every section of this schema is typed — so
+        without an escape hatch the idiom is unexpressible. ``x-`` is the
+        established extension-field convention (OpenAPI,
+        docker-compose); cf. :data:`STUDY_YAML_EXTENSION_PREFIX`.
+
+        The keys are **stripped, not retained**: PyYAML resolves anchors
+        and aliases while parsing, so an ``x-`` mapping has already done
+        its work by the time this runs. Keeping it would turn YAML
+        plumbing into an API surface, and could not restore the anchors
+        on a ``model_dump()`` round-trip anyway (the aliases are expanded
+        in place, never re-factored).
+
+        Only the root is treated this way, and only these keys are: a
+        misspelled section (``simulaton:``) is still an error. The
+        incoming mapping is not mutated — a copy is returned when there
+        is something to drop.
+        """
+        if not isinstance(data, dict):
+            return data
+        if not any(_is_extension_key(key) for key in data):
+            return data
+        return {key: value for key, value in data.items() if not _is_extension_key(key)}
+
     @pydantic.model_validator(mode="after")
     def _check_unique_fm_names(self) -> "StudyYaml":
-        """Reject duplicate fm_name (the runtime uses fm_name as id)."""
-        seen: set[str] = set()
+        """Reject two enabled failure modes of one name on one target.
+
+        A failure mode is NOT identified by ``fm_name`` alone. The runtime
+        names its component ``{target_name}__{mode_name}`` (cf.
+        ``ObjMode2S.__init__``), so the same ``fm_name`` on two different
+        targets builds two distinct components and collides with nothing.
+        A study may therefore reuse one name across targets, which is how a
+        family of like failures is normally written.
+
+        What must stay unique is the pair: one target must not carry two
+        modes of the same name, or ``the <name> mode of <component>`` stops
+        designating anything -- and indicators refer to modes by name.
+        Checked per target rather than per target *set*, so an overlap
+        between a multi-target mode and a single-target one of the same
+        name is caught too.
+
+        ``enabled: false`` entries are skipped: they are never instantiated,
+        and keeping disabled parameter variants side by side is a normal way
+        to hold alternative scenarios in one study.
+        """
+        seen: set[tuple[str, str]] = set()
         for fm in self.failure_modes:
-            if fm.fm_name in seen:
+            if not fm.enabled:
+                continue
+            for target in fm.targets:
+                if (target, fm.fm_name) in seen:
+                    raise ValueError(
+                        f"Duplicate failure_modes.fm_name {fm.fm_name!r} on "
+                        f"target {target!r}. One component must not carry two "
+                        f"enabled failure modes of the same name; the same "
+                        f"name on OTHER targets is fine."
+                    )
+                seen.add((target, fm.fm_name))
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _check_unique_event_names(self) -> "StudyYaml":
+        """Reject two enabled events of one name.
+
+        The mirror of the rule above, and the case where a collision is
+        real: ``system.add_events`` passes ``name`` straight to
+        ``add_component``, so an event's name IS its component name, with no
+        target prefix to separate two of them. Two enabled events of one
+        name overwrite each other in ``system.comp`` silently, and the
+        second is the one anything looks up.
+        """
+        seen: set[str] = set()
+        for event in self.events:
+            if not event.enabled:
+                continue
+            if event.name in seen:
                 raise ValueError(
-                    f"Duplicate failure_modes.fm_name {fm.fm_name!r}. "
-                    f"Each ObjFM must have a unique name across the study."
+                    f"Duplicate events.name {event.name!r}. An event's name "
+                    f"is its component name, so two enabled events cannot "
+                    f"share one."
                 )
-            seen.add(fm.fm_name)
+            seen.add(event.name)
         return self
 
     @pydantic.model_validator(mode="after")
