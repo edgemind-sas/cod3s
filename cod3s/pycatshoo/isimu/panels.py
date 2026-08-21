@@ -544,7 +544,13 @@ class HistoryPanel(Container):
             return
         for evt in reversed(state.history):
             if not evt.transitions:
-                log.write(Text(f"t={evt.fired_at:.3f}  ▸ <bootstrap>", style="dim"))
+                # Two very different steps carry no transition, and calling
+                # both "bootstrap" would read as if the session never advanced:
+                # the t=0 entry step, and every playback grid point, where the
+                # clock moved and the continuous variables with it.
+                kind = getattr(evt, "kind", "event")
+                label = "<grid>" if kind == "grid" else "<bootstrap>"
+                log.write(Text(f"t={evt.fired_at:.3f}  ▸ {label}", style="dim"))
                 continue
             names = ", ".join(
                 f"{trans.comp_name}.{trans.name}" for trans in evt.transitions

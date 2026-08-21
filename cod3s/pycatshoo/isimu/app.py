@@ -6,9 +6,25 @@ lazily by the entry-point script so that ``cod3s.pycatshoo.isimu`` stays
 importable in environments where Textual itself fails to import (e.g.
 embedded Python builds without a TTY backend).
 
-Phase 3 deliverable: the app mounts, renders the initial state of every
-panel, and supports the basic ``[q]`` quit binding. Wiring the fire / step
-back / reset / export / re-plan actions is Phase 4+ work.
+Two ways to advance the clock, and they answer different questions:
+
+* picking a transition and firing it -- "what happens next, and when?";
+* **playback** (``space``), which repeats ``engine.step_to`` on a grid -- "what
+  do the continuous variables DO between the events?". A model whose
+  continuous variables are the only thing moving has no transition to pick, so
+  before playback existed there was nothing to press and the session sat at
+  t=0.
+
+Playback carries three independent settings, and conflating any two of them
+gives a wrong reading:
+
+===================  ============================  ==================
+Setting              What it changes               Bound by
+===================  ============================  ==================
+observation step     simulated time per tick       the model's time unit
+wall-clock period    real seconds between ticks    how fast a step computes
+integration knobs    how finely the ODEs are run   accuracy vs cost
+===================  ============================  ==================
 """
 
 from __future__ import annotations
@@ -24,7 +40,12 @@ from textual.widgets import DataTable, Footer, Header
 from cod3s.version import __version__ as COD3S_VERSION
 from cod3s.pycatshoo.isimu.engine import ISimuEngine
 from cod3s.pycatshoo.isimu.export import export_csv, export_json
-from cod3s.pycatshoo.isimu.modals import ExportModal, ReplanModal
+from cod3s.pycatshoo.isimu.modals import (
+    ExportModal,
+    IntegrationModal,
+    ObservationStepModal,
+    ReplanModal,
+)
 from cod3s.pycatshoo.isimu.panels import (
     ComponentsPanel,
     FireablePanel,
@@ -52,8 +73,21 @@ class ISimuApp(App[None]):
         Binding("b", "step_backward", "Back"),
         Binding("r", "reset", "Reset"),
         Binding("e", "export", "Export"),
+        Binding("space", "toggle_play", "Play/Pause"),
+        Binding("plus", "faster", "Faster", show=False),
+        Binding("equals_sign", "faster", "Faster", show=False),
+        Binding("minus", "slower", "Slower", show=False),
+        Binding("d", "set_observation_step", "Step"),
+        Binding("i", "set_integration", "Integration", show=False),
         Binding("?", "help", "Help"),
     ]
+
+    #: Simulated time one playback tick advances. Not the integration step.
+    DEFAULT_OBSERVATION_STEP = 1.0
+    #: Real seconds between two playback ticks.
+    DEFAULT_WALL_PERIOD = 0.2
+    WALL_PERIOD_MIN = 0.01
+    WALL_PERIOD_MAX = 5.0
     # NOTE: ``p`` (re-plan) is bound at the FireablePanel level so it is
     # only active when the inner DataTable has focus. The panel posts a
     # FireablePanel.ReplanRequested message that this App handles below.
@@ -61,6 +95,14 @@ class ISimuApp(App[None]):
     def __init__(self, engine: Optional[ISimuEngine] = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._engine = engine
+        self.observation_step = self.DEFAULT_OBSERVATION_STEP
+        self.wall_period = self.DEFAULT_WALL_PERIOD
+        self._play_timer: Optional[Any] = None
+        # A tick that is still running must not be joined by the next one: the
+        # engine call is a blocking C++ one and two of them on one system is
+        # not something PyCATSHOO tolerates. The timer skips instead of
+        # queueing, so a slow model plays slower rather than falling behind.
+        self._stepping = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -83,6 +125,7 @@ class ISimuApp(App[None]):
         """Stop the simulator cleanly. ``terminate_session()`` is the
         responsibility of the caller (run_isimu) so tests can keep the
         PyCATSHOO singleton alive across multiple ``App`` instances."""
+        self.pause()
         if self._engine is not None:
             self._engine.stop()
 
@@ -115,14 +158,111 @@ class ISimuApp(App[None]):
             return
         self._fire_worker(idx)
 
+    # -- Playback ------------------------------------------------------
+    @property
+    def is_playing(self) -> bool:
+        return self._play_timer is not None
+
+    def action_toggle_play(self) -> None:
+        """Start or stop advancing the clock on the observation grid."""
+        if self._engine is None:
+            return
+        if self.is_playing:
+            self.pause()
+        else:
+            self._play_timer = self.set_interval(self.wall_period, self._play_tick)
+        self.refresh_status()
+
+    def pause(self) -> None:
+        """Stop playback. Safe to call when not playing."""
+        if self._play_timer is not None:
+            self._play_timer.stop()
+            self._play_timer = None
+
+    def action_faster(self) -> None:
+        self._set_wall_period(self.wall_period / 2)
+
+    def action_slower(self) -> None:
+        self._set_wall_period(self.wall_period * 2)
+
+    def _set_wall_period(self, period: float) -> None:
+        self.wall_period = max(self.WALL_PERIOD_MIN, min(self.WALL_PERIOD_MAX, period))
+        if self.is_playing:
+            # A Textual timer's interval is fixed at creation, so the running
+            # one is replaced rather than adjusted.
+            self.pause()
+            self._play_timer = self.set_interval(self.wall_period, self._play_tick)
+        self.refresh_status()
+
+    def _play_tick(self) -> None:
+        if self._engine is None or self._stepping:
+            return
+        self._stepping = True
+        self._play_worker()
+
+    def action_set_observation_step(self) -> None:
+        def _on_step(step: Optional[float]) -> None:
+            if step is None:
+                return
+            self.observation_step = step
+            self.refresh_status()
+
+        self.push_screen(
+            ObservationStepModal(default_step=self.observation_step), _on_step
+        )
+
+    def action_set_integration(self) -> None:
+        if self._engine is None:
+            return
+        self.push_screen(IntegrationModal(), self._on_integration)
+
+    def _on_integration(self, knobs: Optional[dict]) -> None:
+        """Apply the PDMP knobs, or say why they could not be applied.
+
+        A purely discrete model has no PDMP manager at all, and silently
+        accepting knobs there would report a setting that governs nothing.
+        """
+        if not knobs or self._engine is None:
+            return
+        manager = self._engine.system.currentPDMPManager()
+        if manager is None:
+            self.notify(
+                "No PDMP manager on this system: nothing is integrated, so "
+                "these knobs would govern nothing.",
+                severity="warning",
+            )
+            return
+        applied = []
+        if knobs.get("dt_max") is not None:
+            manager.setDtMax(knobs["dt_max"])
+            applied.append(f"dtMax={knobs['dt_max']:g}")
+        if knobs.get("dt_cond") is not None:
+            manager.setDtCond(knobs["dt_cond"])
+            applied.append(f"dtCond={knobs['dt_cond']:g}")
+        self.notify(f"Integration: {', '.join(applied)}", severity="information")
+
     def action_step_backward(self) -> None:
         if self._engine is None:
+            return
+        self.pause()
+        # ``stepBackward`` walks the SEQUENCE, and a playback grid point is not
+        # in it -- the engine has no record to walk back to, so it lands at the
+        # start of the session and reports nothing retired. Refusing beats
+        # silently throwing the run away.
+        if any(getattr(evt, "kind", "event") == "grid" for evt in self._engine.history):
+            self.notify(
+                "Step back is not available after playback: a grid point is "
+                "not a recorded transition, and stepping back would return to "
+                "the start of the session. Use [r] to reset.",
+                severity="warning",
+            )
             return
         self._back_worker()
 
     def action_reset(self) -> None:
         if self._engine is None:
             return
+        self.pause()
         self._reset_worker()
 
     def action_export(self) -> None:
@@ -210,6 +350,29 @@ class ISimuApp(App[None]):
         engine.step_forward()
         self.call_from_thread(self.refresh_panels)
 
+    @work(thread=True, group="play")
+    def _play_worker(self) -> None:
+        """One playback tick: advance the grid by the observation step.
+
+        Not ``exclusive``: cancelling a worker blocked in a C++ call does not
+        interrupt it, so exclusivity would only hide the overlap. ``_stepping``
+        is what serialises the ticks.
+        """
+        engine = self._engine
+        if engine is None:
+            self._stepping = False
+            return
+        try:
+            engine.step_to(engine.current_time + self.observation_step)
+        except Exception as exc:
+            self.call_from_thread(self.pause)
+            self.call_from_thread(
+                self.notify, f"Playback stopped: {exc}", severity="error"
+            )
+        finally:
+            self._stepping = False
+        self.call_from_thread(self.refresh_panels)
+
     @work(thread=True, exclusive=True, group="engine")
     def _back_worker(self) -> None:
         engine = self._engine
@@ -273,6 +436,23 @@ class ISimuApp(App[None]):
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
+    def refresh_status(self) -> None:
+        """Publish the clock and the playback settings in the header.
+
+        The three settings live here together because they are read together:
+        a reader who sees only the wall-clock speed cannot tell whether the
+        run is coarse or slow.
+        """
+        if self._engine is None:
+            self.sub_title = ""
+            return
+        state = "playing" if self.is_playing else "paused"
+        self.sub_title = (
+            f"t={self._engine.current_time:.4g}  "
+            f"step={self.observation_step:g}  "
+            f"every {self.wall_period:g}s  [{state}]"
+        )
+
     def refresh_panels(self) -> None:
         """Recompute :class:`ISimuState` and push it to every panel."""
         if self._engine is None:
@@ -284,6 +464,7 @@ class ISimuApp(App[None]):
         self.query_one("#panel-components", ComponentsPanel).refresh_from_state(state)
         self.query_one("#panel-last-delta", LastDeltaPanel).refresh_from_state(state)
         self.query_one("#panel-history", HistoryPanel).refresh_from_state(state)
+        self.refresh_status()
 
 
 def run_isimu(system: Any) -> None:
