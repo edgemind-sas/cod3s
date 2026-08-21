@@ -53,12 +53,19 @@ class FiredEvent:
             ``isimu_step_forward``. May be empty when no transition was due.
         vars_before: Variable snapshot at the entry of this step.
         vars_after: Variable snapshot at the exit of this step.
+        kind: What produced this stop. ``"event"`` for a step landed on a
+            transition -- the default, so every pre-existing construction keeps
+            its meaning -- and ``"grid"`` for an observation point reached by
+            :meth:`ISimuEngine.step_to` with nothing due. The distinction
+            matters to the history panel, which would otherwise render every
+            grid point as a bootstrap step, those also carrying no transition.
     """
 
     fired_at: float
     transitions: List[Any]
     vars_before: Dict[str, Any] = field(default_factory=dict)
     vars_after: Dict[str, Any] = field(default_factory=dict)
+    kind: str = "event"
 
 
 class ISimuEngine:
@@ -122,6 +129,52 @@ class ISimuEngine:
     def step_forward(self) -> FiredEvent:
         """Advance the simulator and record the resulting :class:`FiredEvent`."""
         return self._step_and_capture()
+
+    def step_to(self, date: float) -> List[FiredEvent]:
+        """Advance to ``date`` and record one :class:`FiredEvent` per stop.
+
+        Wraps ``PycSystem.isimu_step_to``: every event due before ``date`` gets
+        an event of its own, landed on its exact date, and the remaining
+        stretch ends on a ``"grid"`` event at ``date`` itself.
+
+        Snapshots chain the way :meth:`_step_and_capture` chains them, so the
+        "changed at the last step" colouring stays meaningful whichever
+        stepping mode produced the step.
+        """
+        events: List[FiredEvent] = []
+
+        def capture(kind, at, transitions):
+            # Snapshot AT the stop. Taken after ``isimu_step_to`` returned, every
+            # event of a multi-stop advance would carry the same final state and
+            # the per-step colouring would report the whole advance as one jump.
+            if self.history:
+                vars_before = self.history[-1].vars_after
+            else:
+                vars_before = snapshot_vars(self.system)
+            evt = FiredEvent(
+                fired_at=float(at),
+                transitions=list(transitions or []),
+                vars_before=vars_before,
+                vars_after=snapshot_vars(self.system),
+                kind=kind,
+            )
+            self.history.append(evt)
+            events.append(evt)
+
+        self.system.isimu_step_to(date, on_stop=capture)
+
+        return events
+
+    @property
+    def can_step_forward(self) -> bool:
+        """Whether :meth:`step_forward` would actually advance the clock.
+
+        False when every active transition carries an infinite end-time, which
+        is the state a play loop must stop on rather than keep hammering.
+        :meth:`step_to` has no such restriction: it is driven by a date the
+        caller supplies, so it advances even when nothing at all is scheduled.
+        """
+        return self.system.isimu_next_due() is not None
 
     def step_backward(self) -> List[Any]:
         """Undo the last step and pop the matching :class:`FiredEvent`.

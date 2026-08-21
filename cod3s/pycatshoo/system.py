@@ -27,6 +27,7 @@ import pandas as pd
 import plotly.express as px
 import typing
 import itertools
+import math
 import warnings
 import sys
 import re
@@ -849,11 +850,23 @@ class PycSystem(pyc.CSystem):
         Initializes the interactive mode and prepares the system for step-by-step
         simulation. Creates a new sequence tracker for recording transitions.
 
+        The bootstrap ``stepForward`` puts the engine in event-stepping mode,
+        which leaves the planning out of step with the date-stepping primitive
+        ``stepInteractive``: without the resync below, a following
+        ``stepInteractive`` integrates but silently steps OVER every dated
+        transition, and the ``stepForward`` after that refuses with "transition
+        planifiee pour une date anterieure a l'instant courant".
+        ``updatePlanningInt`` is what puts the two back in step, and one call
+        is enough -- it does not have to be repeated per step. It is a no-op on
+        a model that only ever uses :meth:`isimu_step_forward`, verified by
+        comparing a discrete trace with and without it.
+
         Args:
             **kwargs: Additional arguments (reserved for future use)
         """
         self.startInteractive()
         self.stepForward()
+        self.updatePlanningInt()
         self.isimu_sequence = PycSequence()
 
     def isimu_stop(self, **kwargs):
@@ -1045,6 +1058,30 @@ class PycSystem(pyc.CSystem):
 
         return trans_removed
 
+    def isimu_next_due(self):
+        """Earliest FINITE end-time among the active transitions, or ``None``.
+
+        This is the date the engine would integrate towards at the next
+        ``stepForward``. It is ``None`` in two very different situations, and
+        callers must not confuse them with each other:
+
+        * nothing is active at all -- the session has run out of events and
+          ``stepForward`` is a harmless no-op;
+        * something is active but every end-time is ``inf`` -- non-deterministic
+          laws the interactive simulator does not auto-sample. Stepping forward
+          there carries the clock to ``inf``, and with a PDMP every integrated
+          variable follows it to NaN. :meth:`isimu_step_forward` refuses.
+
+        Returns:
+            Optional[float]: The earliest finite end-time, or ``None``.
+        """
+        ends = [
+            trans.endTime()
+            for trans in self.activeTransitions()
+            if 0.0 <= trans.endTime() < float("inf")
+        ]
+        return min(ends) if ends else None
+
     def isimu_step_forward(self):
         """Step forward in the interactive simulation.
 
@@ -1058,21 +1095,140 @@ class PycSystem(pyc.CSystem):
             - Only transitions whose end time matches the current time are fired
             - Fired transitions are added to the sequence tracker
             - The simulation time is advanced after firing transitions
+            - A step whose only active transitions carry an infinite end-time is
+              REFUSED rather than run: see :meth:`isimu_next_due`.
         """
 
         trans_fireable = self.isimu_fireable_transitions()
 
+        # Refuse a step that would carry the clock to infinity. Only when
+        # something IS active: an empty list is the bootstrap step and the
+        # end-of-session no-op, both of which must still go through.
+        if any(trans is not None for trans in trans_fireable) and not any(
+            trans is not None and math.isfinite(trans.end_time)
+            for trans in trans_fireable
+        ):
+            warnings.warn(
+                "isimu_step_forward: every active transition has an infinite "
+                "end-time (non-deterministic laws are not auto-sampled in an "
+                "interactive session). Stepping would carry the clock to "
+                "infinity and every PDMP variable to NaN, so the step is "
+                "refused. Plan one with isimu_set_transition(trans_id, date=...) "
+                "first, or advance on a date with isimu_step_to(date).",
+                UserWarning,
+            )
+            return []
+
         self.stepForward()
 
+        # ``end_time <= currentTime()`` is True for ``inf <= inf``, which used
+        # to report a transition as fired at every step of a session whose
+        # clock had run away. Only a finite date can have been reached.
         trans_fired = [
             trans
             for trans in trans_fireable
-            if trans and trans.end_time <= self.currentTime()
+            if trans
+            and math.isfinite(trans.end_time)
+            and trans.end_time <= self.currentTime()
         ]
 
         self.isimu_sequence.transitions.extend(trans_fired)
 
         return trans_fired
+
+    def isimu_step_to(self, date, max_events=64, on_stop=None):
+        """Advance to ``date``, stopping exactly on every event due before it.
+
+        The interactive simulator has two stepping primitives and each is
+        missing what the other has. ``stepForward`` lands exactly on events and
+        records them, but it cannot advance a model whose continuous variables
+        are the only thing moving. ``stepInteractive`` advances to any date and
+        integrates the PDMP, but it runs THROUGH the events in its span, so
+        their dates and the sequence record are lost.
+
+        This method alternates between them: as long as an event is due at or
+        before ``date`` it steps forward onto it, then covers the remaining
+        stretch with a single ``stepInteractive``. What comes out is an exact
+        date and a sequence entry for every dated event, and one cheap
+        integration for the quiet stretches between them.
+
+        ``updatePlanningInt`` is called at each switch: the two primitives keep
+        the planning in different states and swapping without it either skips
+        events or refuses the next step.
+
+        **What this does NOT give an exact date to**: a watched threshold. Its
+        end-time is infinite until its condition turns true, so it is invisible
+        to :meth:`isimu_next_due` and gets crossed inside a ``stepInteractive``
+        span. Such a crossing is only locatable between two grid points, and a
+        finer grid narrows the bracket.
+
+        Args:
+            date (float): The date to advance to.
+            max_events (int): Fuse on the number of events consumed in one
+                call, so a model firing events endlessly at one instant cannot
+                hang the caller.
+            on_stop (callable): Optional ``f(kind, time, transitions)`` called
+                AT each stop, before the run continues. This is the only way to
+                observe a stop: the returned list is complete when the call
+                returns, so anything a caller reads from the model in a loop
+                over it -- a level, a rate, a variable snapshot -- is the state
+                at ``date``, not at the stop the row names. A caller that only
+                needs the dates can ignore it.
+
+        Raises:
+            ValueError: When ``date`` is behind the current clock.
+
+        Returns:
+            list[tuple]: One ``(kind, time, transitions)`` per stop, in order.
+                ``kind`` is ``"event"`` for a stop landed on a transition, with
+                the fired transitions, or ``"grid"`` for the final stop on
+                ``date`` itself, with an empty list.
+        """
+        now = self.currentTime()
+        if date < now:
+            # The engine refuses this too, but with a message that names
+            # neither value. A play loop whose target lags the clock -- after a
+            # step landed past it, or after a step_backward -- is the way this
+            # is reached, and it deserves to say so.
+            raise ValueError(
+                f"isimu_step_to: cannot advance to {date}, the clock is "
+                f"already at {now}. Interactive stepping only goes forward; "
+                "use isimu_step_backward to undo a step."
+            )
+
+        stops = []
+
+        def record(kind, transitions):
+            stop = (kind, self.currentTime(), transitions)
+            stops.append(stop)
+            if on_stop is not None:
+                on_stop(*stop)
+            return stop
+
+        for _ in range(max_events):
+            due = self.isimu_next_due()
+
+            if due is not None and due <= date:
+                self.updatePlanningInt()
+                fired = self.isimu_step_forward()
+                record("event", fired)
+                # A stepForward can stop SHORT of ``due`` on a watched boundary
+                # it met on the way, so the loop re-reads the planning rather
+                # than assuming the event was consumed.
+                continue
+
+            self.updatePlanningInt()
+            self.stepInteractive(date)
+            record("grid", [])
+            return stops
+
+        warnings.warn(
+            f"isimu_step_to: stopped after {max_events} events without "
+            f"reaching {date}. The model fires events faster than the target "
+            "date advances; raise max_events if this is expected.",
+            UserWarning,
+        )
+        return stops
 
     def isimu_set_transition(self, trans_id=None, date=None, state_index=None):
         """Schedule a transition to occur at a specific time.
