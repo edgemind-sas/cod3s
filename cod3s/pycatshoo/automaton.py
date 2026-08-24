@@ -84,22 +84,36 @@ class TransitionModel(ObjCOD3S):
 
     @staticmethod
     def sanitize_occ_law(occ_law_specs):
+        """Normalise a short-form occurrence law, LEAVING the caller's mapping alone.
+
+        ``{"cls": "delay", ...}`` is the wire form; the model wants
+        ``DelayOccDistribution``. The expansion is written into a copy, because
+        the mapping belongs to the caller and this method is on the path of
+        every transition built: rewriting it in place meant one declaration
+        could raise one transition and no more, the second attempt failing on a
+        ``cls`` the caller can still read in the source it wrote.
+
+        Shallow is enough and is the right depth. Only the top-level ``cls``
+        entry is rewritten here, and an occurrence law's other values must be
+        shared rather than duplicated -- ``rate`` may hold the ``IVariable``
+        the parameter lives in, which cannot be copied at all.
+        """
         if occ_law_specs is None:
             return occ_law_specs
 
-        if not (isinstance(occ_law_specs, OccurrenceDistributionModel)):
-            clsname = occ_law_specs.get("cls")
-            if clsname:
-                clsname = clsname.capitalize() + "OccDistribution"
-                occ_law_specs["cls"] = clsname
-            else:
-                raise AttributeError(
-                    "Missing attribute 'cls' in OccurrenceDistributionModel"
-                )
-
-            return OccurrenceDistributionModel.from_dict(occ_law_specs)
-        else:
+        if isinstance(occ_law_specs, OccurrenceDistributionModel):
             return occ_law_specs
+
+        clsname = occ_law_specs.get("cls")
+        if not clsname:
+            raise AttributeError(
+                "Missing attribute 'cls' in OccurrenceDistributionModel"
+            )
+
+        specs = dict(occ_law_specs)
+        specs["cls"] = clsname.capitalize() + "OccDistribution"
+
+        return OccurrenceDistributionModel.from_dict(specs)
 
     @pydantic.model_validator(mode="before")
     @classmethod

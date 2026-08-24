@@ -55,16 +55,36 @@ class ObjCOD3S(pydantic.BaseModel):
 
     @classmethod
     def from_dict(basecls, obj):
-        # ipdb.set_trace()
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                obj[key] = basecls.from_dict(value)
+        """Build an object from a declaration, WITHOUT consuming it.
 
-            if "cls" in obj:
+        The containers are rebuilt rather than written through, so the mapping
+        the caller passed is still the mapping the caller passed once this
+        returns. It used to be emptied: every nested value was reassigned in
+        place and ``cls`` was popped off the caller's own dict, so a
+        declaration held in data survived exactly one use.
+
+        That is the regime of anything that keeps its declarations rather than
+        writing them inline -- a knowledge base built twice, a study sweeping a
+        parameter, an importer replaying a platform export. The symptom is
+        remote from its cause: ``{"cls": "delay", "time": 14}`` comes back
+        ``{"time": 14}`` and the SECOND build fails with a missing ``cls``,
+        naming a key the caller can still see in the source it wrote.
+
+        Leaves are shared, not copied, and that is deliberate rather than
+        expedient. A declaration legitimately holds objects that must not be
+        duplicated and, in the PyCATSHOO case, cannot be: an occurrence law may
+        carry the ``IVariable`` its rate lives in, so that an indicator can
+        reference it by name, and ``copy.deepcopy`` on that raises ``Pickling
+        of "Pycatshoo.IVariable" instances is not enabled``.
+        """
+        if isinstance(obj, dict):
+            specs = {key: basecls.from_dict(value) for key, value in obj.items()}
+
+            if "cls" in specs:
                 cls_sub_dict = {cls.__name__: cls for cls in ObjCOD3S.get_subclasses()}
                 cls_sub_dict[basecls.__name__] = basecls
 
-                clsname = obj.pop("cls")
+                clsname = specs.pop("cls")
                 if isinstance(clsname, type):
                     clsname = clsname.__name__
                 cls = cls_sub_dict.get(clsname)
@@ -74,11 +94,12 @@ class ObjCOD3S(pydantic.BaseModel):
                         f"{clsname} is not a subclass of {ObjCOD3S.__name__}"
                     )
 
-                return cls(**obj)
+                return cls(**specs)
 
-        elif isinstance(obj, list):
-            for index, value in enumerate(obj):
-                obj[index] = basecls.from_dict(value)
+            return specs
+
+        if isinstance(obj, list):
+            return [basecls.from_dict(value) for value in obj]
 
         return obj
 
