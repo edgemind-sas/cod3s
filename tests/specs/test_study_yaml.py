@@ -754,3 +754,31 @@ class TestObjFMInstSpec:
 
         with pytest.raises(pydantic.ValidationError, match="typed spec"):
             ObjFMGenericSpec(cls="ObjFMInst", fm_name="miss", targets=["C1"])
+
+
+class TestTheIntegrationStep:
+    """``pdmp_dt`` bounds, because the failure mode of this field is silent.
+
+    A step wider than the shortest episode a study needs to see makes that
+    episode disappear with nothing raised. The schema cannot know that
+    duration, so it guards only what it CAN judge: a step must be a strictly
+    positive number. The pedagogical guard rail lives in the platform's help
+    dialog.
+    """
+
+    def test_absent_means_the_engine_default(self):
+        from cod3s.specs.study_yaml import SimulationConfig
+
+        assert SimulationConfig().pdmp_dt is None
+
+    def test_a_positive_step_is_accepted(self):
+        from cod3s.specs.study_yaml import SimulationConfig
+
+        assert SimulationConfig(pdmp_dt=0.05).pdmp_dt == 0.05
+
+    @pytest.mark.parametrize("value", [0.0, -0.01])
+    def test_a_non_positive_step_is_refused(self, value):
+        from cod3s.specs.study_yaml import SimulationConfig
+
+        with pytest.raises(pydantic.ValidationError):
+            SimulationConfig(pdmp_dt=value)

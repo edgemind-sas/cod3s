@@ -673,6 +673,32 @@ class SimulationConfig(pydantic.BaseModel):
             "``False`` to keep the integral occ/not_occ trace."
         ),
     )
+    pdmp_dt: float | None = pydantic.Field(
+        None,
+        gt=0.0,
+        description=(
+            "Base integration step of the PDMP solver, in the model's time "
+            "unit. ``None`` leaves PyCATSHOO's own default (0.01), which is "
+            "what every study ran on before this field existed.\n\n"
+            "It governs how much work a continuous model does, "
+            "PROPORTIONALLY: the solver re-evaluates the whole continuous "
+            "network ``1 / pdmp_dt`` times per unit of simulated time, once "
+            "per stage of the integration schema. Measured on an "
+            "electrolysis plant of thirteen continuous components, halving "
+            "the work by moving from 0.01 to 0.02 left every switching date "
+            "unchanged.\n\n"
+            "What a larger step costs is NOT integration accuracy -- "
+            "integrated quantities stayed within 1e-5 of a fine reference up "
+            "to 0.25 -- but the resolution at which a threshold crossing is "
+            "located. A step wider than the shortest episode a study needs to "
+            "see makes that episode DISAPPEAR, with nothing raised anywhere. "
+            "Keep it at or below half the duration of the shortest phenomenon "
+            "of interest.\n\n"
+            "Ignored, deliberately without warning, by a purely discrete "
+            "model: such a system has no PDMP manager at all, so there is "
+            "nothing for this to govern."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
