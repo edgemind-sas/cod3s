@@ -758,6 +758,28 @@ def run_study(
             logger.info1("Apply attribute overrides")
         apply_attribute_overrides(system, study_obj.attribute_overrides, logger=logger)
 
+    # Step 6b: PDMP integration step
+    #
+    # Applied here rather than at build time because the manager does not
+    # exist before the components do: muscadet creates one only when a
+    # component declares a continuous flow, so a purely discrete system has
+    # none at all. That is why the None check is a real branch and not
+    # defensive noise -- and why nothing is logged when it is absent, since a
+    # discrete study has nothing to be told about a knob that governs an
+    # integration it never performs.
+    #
+    # What the step governs, and what it costs, is documented on
+    # ``SimulationConfig.pdmp_dt``. The short version: the work is
+    # proportional to ``1 / pdmp_dt``, and a step wider than the shortest
+    # episode of interest makes that episode disappear silently.
+    pdmp_dt = study_obj.simulation.pdmp_dt if study_obj.simulation is not None else None
+    if pdmp_dt is not None:
+        manager = system.currentPDMPManager()
+        if manager is not None:
+            manager.setDt(pdmp_dt)
+            if logger:
+                logger.info1(f"PDMP integration step set to {pdmp_dt:g}")
+
     # Step 7: monitor + simulate
     # ``monitorTransition`` exposes transitions in the sequences XML
     # output. The patterns come from ``study.simulation.monitor_patterns``

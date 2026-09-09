@@ -329,6 +329,68 @@ class TestRunStudyEndToEnd:
         system.add_indicators.assert_called_once_with([], logger=None)
         system.add_targets.assert_called_once_with([], logger=None)
 
+    def test_the_integration_step_reaches_the_pdmp_manager(self, tmp_path):
+        """A declared step is set on the manager, before the simulation runs."""
+        system = MagicMock()
+        system.comp = {}
+        manager = MagicMock()
+        system.currentPDMPManager.return_value = manager
+
+        class StubBuilder:
+            def build(self, *, logger=None):
+                return system
+
+        run_study(
+            system_builder=StubBuilder(),
+            study=StudyYaml(name="stepped", simulation={"nb_runs": 1, "pdmp_dt": 0.05}),
+            results_dir=tmp_path,
+        )
+        manager.setDt.assert_called_once_with(0.05)
+
+    def test_no_step_declared_leaves_the_manager_alone(self, tmp_path):
+        """Absent means "PyCATSHOO's own default", not "zero"."""
+        system = MagicMock()
+        system.comp = {}
+        manager = MagicMock()
+        system.currentPDMPManager.return_value = manager
+
+        class StubBuilder:
+            def build(self, *, logger=None):
+                return system
+
+        run_study(
+            system_builder=StubBuilder(),
+            study=StudyYaml(name="plain", simulation={"nb_runs": 1}),
+            results_dir=tmp_path,
+        )
+        manager.setDt.assert_not_called()
+
+    def test_a_discrete_model_has_no_manager_and_still_runs(self, tmp_path):
+        """The branch that is a real branch.
+
+        muscadet creates a PDMP manager only when a component declares a
+        continuous flow, so a purely discrete system returns None here. Setting
+        a step on it would raise; refusing to run because one was declared
+        would be worse, since the step governs an integration this study never
+        performs.
+        """
+        system = MagicMock()
+        system.comp = {}
+        system.currentPDMPManager.return_value = None
+
+        class StubBuilder:
+            def build(self, *, logger=None):
+                return system
+
+        run_study(
+            system_builder=StubBuilder(),
+            study=StudyYaml(
+                name="discrete", simulation={"nb_runs": 1, "pdmp_dt": 0.05}
+            ),
+            results_dir=tmp_path,
+        )
+        system.simulate.assert_called_once()
+
     def test_load_study_from_path(self, tmp_path):
         """run_study accepts a Path to a study.yaml file."""
         study_path = tmp_path / "study.yaml"
