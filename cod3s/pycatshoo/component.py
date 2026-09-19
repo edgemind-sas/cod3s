@@ -2149,12 +2149,41 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         The draw probability is baked as a float then re-bound to the
         per-order parameter variable so runtime overrides keep working.
+
+        CERTAINTY (``prob == 1``) is the one direction built WITHOUT the
+        armed/parked split, and it has to be: Pycatshoo refuses ``p == 1``
+        on a BRANCHING inst law -- its law check reports "plus d'un
+        parametre egal a 1" and ``simulate()`` raises a bare
+        ``PycException`` -- while accepting the very same law on a SINGLE
+        target, which is what the re-arm edge already relies on. A draw
+        that cannot fail has no complement branch to park in anyway, so
+        the single-target form is also the faithful one: one edge, taken
+        at the rising edge of the guard, with the inst drain priority
+        kept. Consequence to know: such a direction no longer re-binds
+        its probability to the parameter variable, so its certainty is
+        FIXED at build time and a probability written afterwards does not
+        loosen it (build the system after resolving overrides, which is
+        what the translators do).
         """
+        # A draw of probability exactly 1 cannot fail, so it gets no
+        # complement branch and no parked micro-state (see the docstring:
+        # Pycatshoo refuses p == 1 on a branching inst law).
+        occ_certain = inst_occ and float(
+            occ_var_params[self.occ_param_name[0]].value()
+        ) == 1.0
+        not_occ_certain = inst_not_occ and float(
+            not_occ_var_params[self.not_occ_param_name[0]].value()
+        ) == 1.0
+
         occ_parked_cur = (
-            f"{self._parked_state_name('occ')}{cc_suffix}" if inst_occ else None
+            f"{self._parked_state_name('occ')}{cc_suffix}"
+            if inst_occ and not occ_certain
+            else None
         )
         not_occ_parked_cur = (
-            f"{self._parked_state_name('not_occ')}{cc_suffix}" if inst_not_occ else None
+            f"{self._parked_state_name('not_occ')}{cc_suffix}"
+            if inst_not_occ and not not_occ_certain
+            else None
         )
 
         states = [not_occ_state_name, occ_state_name]
@@ -2166,35 +2195,47 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         transitions = []
         if inst_occ:
             occ_prob_var = occ_var_params[self.occ_param_name[0]]
-            transitions.append(
-                {
-                    "name": occ_state_name,
-                    "source": not_occ_state_name,
-                    "target": [
-                        {
-                            "state": occ_state_name,
-                            "prob": float(occ_prob_var.value()),
-                        },
-                        # Complement branch (1 - prob) -> parked.
-                        {"state": occ_parked_cur},
-                    ],
-                }
-            )
-            transitions.append(
-                {
-                    # Named after the parked state (source): naming it
-                    # after its destination would collide with the
-                    # return transition.
-                    "name": occ_parked_cur,
-                    "source": occ_parked_cur,
-                    "target": not_occ_state_name,
-                    # inst p=1: drains with priority over timed
-                    # transitions at the same instant — a same-date
-                    # fall-and-rise of the condition is re-armed and
-                    # drawn instead of being missed.
-                    "occ_law": {"cls": "inst", "probs": [1]},
-                }
-            )
+            if occ_certain:
+                # Single target, inst p=1: the certain draw. Same form as
+                # the re-arm edge below, hence the same drain priority.
+                transitions.append(
+                    {
+                        "name": occ_state_name,
+                        "source": not_occ_state_name,
+                        "target": occ_state_name,
+                        "occ_law": {"cls": "inst", "probs": [1]},
+                    }
+                )
+            else:
+                transitions.append(
+                    {
+                        "name": occ_state_name,
+                        "source": not_occ_state_name,
+                        "target": [
+                            {
+                                "state": occ_state_name,
+                                "prob": float(occ_prob_var.value()),
+                            },
+                            # Complement branch (1 - prob) -> parked.
+                            {"state": occ_parked_cur},
+                        ],
+                    }
+                )
+                transitions.append(
+                    {
+                        # Named after the parked state (source): naming it
+                        # after its destination would collide with the
+                        # return transition.
+                        "name": occ_parked_cur,
+                        "source": occ_parked_cur,
+                        "target": not_occ_state_name,
+                        # inst p=1: drains with priority over timed
+                        # transitions at the same instant — a same-date
+                        # fall-and-rise of the condition is re-armed and
+                        # drawn instead of being missed.
+                        "occ_law": {"cls": "inst", "probs": [1]},
+                    }
+                )
         else:
             transitions.append(
                 {
@@ -2207,27 +2248,37 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         if inst_not_occ:
             ret_prob_var = not_occ_var_params[self.not_occ_param_name[0]]
-            transitions.append(
-                {
-                    "name": not_occ_state_name,
-                    "source": occ_state_name,
-                    "target": [
-                        {
-                            "state": not_occ_state_name,
-                            "prob": float(ret_prob_var.value()),
-                        },
-                        {"state": not_occ_parked_cur},
-                    ],
-                }
-            )
-            transitions.append(
-                {
-                    "name": not_occ_parked_cur,
-                    "source": not_occ_parked_cur,
-                    "target": occ_state_name,
-                    "occ_law": {"cls": "inst", "probs": [1]},
-                }
-            )
+            if not_occ_certain:
+                transitions.append(
+                    {
+                        "name": not_occ_state_name,
+                        "source": occ_state_name,
+                        "target": not_occ_state_name,
+                        "occ_law": {"cls": "inst", "probs": [1]},
+                    }
+                )
+            else:
+                transitions.append(
+                    {
+                        "name": not_occ_state_name,
+                        "source": occ_state_name,
+                        "target": [
+                            {
+                                "state": not_occ_state_name,
+                                "prob": float(ret_prob_var.value()),
+                            },
+                            {"state": not_occ_parked_cur},
+                        ],
+                    }
+                )
+                transitions.append(
+                    {
+                        "name": not_occ_parked_cur,
+                        "source": not_occ_parked_cur,
+                        "target": occ_state_name,
+                        "occ_law": {"cls": "inst", "probs": [1]},
+                    }
+                )
         else:
             transitions.append(
                 {
@@ -2261,6 +2312,14 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 draw_cond = cond_fun
             draw_bkd.setCondition(draw_cond)
 
+            self._monitor_masks.append((draw_bkd, f"#{re.escape(draw_name)}$"))
+
+            if rearm_name is None:
+                # Certain draw: no complement branch, so no parked state
+                # to leave and no probability to re-bind — the single
+                # target already carries the certainty (see docstring).
+                return
+
             def rearm_cond():
                 return not cond_fun()
 
@@ -2271,7 +2330,6 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             # (the PycAutomaton path baked the float value in).
             draw_bkd.distLaw().setParameter(prob_var, 0)
 
-            self._monitor_masks.append((draw_bkd, f"#{re.escape(draw_name)}$"))
             self._monitor_masks.append((rearm_bkd, self._NEVER_MATCH_MASK))
 
         if inst_occ:
