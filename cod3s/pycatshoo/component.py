@@ -1752,6 +1752,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                             raise ValueError(
                                 f"Component {repr(comp_cur)} has no attribute nor variable named {var}"
                             )
+                        self._reject_flow_computed_effect(comp_cur, var)
             else:
                 self._resolve_target_effects(
                     comp_cur, tgt, self.occ_effects, kind="failure_effects"
@@ -1765,6 +1766,39 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             self._resolve_target_effects(
                 comp_cur, tgt, self.not_occ_effects_trans, kind="repair_effects_trans"
             )
+
+    @staticmethod
+    def _reject_flow_computed_effect(comp_target, var):
+        """Refuse an effect on a variable the flow itself recomputes.
+
+        A discrete output's ``<flow>_prod`` is re-assigned from
+        ``<flow>_prod_available`` on EVERY evaluation of the flow's own
+        sensitive method (``muscadet.flow``: ``var_prod.setValue(
+        var_prod_available.value())``). An effect clamping it to another
+        value therefore contradicts that assignment, each method sees a
+        value that is not its own and writes again, and the two wake each
+        other for ever: the run never ends, prints nothing, and is
+        indistinguishable from a slow simulation. Refusing at build time
+        is the only place where the analyst can still be told what to
+        aim at instead.
+
+        ``prod_available`` is the real input of that computation and is
+        never overwritten, so it is what an effect must target to stop a
+        source from producing; ``fed_available`` is what gates the
+        output. Both are accepted, and both are what the platform's own
+        attribute roles resolve to.
+        """
+        for flow_name in getattr(comp_target, "flows_out", {}) or {}:
+            if var == f"{flow_name}_prod":
+                raise ValueError(
+                    f"[{comp_target.name()}] Effect on {var!r}: this "
+                    f"variable is recomputed from "
+                    f"{flow_name}_prod_available at every step, so "
+                    f"clamping it livelocks the run (no end, no "
+                    f"message). Target {flow_name}_prod_available to "
+                    f"stop the production, or "
+                    f"{flow_name}_fed_available_out to close the output."
+                )
 
     def _direction_law(self, direction):
         """Return the law spec of ``direction`` (may be None)."""
