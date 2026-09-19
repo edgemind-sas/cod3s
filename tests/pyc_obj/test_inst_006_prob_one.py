@@ -55,3 +55,33 @@ def test_certain_draw_reaches_the_failed_state(system_with_certain_on_demand_mod
     system.simulate(PycMCSimulationParam(nb_runs=20, schedule=[1.0]))
     indic = system.indicators["occ_occ"]
     assert float(indic.values["values"].iloc[-1]) == pytest.approx(1.0)
+
+
+def test_certain_direction_drops_its_parked_state():
+    """A certain direction builds no parked micro-state: nothing parks in it.
+
+    Pins the structural consequence of the single-target form. The
+    uncertain direction keeps its own parked state, so the two are
+    independent.
+    """
+    from cod3s.pycatshoo.component import ObjMode2S
+    from cod3s.pycatshoo.system import PycSystem
+
+    system = PycSystem(name="certain_structure")
+    system.add_component(name="E", cls="PycComponent")
+    try:
+        mode = ObjMode2S(
+            mode_name="m",
+            targets=["E"],
+            occ_law={"cls": "inst", "prob": 1},
+            not_occ_law={"cls": "inst", "prob": 0.5},
+            occ_cond=lambda: True,
+            not_occ_cond=lambda: False,
+        )
+        # The parked micro-state of a direction splits its SOURCE state:
+        # "not_occ_star" would be the certain occ direction's (absent),
+        # "occ_star" is the uncertain return direction's (present).
+        states = {st.name for st in mode.automata_d["m"].states}
+        assert states == {"not_occ", "occ", "occ_star"}, states
+    finally:
+        terminate_session()
