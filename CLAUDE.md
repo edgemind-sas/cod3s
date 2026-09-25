@@ -19,9 +19,9 @@ The expected workflow is:
 1. **Develop on a feature branch**, e.g. `feat/<topic>` or `fix/<topic>`, branched from `master`.
 2. **Push the branch** (`git push -u origin <branch>`) once a phase or atomic change is committed and tested green. This persists work and lets us reference it across machines/sessions; it is not a request for review.
 3. **Validate locally** (full pytest, lint, mypy on touched files, optional `mkdocs build`).
-4. **Merge to `master` directly** when validated. Roland performs the merge himself (typically a fast-forward or `--no-ff` merge from the local feature branch). Then the feature branch can be deleted.
+4. **Merge to `master` directly** when validated, **without asking** (typically a fast-forward or `--no-ff` merge from the feature branch, then push `master`). Roland is the sole developer: the agent that did the work merges it once its gates are green (full pytest, lint, the checks the change calls for), and reports the merge and the evidence it rested on. Then the feature branch can be deleted. What still stops a merge: a failing check, a scope surprise, or a branch someone else wrote.
 
-When closing a session, suggest "merge to master when validated" — never "open a PR".
+When closing a session, report what was merged and on what evidence — never "open a PR", and never leave validated work waiting for a merge.
 
 ## Project Overview
 
