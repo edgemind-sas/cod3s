@@ -62,6 +62,11 @@ class IndicatorModel(ObjCOD3S):
         return obj
 
 
+#: The extremes over the replicas a study may ask for, with the aggregate
+#: reading each off the per-replica values.
+_EXTREME_STATS = {"min": min, "max": max}
+
+
 class PycIndicator(IndicatorModel):
     """
     A class representing a Pycatshoo indicator.
@@ -140,7 +145,10 @@ class PycIndicator(IndicatorModel):
                 restitution |= pyc.TIndicatorType.quantile_gt
                 self._bkd.setPctQuantileGtValue(100 - int(stat[1:]))
 
-            elif stat == "all_values":
+            elif stat == "all_values" or stat in _EXTREME_STATS:
+                # The extremes over the replicas are read off every
+                # replica's value (``stat_values``): PyCATSHOO has no
+                # restitution of its own for them.
                 restitution |= pyc.TIndicatorType.all_values
             else:
                 raise ValueError(
@@ -165,6 +173,20 @@ class PycIndicator(IndicatorModel):
             )
 
         self._bkd.setComputation(computation)
+
+    def stat_values(self, stat_name):
+        """The values of `stat_name` at each instant.
+
+        ``min`` and ``max`` are the smallest and the largest value the
+        measure took across the replicas at each instant, read off the
+        ``all_values`` restitution: ``values(i)`` returns every replica's
+        measure at instant ``i``, the very sample ``means()`` averages.
+        Every other statistic is PyCATSHOO's own series.
+        """
+        if stat_name in _EXTREME_STATS:
+            aggregate = _EXTREME_STATS[stat_name]
+            return [float(aggregate(self._bkd.values(i))) for i in range(len(self.instants))]
+        return self.to_pyc_stats(stat_name)()
 
     def to_pyc_stats(self, stat_name):
         """
@@ -246,7 +268,7 @@ class PycFunIndicator(PycIndicator):
                 "measure": self.measure,
                 "stat": stat,
                 "instant": self.instants,
-                "values": self.to_pyc_stats(stat)(),
+                "values": self.stat_values(stat),
                 "unit": self.unit,
             }
 
@@ -369,7 +391,7 @@ class PycAttrIndicator(PycIndicator):
                 "measure": self.measure,
                 "stat": stat,
                 "instant": self.instants,
-                "values": self.to_pyc_stats(stat)(),
+                "values": self.stat_values(stat),
                 "unit": self.unit,
             }
 
@@ -493,7 +515,7 @@ class PycVarIndicator(PycIndicator):
                 "measure": self.measure,
                 "stat": stat,
                 "instant": self.instants,
-                "values": self.to_pyc_stats(stat)(),
+                "values": self.stat_values(stat),
                 "unit": self.unit,
             }
 
@@ -613,7 +635,7 @@ class PycSTIndicator(PycIndicator):
                 "measure": self.measure,
                 "stat": stat,
                 "instant": self.instants,
-                "values": self.to_pyc_stats(stat)(),
+                "values": self.stat_values(stat),
                 "unit": self.unit,
             }
 
