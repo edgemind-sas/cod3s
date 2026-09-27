@@ -1,4 +1,4 @@
-# COD3S - COmplex Dynamic Stochastic System Simulation
+# COD3S - Component-Oriented Design for Stochastic System Simulation
 
 [![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -492,7 +492,7 @@ If you use COD3S in your research or projects, please cite:
 
 ```bibtex
 @software{cod3s2024,
-  title = {COD3S: COmplex Dynamic Stochastic System Simulation},
+  title = {COD3S: Component-Oriented Design for Stochastic System Simulation},
   author = {Donat, Roland},
   year = {2024},
   url = {https://github.com/edgemind-sas/cod3s},

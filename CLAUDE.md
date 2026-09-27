@@ -25,7 +25,7 @@ When closing a session, report what was merged and on what evidence — never "o
 
 ## Project Overview
 
-COD3S (COmplex Dynamic Stochastic System Simulation) is a Python library for modeling and simulating complex industrial systems. It provides a high-level abstraction layer over simulation engines like PyCATSHOO, based on **Piecewise Deterministic Markov Processes (PDMPs)** mathematical framework.
+COD3S (Component-Oriented Design for Stochastic System Simulation) is a Python library for modeling and simulating complex industrial systems. It provides a high-level abstraction layer over simulation engines like PyCATSHOO, based on the **Piecewise Deterministic Markov Processes (PDMPs)** mathematical framework.
 
 The framework enables users to build reusable component libraries, define system architectures, and perform quantitative reliability/performance analyses through Monte Carlo simulation.
 

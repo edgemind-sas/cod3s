@@ -1,6 +1,6 @@
 # COD3S Documentation
 
-Welcome to the COD3S (COmplex Dynamic Stochastic System Simulation) library documentation.
+Welcome to the COD3S (Component-Oriented Design for Stochastic System Simulation) library documentation.
 
 ## What is COD3S?
 
