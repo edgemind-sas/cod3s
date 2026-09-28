@@ -121,6 +121,27 @@ almost surely. Only the certain livelock (probability 1 on both sides
 with trivially-true conditions) is rejected at construction; prob 1 on
 both sides with real conditions emits a warning.
 
+### Certain draws (probability exactly 1)
+
+A draw whose probability is exactly 1 at construction is built as a
+**single-branch** inst to its destination: no parked state, no re-arm,
+no parameter bound to the law. PyCATSHOO refuses a two-branch inst whose
+parameter is 1, at start and at any later step (`Il y a plus d'un
+paramètre égal à 1`), so before cod3s 1.17.1 such a mode could not be
+simulated at all. The outcome is the one the two-branch form describes,
+since its parked branch could never land, and the per-demand semantics
+hold: returning to the armed state while the condition holds is itself
+a rising edge, so the next demand draws (and lands) again.
+
+Exactly 1, not "close to 1": a draw at 0.9999 keeps its parked branch.
+Each common-cause order decides for itself (`prob: [1.0, 0.5]` gives a
+certain order 1 and a random order 2).
+
+The structure is fixed at construction. A runtime
+`FailureModeParamOverride` that would move a draw across probability 1
+(certain → anything else, or random → 1) is refused by name by the study
+runner; set the probability in the mode definition instead.
+
 ## Façade ↔ engine mapping
 
 The historical classes keep their exact API; under the hood:

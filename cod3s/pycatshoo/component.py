@@ -1110,6 +1110,13 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         #: (1.14.4). Consulted by the drop gate ahead of the law's own
         #: activity rule.
         self._inactive_orders: set = set()
+        #: How each inst draw was built, keyed by the name of the
+        #: parameter variable it reads: ``"certain"`` (probability 1,
+        #: single branch) or ``"random"`` (two branches). The structure
+        #: is decided at construction, so a runtime override that
+        #: crosses probability 1 cannot be honoured; the study runner
+        #: reads this map to refuse it by name (1.17.1).
+        self._inst_draw_kind: dict = {}
 
         # Native inst guards (law-spec-driven; façade routing keeps its
         # own historical rules through the hook overrides). inst x
@@ -2096,6 +2103,17 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         """
         return isinstance(self._direction_law(direction), ModeLawInst)
 
+    @staticmethod
+    def _is_certain_draw(prob_var):
+        """Whether an inst draw reading ``prob_var`` lands with certainty.
+
+        Exactly 1, not "close to 1": a draw at 0.9999 can still fail
+        and keeps its parked branch. 0 is NOT certain in this sense,
+        it is a draw that never fires (gated on a positive probability)
+        and PyCATSHOO accepts its two-branch form.
+        """
+        return float(prob_var.value()) == 1.0
+
     def _parked_state_name(self, direction):
         """BASE name of the parked micro-state of an inst ``direction``
         (the per-combination CC suffix is appended by the builder).
@@ -2149,12 +2167,35 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
         The draw probability is baked as a float then re-bound to the
         per-order parameter variable so runtime overrides keep working.
+
+        A CERTAIN draw (probability exactly 1 at construction) is the
+        exception: it is built as a single-branch inst to the
+        destination, with no parked state, no re-arm and no parameter.
+        PyCATSHOO refuses a two-branch inst whose parameter is 1, at
+        start and at any later step ("Il y a plus d'un paramètre égal
+        à 1"), and a single-branch inst carrying a parameter at all.
+        The outcome is the one the two-branch form would have had, since
+        its parked branch could never land; the per-edge semantics hold
+        too, a return to the armed state being itself a rising edge of
+        the composite guard. The structure being fixed here, a runtime
+        override crossing 1 is refused by the study runner
+        (``_inst_draw_kind``) rather than silently ignored.
         """
+        certain_occ = inst_occ and self._is_certain_draw(
+            occ_var_params[self.occ_param_name[0]]
+        )
+        certain_not_occ = inst_not_occ and self._is_certain_draw(
+            not_occ_var_params[self.not_occ_param_name[0]]
+        )
         occ_parked_cur = (
-            f"{self._parked_state_name('occ')}{cc_suffix}" if inst_occ else None
+            f"{self._parked_state_name('occ')}{cc_suffix}"
+            if inst_occ and not certain_occ
+            else None
         )
         not_occ_parked_cur = (
-            f"{self._parked_state_name('not_occ')}{cc_suffix}" if inst_not_occ else None
+            f"{self._parked_state_name('not_occ')}{cc_suffix}"
+            if inst_not_occ and not certain_not_occ
+            else None
         )
 
         states = [not_occ_state_name, occ_state_name]
@@ -2164,7 +2205,15 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             states.append(not_occ_parked_cur)
 
         transitions = []
-        if inst_occ:
+        if certain_occ:
+            transitions.append(
+                {
+                    "name": occ_state_name,
+                    "source": not_occ_state_name,
+                    "target": [{"state": occ_state_name, "prob": 1.0}],
+                }
+            )
+        elif inst_occ:
             occ_prob_var = occ_var_params[self.occ_param_name[0]]
             transitions.append(
                 {
@@ -2205,7 +2254,15 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 }
             )
 
-        if inst_not_occ:
+        if certain_not_occ:
+            transitions.append(
+                {
+                    "name": not_occ_state_name,
+                    "source": occ_state_name,
+                    "target": [{"state": not_occ_state_name, "prob": 1.0}],
+                }
+            )
+        elif inst_not_occ:
             ret_prob_var = not_occ_var_params[self.not_occ_param_name[0]]
             transitions.append(
                 {
@@ -2260,6 +2317,14 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             else:
                 draw_cond = cond_fun
             draw_bkd.setCondition(draw_cond)
+            self._monitor_masks.append((draw_bkd, f"#{re.escape(draw_name)}$"))
+            self._inst_draw_kind[prob_var.basename()] = (
+                "random" if rearm_name else "certain"
+            )
+            if rearm_name is None:
+                # Certain draw: single branch, nothing parks, nothing to
+                # re-arm, and no parameter (PyCATSHOO refuses one there).
+                return
 
             def rearm_cond():
                 return not cond_fun()
@@ -2271,7 +2336,6 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             # (the PycAutomaton path baked the float value in).
             draw_bkd.distLaw().setParameter(prob_var, 0)
 
-            self._monitor_masks.append((draw_bkd, f"#{re.escape(draw_name)}$"))
             self._monitor_masks.append((rearm_bkd, self._NEVER_MATCH_MASK))
 
         if inst_occ:

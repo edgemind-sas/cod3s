@@ -533,6 +533,7 @@ def _propagate_param_override_to_variables(fm: Any, direction: str, values) -> N
 
     # Resolve every variable before writing any of them: a half-applied
     # multi-parameter law is worse than a rejected override.
+    draw_kind = getattr(fm, "_inst_draw_kind", None) or {}
     writes = []
     for order, val in enumerate(values, start=1):
         scalars = list(val) if isinstance(val, (tuple, list)) else [val]
@@ -543,10 +544,45 @@ def _propagate_param_override_to_variables(fm: Any, direction: str, values) -> N
             )
         for base, scalar in zip(param_names, scalars):
             var_name = order_param_name(base, order, n_orders, fmt=fmt)
+            _refuse_crossing_a_certain_draw(draw_kind.get(var_name), var_name, scalar)
             writes.append((fm.variable(var_name), scalar))
 
     for var, scalar in writes:
         var.setValue(scalar)
+
+
+def _refuse_crossing_a_certain_draw(
+    kind: Optional[str], var_name: str, scalar: Any
+) -> None:
+    """Refuse an override an inst draw's structure cannot honour.
+
+    ``ObjMode2S`` builds a draw of probability exactly 1 as a single
+    branch and any other as two branches, at construction (PyCATSHOO
+    refuses a two-branch inst whose parameter is 1). A value written
+    afterwards cannot move a draw from one form to the other: on a
+    certain draw it would be ignored, on a random one PyCATSHOO would
+    stop the run. Either way the probability belongs in the mode
+    definition, before the system is built.
+    """
+    if kind is None:
+        return
+    try:
+        certain_after = float(scalar) == 1.0
+    except (TypeError, ValueError):
+        return
+    if kind == "certain" and not certain_after:
+        raise ValueError(
+            f"{var_name} was built as a certain draw (probability 1); "
+            f"{scalar!r} cannot be applied after construction. Set it in "
+            f"the mode definition instead."
+        )
+    if kind == "random" and certain_after:
+        raise ValueError(
+            f"{var_name} was built as a random draw; probability 1 cannot "
+            f"be applied after construction (PyCATSHOO refuses a two-branch "
+            f"draw whose probability is 1). Set it in the mode definition "
+            f"instead."
+        )
 
 
 def _apply_failure_mode_param_override(
