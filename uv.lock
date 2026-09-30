@@ -190,7 +190,7 @@ wheels = [
 
 [[package]]
 name = "cod3s"
-version = "1.13.0"
+version = "1.18.0"
 source = { editable = "." }
 dependencies = [
     { name = "colored" },
