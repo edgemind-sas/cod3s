@@ -718,3 +718,16 @@ export_markdown(analyser, "report.md")
   the worker returns.
 * **Out-of-memory on huge XML dumps** — pass `--max-sequences N` to
   cap the load.
+
+## Campaign counters in result envelopes
+
+The study runner writes `meta.campaign` before sequence grouping, cycle filtering
+or minimization. `simulated` is the raw trajectory count, `target_hits` counts
+explicit native target outcomes, and `target_hits_by_name` partitions those hits.
+`retained`, `retained_target_hits` and `probability_denominator` describe which
+population the artifact refers to. The live corpus used for these counters is
+unconditioned (`projection: "unconditioned"`): native XML display filtering does
+not mutate it. Display probabilities must not be used to reconstruct absolute
+campaign counts. A user target named `Normal` counts as a target because native
+`endCause` determines membership, rather than its display label. Historical
+artifacts without this metadata retain unknown counters.

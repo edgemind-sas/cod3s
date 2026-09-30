@@ -33,7 +33,6 @@ from cod3s.scripts.study_runner import (
 )
 from cod3s.specs.study_yaml import SimulationConfig, StudyYaml, TargetSpec
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -86,7 +85,9 @@ def _make_mock_analyser(sequence_count: int = 3):
             "probability": 0.1 * (i + 1),
             "end_time": 1000.0 * (i + 1),
             "target_name": "system_down",
-            "events": [{"obj": f"comp_{i}", "attr": "occ", "time": 100.0, "type": "occ"}],
+            "events": [
+                {"obj": f"comp_{i}", "attr": "occ", "time": 100.0, "type": "occ"}
+            ],
         }
         mock_seqs.append(s)
 
@@ -169,7 +170,9 @@ class TestA1FilesWritten:
         # Then minimal as a separate analyser:
         all_ana.compute_minimal_sequences.assert_called_once_with(inplace=False)
 
-    def test_pipeline_skips_filter_when_toggle_off(self, tmp_path, fake_sequence_analyser):
+    def test_pipeline_skips_filter_when_toggle_off(
+        self, tmp_path, fake_sequence_analyser
+    ):
         """``simulation.filter_objfm_in_sequences=False`` keeps the integral
         trace : ``filter_objfm_cycles`` is NOT called, but ``group_sequences``
         and ``compute_minimal_sequences`` still run and both artefacts are
@@ -208,7 +211,9 @@ class TestA2NoOp:
         """The skip should be silent — no warning loggued."""
         logger = MagicMock()
         study = _study_no_target()
-        _persist_sequence_analysis_artifacts(MagicMock(), study, tmp_path, logger=logger)
+        _persist_sequence_analysis_artifacts(
+            MagicMock(), study, tmp_path, logger=logger
+        )
         logger.warning.assert_not_called()
 
 
@@ -240,7 +245,9 @@ class TestA3FailOpen:
         warnings: list[str] = []
         logger.warning = lambda msg: warnings.append(msg)
 
-        _persist_sequence_analysis_artifacts(MagicMock(), _study_with_target(), tmp_path, logger=logger)
+        _persist_sequence_analysis_artifacts(
+            MagicMock(), _study_with_target(), tmp_path, logger=logger
+        )
 
         assert not (tmp_path / "sequences_all.json").exists()
         assert not (tmp_path / "sequences_minimal.json").exists()
@@ -268,7 +275,9 @@ class TestA3FailOpen:
         logger = MagicMock()
         logger.warning = lambda msg: warnings.append(msg)
 
-        _persist_sequence_analysis_artifacts(MagicMock(), _study_with_target(), tmp_path, logger=logger)
+        _persist_sequence_analysis_artifacts(
+            MagicMock(), _study_with_target(), tmp_path, logger=logger
+        )
 
         # The full 5000-char payload must NOT be in the log.
         assert long_payload not in warnings[0]
@@ -286,7 +295,9 @@ class TestA4SchemaGolden:
     create a forbidden cycle platform → cod3s ← platform). Instead we
     assert the JSON shape against a stable contract documented here."""
 
-    def test_schema_envelope_matches_v1_contract(self, tmp_path, fake_sequence_analyser):
+    def test_schema_envelope_matches_v1_contract(
+        self, tmp_path, fake_sequence_analyser
+    ):
         _persist_sequence_analysis_artifacts(
             MagicMock(), _study_with_target(), tmp_path, logger=None
         )
@@ -302,14 +313,18 @@ class TestA4SchemaGolden:
         }
         assert payload["schema_version"] == SEQUENCE_ARTIFACT_SCHEMA_VERSION == "1.0.0"
         assert payload["target_group_id"] is None  # platform sets it on read
-        assert payload["meta"] == {"truncated_at": None, "parse_error": None}
+        assert payload["meta"]["truncated_at"] is None
+        assert payload["meta"]["parse_error"] is None
+        assert payload["meta"]["campaign"]["projection"] == "unconditioned"
         assert isinstance(payload["sequences"], list)
         assert len(payload["sequences"]) >= 1
         # Each sequence carries the canonical fields.
         seq0 = payload["sequences"][0]
         assert set(seq0.keys()) >= {"weight", "probability", "events", "target_name"}
 
-    def test_all_and_minimal_differ_in_sequence_count(self, tmp_path, fake_sequence_analyser):
+    def test_all_and_minimal_differ_in_sequence_count(
+        self, tmp_path, fake_sequence_analyser
+    ):
         """sequences_all keeps the post-filter set ; sequences_minimal
         the after-minimal subset. The mock makes all=3, minimal=1."""
         _persist_sequence_analysis_artifacts(
@@ -377,3 +392,59 @@ class TestSerialiseAnalyser:
 
 def test_sequence_analysis_error_is_exception_class():
     assert issubclass(SequenceAnalysisError, Exception)
+
+
+@pytest.mark.parametrize(
+    "causes",
+    [[None] * 9 + ["Normal"], [None] * 10, ["Normal"] * 10, ["Normal", "other", None]],
+)
+def test_raw_counters_precede_reduction_and_do_not_reserve_normal(
+    tmp_path, fake_sequence_analyser, causes
+):
+    from types import SimpleNamespace
+
+    rows = [SimpleNamespace(endCause=lambda target=target: target) for target in causes]
+    system = SimpleNamespace(sequences=lambda: rows)
+    _persist_sequence_analysis_artifacts(
+        system, _study_with_target(), tmp_path, logger=None
+    )
+    for name in ("sequences_all.json", "sequences_minimal.json"):
+        counts = json.loads((tmp_path / name).read_text())["meta"]["campaign"]
+        assert counts["simulated"] == len(causes)
+        assert counts["target_hits"] == sum(target is not None for target in causes)
+        assert counts["probability_denominator"] == len(causes)
+        assert counts["target_hits_by_name"].get("Normal", 0) == causes.count("Normal")
+
+
+def test_malformed_native_counter_outcome_skips_envelopes_with_diagnostic(
+    tmp_path, fake_sequence_analyser
+):
+    from types import SimpleNamespace
+
+    rows = [SimpleNamespace(endCause=lambda: 5)]
+    logger = MagicMock()
+    _persist_sequence_analysis_artifacts(
+        SimpleNamespace(sequences=lambda: rows), _study_with_target(), tmp_path, logger
+    )
+    assert not (tmp_path / "sequences_all.json").exists()
+    logger.warning.assert_called_once()
+    assert "ValueError" in logger.warning.call_args.args[0]
+
+
+def test_empty_declared_target_is_not_silently_counted_as_censoring():
+    from cod3s.scripts.study_runner import _raw_sequence_campaign
+
+    with pytest.raises(ValueError, match="empty target name"):
+        _raw_sequence_campaign(MagicMock(), target_names=[""])
+
+
+def test_native_empty_cause_is_explicit_horizon_sentinel():
+    from types import SimpleNamespace
+    from cod3s.scripts.study_runner import _raw_sequence_campaign
+
+    rows = [SimpleNamespace(endCause=lambda: "")]
+    counts = _raw_sequence_campaign(
+        SimpleNamespace(sequences=lambda: rows), target_names=["Normal"]
+    )
+    assert counts["simulated"] == 1
+    assert counts["target_hits"] == 0

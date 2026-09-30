@@ -85,6 +85,38 @@ class SequenceAnalysisError(Exception):
     unexpected failures. Callers catch narrowly so true bugs surface."""
 
 
+def _raw_sequence_campaign(system: Any, *, target_names: list[str]) -> dict:
+    """Count live outcomes before display filtering or reduction.
+
+    Native endCause identifies target membership even when a user target is
+    named Normal. Conditional XML display filtering does not mutate this
+    live corpus: these counters explicitly describe the unconditioned campaign.
+    """
+    if "" in target_names:
+        raise ValueError(
+            "an empty target name is ambiguous with the native censored outcome"
+        )
+    hits: dict[str, int] = {}
+    simulated = 0
+    for sequence in system.sequences():
+        simulated += 1
+        target = sequence.endCause()
+        if target is not None and not isinstance(target, str):
+            raise ValueError("native sequence target must be a name or null")
+        # PyCATSHOO endCause uses an empty string for horizon censoring.
+        if target is not None and target != "":
+            hits[target] = hits.get(target, 0) + 1
+    return {
+        "simulated": simulated,
+        "target_hits": sum(hits.values()),
+        "retained": simulated,
+        "retained_target_hits": sum(hits.values()),
+        "probability_denominator": simulated,
+        "target_hits_by_name": hits,
+        "projection": "unconditioned",
+    }
+
+
 def _persist_sequence_analysis_artifacts(
     system: Any,
     study_obj: StudyYaml,
@@ -139,6 +171,9 @@ def _persist_sequence_analysis_artifacts(
         )
 
         t0 = time.perf_counter()
+        campaign = _raw_sequence_campaign(
+            system, target_names=[target.name for target in study_obj.targets]
+        )
         analyser = SequenceAnalyser.from_pyc_system(system)
         t_construct = time.perf_counter() - t0
 
@@ -152,13 +187,17 @@ def _persist_sequence_analysis_artifacts(
 
         # sequences_all.json = post-filter snapshot (full detail).
         all_path = results_path / "sequences_all.json"
-        persist_sequence_analysis_artifacts(analyser, all_path)
+        persist_sequence_analysis_artifacts(
+            analyser, all_path, meta={"campaign": campaign}
+        )
 
         # sequences_minimal.json = full canonical pipeline.
         # inplace=False → new analyser, the ``all`` snapshot above is safe.
         minimal = analyser.compute_minimal_sequences(inplace=False)
         min_path = results_path / "sequences_minimal.json"
-        persist_sequence_analysis_artifacts(minimal, min_path)
+        persist_sequence_analysis_artifacts(
+            minimal, min_path, meta={"campaign": campaign}
+        )
 
         if logger:
             logger.info2(
