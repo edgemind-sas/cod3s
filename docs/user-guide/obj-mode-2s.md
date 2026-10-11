@@ -142,6 +142,43 @@ The structure is fixed at construction. A runtime
 (certain → anything else, or random → 1) is refused by name by the study
 runner; set the probability in the mode definition instead.
 
+## Size of a mode before building it
+
+`ObjMode2S.footprint(n_targets, ...)` returns the automata and
+transitions the constructor would create, without creating anything. It
+takes the constructor's own law arguments (`occ_law`, `not_occ_law`,
+optional `occ_param` / `not_occ_param`, `behaviour`,
+`drop_inactive_automata`) with the number of targets in place of their
+names. Use it to bound or announce the size of a model before
+construction rather than re-deriving the count.
+
+```python
+fp = ObjMode2S.footprint(
+    6,
+    behaviour="external",
+    occ_law={"cls": "exp", "rate": [1e-3, None, None, None, None, None]},
+    not_occ_law={"cls": "exp", "rate": [0.1, None, None, None, None, None]},
+)
+fp.transitions          # 24: 6 combinations x 2, plus 6 mirrors x 2
+fp.order(1).transitions  # 12
+fp.mirror_transitions    # 12
+```
+
+The rules it applies, for `n` targets:
+
+| Built | Count |
+|---|---|
+| automata of a kept order `k` | `C(n, k)`, one per combination |
+| transitions per combination | 2, plus 1 re-arm per `inst` direction whose probability is not exactly 1 |
+| dropped order (both directions inactive, `drop_inactive_automata` on) | 0 |
+| mirror automata (`external`, `external_rep_indep`) | `n`, 2 transitions each |
+
+It covers the native path (both laws given as `ModeLaw` specs), not the
+self-hosted mode nor hook-driven façades, and it does not repeat the
+constructor's refusals: count only a mode the constructor accepts.
+`tests/pyc_obj/obj_mode2s/test_mode2s_footprint.py` compares it with
+systems actually built, for the three behaviours and the three laws.
+
 ## Façade ↔ engine mapping
 
 The historical classes keep their exact API; under the hood:

@@ -19,6 +19,7 @@ from .component import (
     PycComponent,
 )
 from .deg_mode import DegLawDelay, DegLawExp, DegState, ObjDegMode
+from .mode_footprint import ModeFootprint, OrderFootprint, mode_footprint
 from .mode_law import ModeLawDelay, ModeLawExp, ModeLawInst, parse_mode_law
 from ..utils import remove_key_from_dict
 

@@ -8,6 +8,7 @@ from ..utils import get_operator_function
 from .automaton import PycAutomaton
 from .common import prepare_attr_tree, sanitize_cond_format
 from .fm_wiring import FmWiringMixin, cc_comb_suffix, order_param_name
+from .mode_footprint import mode_footprint
 from .mode_law import ModeLawInst, parse_mode_law
 import Pycatshoo as pyc
 import copy
@@ -915,6 +916,11 @@ class ObjMode2S(FmWiringMixin, PycComponent):
     """
 
     VALID_BEHAVIOURS = ("internal", "external", "external_rep_indep")
+
+    #: Automata and transitions this class builds for given constructor
+    #: arguments, computed without building them (``n_targets`` in place
+    #: of the target names). See :mod:`cod3s.pycatshoo.mode_footprint`.
+    footprint = staticmethod(mode_footprint)
 
     #: Native engine instances reject unknown constructor kwargs
     #: (silent-typo hardening). Façades restore the historical
