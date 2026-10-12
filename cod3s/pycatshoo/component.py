@@ -7,7 +7,12 @@ from ..core import ObjCOD3S
 from ..utils import get_operator_function
 from .automaton import PycAutomaton
 from .common import prepare_attr_tree, sanitize_cond_format
-from .fm_wiring import FmWiringMixin, cc_comb_suffix, order_param_name
+from .fm_wiring import (
+    FmWiringMixin,
+    cc_comb_suffix,
+    order_param_name,
+    same_face_level_pulse_overlap,
+)
 from .mode_footprint import mode_footprint
 from .mode_law import ModeLawInst, parse_mode_law
 import Pycatshoo as pyc
@@ -1320,18 +1325,16 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 # Prepare effects based on behaviour.
                 # external: level (state) effects on the target are handled by
                 #   the centralized ctrl_var sensitive method below (the mode's
-                #   own transitions carry no direct level effects on ctrl_vars);
-                #   trans-based one-shot effects DO apply, wired on the mode's
-                #   OWN occ / not_occ transition and writing the target's
-                #   persistent gate once per crossing (both-pulse
-                #   inter-component), resolved against the targets exactly like
-                #   the internal branch.
+                #   own transitions carry no direct level effects on ctrl_vars).
                 # external_rep_indep: trigger model (mode.occ sets ctrl=True
                 #   directly on the transition; mode.not_occ does NOT touch
                 #   ctrl, the target owns the reset on its own return
-                #   transition). Trans-based effects are rejected upfront for
-                #   it (and for CCF) by ``_validate_trans_effects``, so those
-                #   lists stay empty in the paths that never opt in.
+                #   transition).
+                # In both external behaviours the trans-based one-shot effects
+                #   are NOT wired on the mode automaton: they go on each
+                #   target's mirror automaton (``_wire_target_transition_effects``,
+                #   after the mirrors are built), so a pulse fires when the
+                #   target actually changes state (cod3s#8).
                 occ_effects_trans_cur = []
                 not_occ_effects_trans_cur = []
                 if self.behaviour == "external":
@@ -1376,16 +1379,15 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                                 {"var": comp_var, "value": value}
                             )
 
-                # Trans-based (one-shot edge) effects: resolved IDENTICALLY for
-                # internal and external (var_name -> target variable), wired on
-                # the mode's occ / not_occ transition edge by
-                # ``_wire_transition_effects`` rather than on the state. For
-                # external the pulse writes the TARGET's persistent gate,
-                # coexisting with the level ctrl_var (both-pulse
-                # inter-component). external_rep_indep keeps the trans dicts
-                # empty via ``_validate_trans_effects``, so this loop is an
-                # inert no-op there (empty dicts resolve to []).
-                for target_idx in target_set_idx:
+                # Trans-based (one-shot edge) effects, internal only: resolved
+                # against the targets (var_name -> target variable) and wired
+                # on the mode's occ / not_occ transition edge by
+                # ``_wire_transition_effects`` rather than on the state. The
+                # external behaviours wire them on the target mirrors below.
+                trans_target_idx = (
+                    target_set_idx if self.behaviour == "internal" else ()
+                )
+                for target_idx in trans_target_idx:
                     comp_cur = self.system().component(self.targets[target_idx])
                     occ_effects_trans_cur += self._resolve_target_effects(
                         comp_cur,
@@ -1597,6 +1599,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                     occ_effects=self.occ_effects,
                     not_occ_effects=self.not_occ_effects,
                 )
+                self._wire_target_transition_effects(target_name_cur)
 
     # ------------------------------------------------------------------
     # Template hooks — native (law-spec-driven) default implementations.
@@ -1982,10 +1985,15 @@ class ObjMode2S(FmWiringMixin, PycComponent):
     def _validate_trans_effects(self):
         """Reject trans-based effects on unsupported configurations.
 
-        Native mirror of the historical validation (level+pulse overlap,
-        behaviours without a symmetric edge pair, CCF order > 1, inst
-        laws) with engine vocabulary. The façades override this to keep
-        the historical messages verbatim (they are pinned by tests).
+        Native mirror of the historical validation (same-face level+pulse
+        overlap, CCF order > 1, inst laws) with engine vocabulary. The
+        façades override this to keep the historical messages verbatim
+        (they are pinned by tests).
+
+        Every behaviour is accepted: in ``external`` and
+        ``external_rep_indep`` the pulses are wired on each target's
+        mirror automaton, whose occ / not_occ edges form a symmetric pair
+        in both behaviours (see :meth:`_wire_target_transition_effects`).
         """
         if not (self.occ_effects_trans or self.not_occ_effects_trans):
             return
@@ -1997,27 +2005,25 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 f"supported on inst directions (one-shot pulses on a "
                 f"branching draw edge are deferred)."
             )
-        level_vars = set(self.occ_effects) | set(self.not_occ_effects)
-        trans_vars = set(self.occ_effects_trans) | set(self.not_occ_effects_trans)
-        overlap = level_vars & trans_vars
+        # Same face only: a variable held in one state and pulsed on
+        # entering the OTHER state is the one-shot hand-back of a clamped
+        # value (cod3s#8) and is accepted.
+        overlap = same_face_level_pulse_overlap(
+            self.occ_effects,
+            self.not_occ_effects,
+            self.occ_effects_trans,
+            self.not_occ_effects_trans,
+        )
         if overlap:
             raise ValueError(
-                f"Mode {self.mode_name!r}: variables {sorted(overlap)} are "
-                f"driven by BOTH state-based (occ_effects/not_occ_effects) "
-                f"and trans-based (occ_effects_trans/not_occ_effects_trans) "
-                f"effects. A level clamp and a one-shot pulse on the same "
-                f"variable conflict (the pulse is silently overwritten). "
-                f"Use distinct variables."
-            )
-        if self.behaviour not in ("internal", "external"):
-            raise ValueError(
-                f"Trans-based effects (occ_effects_trans / "
-                f"not_occ_effects_trans) are only supported with "
-                f"behaviour='internal' or behaviour='external' for mode "
-                f"{self.mode_name!r}, got behaviour={self.behaviour!r}. "
-                f"behaviour='external_rep_indep' is a trigger model with no "
-                f"symmetric occ/not_occ edge pair to carry a both-pulse "
-                f"one-shot effect."
+                f"Mode {self.mode_name!r}: variables {overlap} are driven "
+                f"by BOTH a state-based effect and a trans-based effect on "
+                f"the same face (occ_effects with occ_effects_trans, or "
+                f"not_occ_effects with not_occ_effects_trans). The level "
+                f"clamp of a state and the one-shot pulse entering that "
+                f"same state conflict (the pulse is silently overwritten). "
+                f"Use distinct variables, or put the pulse on the opposite "
+                f"face."
             )
         if len(self.targets) > 1:
             raise ValueError(
@@ -2413,6 +2419,64 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         """
         for trans_bkd, mask in self._monitor_masks:
             trans_bkd.setMonitoredOutStateMask(mask)
+
+    def _wire_target_transition_effects(self, target_name):
+        """Wire the trans-based effects on the mirror automaton of a target.
+
+        External behaviours only (``external``, ``external_rep_indep``).
+        The held effects of an external mode live on the mirror automaton
+        that each target hosts (``<fm>__<not_occ>`` / ``<fm>__<occ>``,
+        built by :meth:`_build_target_automaton`), which follows the mode
+        automaton through ``ctrl_var`` with a ``delay(0)`` transition, or
+        repairs on its own in ``external_rep_indep``. The one-shot pulses
+        go on the same mirror's transitions, so they fire at the instant
+        the target itself changes state.
+
+        Wired on the mode automaton instead, a repair pulse would fire
+        while the target is still in ``<fm>__<occ>``: its held occurrence
+        effect would write the clamped value back before the mirror
+        leaves, and the value would never be handed back (cod3s#8). In
+        ``external_rep_indep`` the mode automaton has no repair edge
+        matching the target's own repair at all.
+
+        Looked up by name rather than taken from the build hook's return
+        value: ``_build_target_automaton`` / ``_create_target_automaton``
+        are extension hooks whose overrides historically return nothing.
+        """
+        if not (self.occ_effects_trans or self.not_occ_effects_trans):
+            return
+        target_comp = self.system().component(target_name)
+        target_aut = target_comp.automata_d.get(self.mode_name)
+        if target_aut is None:
+            raise ValueError(
+                f"Mode {self.mode_name!r}: no mirror automaton named "
+                f"{self.mode_name!r} on target {target_name!r} to carry the "
+                f"trans-based effects (an overridden target-automaton hook "
+                f"must register it in the target's automata_d)."
+            )
+        st_occ = f"{self.mode_name}__{self.occ_state}"
+        st_not_occ = f"{self.mode_name}__{self.not_occ_state}"
+        self._wire_transition_effects(
+            target_aut,
+            st_occ,
+            self._resolve_target_effects(
+                target_comp,
+                target_name,
+                self.occ_effects_trans,
+                kind="failure_effects_trans",
+            ),
+            target_state=st_occ,
+        )
+        self._wire_transition_effects(
+            target_aut,
+            st_not_occ,
+            self._resolve_target_effects(
+                target_comp,
+                target_name,
+                self.not_occ_effects_trans,
+                kind="repair_effects_trans",
+            ),
+        )
 
     def _build_target_automaton(
         self, target_name, return_occ_law, occ_effects=None, not_occ_effects=None
@@ -2880,7 +2944,8 @@ class ObjFM(ObjMode2S):
         # never opts into trans effects (it would otherwise raise
         # TypeError on unexpected kwargs). With the CCF guard in
         # _validate_trans_effects_supported these lists are non-empty
-        # only for single-target internal or external FMs.
+        # only for single-target internal FMs (the external behaviours
+        # wire their pulses on the target mirrors instead).
         trans_kwargs = (
             {
                 "failure_effects_trans": occ_effects_trans,
@@ -2995,23 +3060,21 @@ class ObjFM(ObjMode2S):
         one-shot edge callback correctly.
 
         Supported: ``internal`` (edge callback on the FM's own occ / rep
-        transition, target == carrier) and ``external`` (same edge callback,
-        but writing the *target* component's persistent gate once per crossing,
-        a both-pulse inter-component effect; the level effect stays with the
-        centralised ``ctrl_vars`` sensitive method).
+        transition, target == carrier), ``external`` and
+        ``external_rep_indep`` (edge callback on each target's mirror
+        automaton, ``<fm>__occ`` / ``<fm>__rep``, writing the *target*
+        component once per crossing of the target itself; cod3s#8).
 
         Rejected:
 
-        - Same variable driven by BOTH a level (state) effect and a
-          trans-based (pulse) effect: the maintained level clamp re-applies
-          on every fixpoint pass while the source state is active and silently
-          overwrites the one-shot pulse (in external the target's state clamp
-          is still active at the ObjFM rep instant, so a CLEAR pulse is lost
-          and the gate stays stuck). Checked first, for BOTH behaviours, so
-          internal and external share one semantics.
-        - ``external_rep_indep``: trigger model whose repair is an
-          instantaneous ``delay(0)`` with independent target self-repair, so
-          it has no symmetric occ / rep edge pair to carry a both-pulse.
+        - Same variable driven by a level (state) effect AND a trans-based
+          (pulse) effect on the SAME face (``failure_effects`` with
+          ``failure_effects_trans``, ``repair_effects`` with
+          ``repair_effects_trans``): the maintained level clamp re-applies on
+          every fixpoint pass while that state is active and silently
+          overwrites the pulse fired on entering it. Opposite faces (held in
+          occ, pulsed on entering rep, or the reverse) are accepted: that is
+          the one-shot hand-back of a clamped value.
         - CCF (``len(targets) > 1``): the 2^N-1 combination automata share
           each target's persistent gate, so one combination's CLEAR on rep
           would reset the gate while another is still in occ on the same
@@ -3022,33 +3085,25 @@ class ObjFM(ObjMode2S):
         """
         if not (self.failure_effects_trans or self.repair_effects_trans):
             return
-        # A level clamp and a one-shot pulse on the SAME variable conflict: the
-        # clamp wins (re-applied every fixpoint pass while its state is active)
-        # and the pulse is silently overwritten. This produces a divergent,
-        # undiagnosed result between internal and external, so reject it upfront
-        # for every behaviour rather than let it slip through.
-        level_vars = set(self.failure_effects) | set(self.repair_effects)
-        trans_vars = set(self.failure_effects_trans) | set(self.repair_effects_trans)
-        overlap = level_vars & trans_vars
+        # A level clamp and a one-shot pulse on the SAME variable and the SAME
+        # face conflict: the clamp wins (re-applied every fixpoint pass while
+        # its state is active) and the pulse is silently overwritten. Rejected
+        # upfront for every behaviour rather than let it slip through.
+        overlap = same_face_level_pulse_overlap(
+            self.failure_effects,
+            self.repair_effects,
+            self.failure_effects_trans,
+            self.repair_effects_trans,
+        )
         if overlap:
             raise ValueError(
-                f"FM {self.fm_name!r}: variables {sorted(overlap)} are driven by "
-                f"BOTH state-based (failure_effects/repair_effects) and "
-                f"trans-based (failure_effects_trans/repair_effects_trans) "
-                f"effects. A level clamp and a one-shot pulse on the same "
-                f"variable conflict (the pulse is silently overwritten). Use "
-                f"distinct variables."
-            )
-        if self.behaviour not in ("internal", "external"):
-            raise ValueError(
-                f"Trans-based effects (failure_effects_trans / "
-                f"repair_effects_trans) are only supported with "
-                f"behaviour='internal' or behaviour='external' for FM "
-                f"{self.fm_name!r}, got behaviour={self.behaviour!r}. "
-                f"behaviour='external_rep_indep' is a trigger model whose "
-                f"repair is an instantaneous delay(0) with independent target "
-                f"self-repair, so it has no symmetric occ/rep edge pair to "
-                f"carry a both-pulse one-shot effect."
+                f"FM {self.fm_name!r}: variables {overlap} are driven by BOTH "
+                f"a state-based effect and a trans-based effect on the same "
+                f"face (failure_effects with failure_effects_trans, or "
+                f"repair_effects with repair_effects_trans). The level clamp "
+                f"of a state and the one-shot pulse entering that same state "
+                f"conflict (the pulse is silently overwritten). Use distinct "
+                f"variables, or put the pulse on the opposite face."
             )
         if len(self.targets) > 1:
             raise ValueError(

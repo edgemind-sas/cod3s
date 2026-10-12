@@ -73,6 +73,29 @@ def cc_comb_suffix(
     )
 
 
+def same_face_level_pulse_overlap(
+    occ_effects, not_occ_effects, occ_effects_trans, not_occ_effects_trans
+):
+    """Return the sorted variables held AND pulsed on the same face.
+
+    A held (state) effect is re-applied on every fixpoint pass while its
+    state is active, so a pulse fired on entering that same state is
+    silently overwritten: ``occ_effects`` vs ``occ_effects_trans`` and
+    ``not_occ_effects`` vs ``not_occ_effects_trans`` conflict.
+
+    Opposite faces do not: a variable held in ``occ`` and pulsed on
+    entering ``not_occ`` (or held in ``not_occ`` and pulsed on entering
+    ``occ``) is written by the pulse once the held effect is no longer
+    active. This is the one-shot hand-back of a clamped value (cod3s#8):
+    the clamp holds while any mode holds it, the nominal value comes back
+    at the repair edge, and two such modes on one variable converge where
+    two held effects on opposite faces never do.
+    """
+    occ_overlap = set(occ_effects or {}) & set(occ_effects_trans or {})
+    not_occ_overlap = set(not_occ_effects or {}) & set(not_occ_effects_trans or {})
+    return sorted(occ_overlap | not_occ_overlap)
+
+
 class FmWiringMixin:
     """Effect resolution and wiring shared by failure-mode components.
 

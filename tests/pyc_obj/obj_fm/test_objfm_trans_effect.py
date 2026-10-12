@@ -299,26 +299,15 @@ def test_trans_effect_multi_target_guard():
 
 
 def test_trans_effect_rejected_in_unsupported_behaviour():
-    """Behaviour matrix: trans effects supported on internal + external only.
+    """Behaviour matrix: ``ObjFMInst`` cannot host a one-shot edge callback.
 
-    ``external_rep_indep`` (trigger model, delay(0) repair) and ``ObjFMInst``
-    (on-demand draw) cannot host a symmetric one-shot occ/rep edge callback
-    correctly → explicit ValueError. ``external`` is now supported (see
-    ``test_trans_effect_external_*``).
+    Its on-demand draw would fire the one-shot effect at t=0 → explicit
+    ValueError. ``external`` and, since cod3s#8, ``external_rep_indep`` are
+    supported (pulses on the target mirror, see
+    ``test_trans_effect_external_rep_indep_*``).
     """
     system = PycSystem(name="SysTransReject")
     system.add_component(name="C1", cls="GateComp")
-
-    with pytest.raises(ValueError, match="internal"):
-        system.add_component(
-            cls="ObjFMExp",
-            fm_name="frepindep",
-            targets=["C1"],
-            behaviour="external_rep_indep",
-            failure_param=0.1,
-            repair_param=0.1,
-            repair_effects_trans={"gate": False},
-        )
 
     with pytest.raises(ValueError, match="ObjFMInst"):
         system.add_component(
@@ -436,11 +425,11 @@ def test_trans_effect_external_both_pulse_mc():
     """MC both-pulse in ``behaviour='external'``: the pulse crosses components.
 
     An external ObjFM carries its occ / rep transitions on its OWN carrier
-    component (``C1__frun``); the trans-based pulse, wired on those edges,
-    writes the TARGET (``C1``) persistent gate once per crossing. This is the
-    inter-component both-pulse: SET on the ObjFM occ, CLEAR on the ObjFM rep,
-    the level failure of the target being driven independently by the
-    centralised ``ctrl_vars`` sensitive method.
+    component (``C1__frun``) and the target follows on its mirror automaton
+    (``frun__occ`` / ``frun__rep``). Since cod3s#8 the trans-based pulse is
+    wired on the mirror's edges and writes the TARGET (``C1``) persistent
+    gate once per crossing of the target: SET when the target enters
+    ``frun__occ``, CLEAR when it returns.
 
     exp λ=0.1 μ=0.2 → P(occ) steady = λ/(λ+μ) = 0.333. Over 5000 sequences,
     mean(gate on the target) must track the ObjFM occ-state probability at
@@ -455,8 +444,8 @@ def test_trans_effect_external_both_pulse_mc():
         behaviour="external",
         failure_param=0.1,
         repair_param=0.2,
-        failure_effects_trans={"gate": True},  # SET on ObjFM occ → target gate
-        repair_effects_trans={"gate": False},  # CLEAR on ObjFM rep → target gate
+        failure_effects_trans={"gate": True},  # SET when the target fails
+        repair_effects_trans={"gate": False},  # CLEAR when the target returns
     )
 
     # ObjFM occ state lives on the carrier component C1__frun.
@@ -493,9 +482,10 @@ def test_trans_effect_external_edge_semantics():
 
     ObjFMDelay(ttf=10, ttr=5), behaviour='external'. The ObjFM occ crosses at
     10 / 25 / 40 and rep at 15 / 30 (target repair is a delay(0) follow so the
-    ObjFM cycle drives the timing). The pulse is wired on the ObjFM's own occ /
-    rep transition and writes the TARGET gate — the carrier component carries
-    no ``gate`` variable at all, proving the write crosses to the target.
+    ObjFM cycle drives the timing). The pulse is wired on the target mirror's
+    occ / rep transition (cod3s#8) and writes the TARGET gate — the carrier
+    component carries no ``gate`` variable at all, proving the write crosses
+    to the target.
     """
     system = PycSystem(name="SysExtEdge")
     system.add_component(name="C1", cls="GateComp")
@@ -542,27 +532,36 @@ def test_trans_effect_external_edge_semantics():
     assert gate == [0.0, 1.0, 0.0, 1.0, 1.0]
 
 
-def test_trans_effect_external_rep_indep_still_rejected():
-    """``external_rep_indep`` + trans effects → ValueError (clear message).
+def test_trans_effect_external_rep_indep_edge_semantics():
+    """``external_rep_indep`` + trans effects: pulses follow the target.
 
-    The trigger model repairs instantly via delay(0) with independent target
-    self-repair, so there is no symmetric occ / rep edge pair to carry a
-    both-pulse one-shot effect — rejected with an explicit message naming the
-    behaviour.
+    Rejected before cod3s#8, on the ground that the trigger model has no
+    symmetric occ / rep edge pair on the mode automaton. The target mirror
+    has one: it enters ``frun__occ`` when triggered and returns on its own
+    repair law. The pulses are wired there, so the gate is SET when the
+    target fails and CLEARED when the target itself is repaired.
+    ObjFMDelay(ttf=10, ttr=5) → target occ at 10 / 25, target rep at 15.
     """
-    system = PycSystem(name="SysExtRepIndepReject")
+    system = PycSystem(name="SysExtRepIndepEdge")
     system.add_component(name="C1", cls="GateComp")
+    system.add_component(
+        cls="ObjFMDelay",
+        fm_name="frun",
+        targets=["C1"],
+        behaviour="external_rep_indep",
+        failure_param=10,  # ttf
+        repair_param=5,  # ttr (target self-repair)
+        failure_effects_trans={"gate": True},
+        repair_effects_trans={"gate": False},
+    )
+    gate_ind = system.add_indicator_var(
+        component="C1", var="gate", stats=["mean"], name="gate"
+    )[0]
 
-    with pytest.raises(ValueError, match="external_rep_indep"):
-        system.add_component(
-            cls="ObjFMExp",
-            fm_name="frepindep",
-            targets=["C1"],
-            behaviour="external_rep_indep",
-            failure_param=0.1,
-            repair_param=0.1,
-            failure_effects_trans={"gate": True},
-        )
+    system.simulate(PycMCSimulationParam(nb_runs=1, schedule=[0, 12, 17, 27], seed=7))
+
+    _, gate = _series(gate_ind)
+    assert gate == [0.0, 1.0, 0.0, 1.0]
 
 
 def test_trans_effect_external_ccf_still_rejected():
@@ -590,14 +589,13 @@ def test_trans_effect_external_ccf_still_rejected():
 
 
 def test_trans_effect_level_pulse_same_var_rejected():
-    """Same variable driven by a level effect AND a trans pulse → ValueError.
+    """Same variable held AND pulsed on the same face → ValueError.
 
     A maintained level clamp re-applies on every fixpoint pass while its state
-    is active and silently overwrites the one-shot pulse on the same variable.
-    In external this bit hardest (the target's state clamp is still active at
-    the ObjFM rep instant, so a CLEAR pulse was lost and the gate stuck True
-    forever) but the declaration is contradictory in internal too, so it is
-    rejected upfront for BOTH behaviours with an explicit message.
+    is active and silently overwrites a one-shot pulse fired on entering that
+    same state. Rejected upfront for every behaviour with an explicit message.
+    The opposite-face pair (held in occ, pulsed on entering rep) is accepted
+    since cod3s#8: see ``tests/pyc_obj/obj_mode2s/test_mode2s_one_shot_handback.py``.
     """
     system = PycSystem(name="SysLevelPulseClash")
     system.add_component(name="C1", cls="GateComp")

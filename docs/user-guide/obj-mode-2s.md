@@ -179,6 +179,54 @@ constructor's refusals: count only a mode the constructor accepts.
 `tests/pyc_obj/obj_mode2s/test_mode2s_footprint.py` compares it with
 systems actually built, for the three behaviours and the three laws.
 
+## Held and one-shot effects
+
+A mode writes its targets in two ways:
+
+* **held** effects (`occ_effects` / `not_occ_effects`): a level clamp
+  re-applied on every fixpoint pass while the state is active;
+* **one-shot** effects (`occ_effects_trans` / `not_occ_effects_trans`):
+  written once, at the instant the target enters the state.
+
+A variable may be held on one face and pulsed on the **other**. The
+typical case is a clamp handed back at repair, on a variable that does
+not reinitialise on its own:
+
+```python
+ObjMode2S(
+    mode_name="cell",
+    targets=["battery"],
+    behaviour="external",
+    occ_law={"cls": "delay", "time": 1.0},
+    not_occ_law={"cls": "delay", "time": 2.0},
+    occ_effects={"serve_rate": 0.0},             # held while failed
+    not_occ_effects_trans={"serve_rate": 40.0},  # handed back once
+)
+```
+
+Several such modes can clamp the same variable: the clamp stays while any
+of them is in `occ`, and the nominal value comes back when the last one is
+repaired (an earlier repair pulse is overwritten by the clamps still
+held). The same model with a **held** repair effect never converges: the
+held effects of a mode in `occ` and of a mode in `not_occ` fight within
+one instant. Two modes holding **different** clamped values at the same
+time are ill-posed whatever the repair effect.
+
+A variable held and pulsed on the **same** face is refused at
+construction: the clamp would overwrite the pulse.
+
+In `external` and `external_rep_indep` the held effects live on the
+mirror automaton each target hosts (`<mode>__occ` / `<mode>__not_occ`),
+and so do the one-shot effects: a pulse fires when the target itself
+changes state, after the mode automaton in `external` (`delay(0)`
+follow), on the target's own repair in `external_rep_indep`. Before
+1.20.0 the pulses were wired on the mode automaton, so a repair pulse
+fired while the target still held its clamp and was lost, and
+`external_rep_indep` refused one-shot effects.
+
+Remaining restrictions: one-shot effects are refused with CC order > 1
+and on `inst` directions.
+
 ## Façade ↔ engine mapping
 
 The historical classes keep their exact API; under the hood:
