@@ -21,6 +21,7 @@ import re
 import colored
 import textwrap
 import itertools
+import math
 
 
 class PycVariable(ObjCOD3S):
@@ -1277,6 +1278,13 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         # Track impacting automata for each target in external modes
         self.target_impacting_automata = {t: [] for t in self.targets}
 
+        # Two passes over the CC orders. The first creates every parameter
+        # variable and decides which orders keep their combination
+        # automata; the second builds them. The effects of a mode whose
+        # combinations overlap on a target are validated in between
+        # (``_validate_shared_target_effects``), from the orders really
+        # kept, before any automaton exists (cod3s#4, cod3s#9).
+        kept_orders = []
         for order in range(1, order_max + 1):
 
             occ_var_params_cur = self._build_order_param_variables(
@@ -1319,6 +1327,13 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 and _dir_inactive("not_occ", not_occ_var_params_cur, not_occ_none)
             ):
                 continue
+            kept_orders.append((order, occ_var_params_cur, not_occ_var_params_cur))
+
+        self._validate_shared_target_effects(
+            [order for order, _, _ in kept_orders], order_max
+        )
+
+        for order, occ_var_params_cur, not_occ_var_params_cur in kept_orders:
 
             for target_set_idx in itertools.combinations(range(order_max), order):
 
@@ -1496,6 +1511,17 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                     )
 
                 if inst_occ or inst_not_occ:
+                    # Forwarded only when non-empty, so an override of
+                    # this hook with the pre-1.21 signature keeps working
+                    # as long as it never opts into trans effects.
+                    inst_trans_kwargs = (
+                        {
+                            "occ_effects_trans": occ_effects_trans_cur,
+                            "not_occ_effects_trans": not_occ_effects_trans_cur,
+                        }
+                        if (occ_effects_trans_cur or not_occ_effects_trans_cur)
+                        else {}
+                    )
                     aut = self._build_inst_mode_automaton(
                         aut_name=aut_name_cur,
                         not_occ_state_name=not_occ_state_name_cur,
@@ -1510,6 +1536,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                         inst_occ=inst_occ,
                         inst_not_occ=inst_not_occ,
                         cc_suffix=cc_suffix_cur,
+                        **inst_trans_kwargs,
                     )
                 else:
                     aut = self._build_mode_automaton(
@@ -1985,26 +2012,24 @@ class ObjMode2S(FmWiringMixin, PycComponent):
     def _validate_trans_effects(self):
         """Reject trans-based effects on unsupported configurations.
 
-        Native mirror of the historical validation (same-face level+pulse
-        overlap, CCF order > 1, inst laws) with engine vocabulary. The
-        façades override this to keep the historical messages verbatim
-        (they are pinned by tests).
+        Static part of the validation, run before anything is built: the
+        same-face level+pulse overlap. The façades override this to keep
+        the historical messages verbatim (they are pinned by tests).
 
         Every behaviour is accepted: in ``external`` and
         ``external_rep_indep`` the pulses are wired on each target's
         mirror automaton, whose occ / not_occ edges form a symmetric pair
         in both behaviours (see :meth:`_wire_target_transition_effects`).
+
+        Several targets and inst directions are accepted too (cod3s#9).
+        What several targets may make ill-posed depends on the CC orders
+        really kept, so it is checked once they are known, by
+        :meth:`_validate_shared_target_effects`. On an inst direction
+        the pulse of a draw edge is guarded on the branch that lands in
+        the destination state (see :meth:`_build_inst_mode_automaton`).
         """
         if not (self.occ_effects_trans or self.not_occ_effects_trans):
             return
-        if isinstance(self.occ_law, ModeLawInst) or isinstance(
-            self.not_occ_law, ModeLawInst
-        ):
-            raise ValueError(
-                f"Mode {self.mode_name!r}: trans-based effects are not "
-                f"supported on inst directions (one-shot pulses on a "
-                f"branching draw edge are deferred)."
-            )
         # Same face only: a variable held in one state and pulsed on
         # entering the OTHER state is the one-shot hand-back of a clamped
         # value (cod3s#8) and is accepted.
@@ -2025,13 +2050,99 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 f"Use distinct variables, or put the pulse on the opposite "
                 f"face."
             )
-        if len(self.targets) > 1:
+
+    #: Effect field names used in the messages of
+    #: :meth:`_validate_shared_target_effects` (the façades map them to
+    #: their historical failure / repair vocabulary).
+    _EFFECT_FIELD_NAMES = {
+        "occ_effects": "occ_effects",
+        "not_occ_effects": "not_occ_effects",
+        "occ_effects_trans": "occ_effects_trans",
+        "not_occ_effects_trans": "not_occ_effects_trans",
+    }
+
+    def _validate_shared_target_effects(self, kept_orders, order_max):
+        """Refuse the effects that overlapping combinations make ill-posed.
+
+        Called once the CC orders that keep their combination automata
+        are known (``kept_orders``), before any automaton is built.
+
+        What matters is how many built automata write a given target's
+        variable, not the number of targets (cod3s#9):
+
+        * ``external`` / ``external_rep_indep``: the effects, held and
+          one-shot, live on each target's single mirror automaton, which
+          follows the OR of the combinations covering the target. One
+          writer per target whatever the orders: nothing to refuse.
+        * ``internal``: each kept order ``k`` puts ``C(n-1, k-1)``
+          combination automata on every target. Order 1 alone, or order
+          ``n`` alone, gives one writer per target, the single-target
+          case. Otherwise the combinations overlap, and three shapes on
+          one variable are refused:
+
+          - a pulse entering ``occ`` on a variable held on the
+            ``not_occ`` face: the combinations at rest covering the same
+            target hold the variable and overwrite the pulse;
+          - a pulse on both faces (the persistent-gate both-pulse): a
+            combination's repair clears the gate while another
+            combination covering the same target is still in ``occ``;
+          - a variable held on both faces with different values: a
+            combination in ``occ`` and another at rest assert opposite
+            values and the fixpoint never settles (cod3s#4, measured as
+            an unbounded run with no diagnostic).
+
+          The hand-back pair (held on ``occ``, pulsed entering
+          ``not_occ``) is accepted: a repaired combination's pulse is
+          overwritten by the clamp of any combination still in ``occ``,
+          and the last repair hands the value back.
+        """
+        if self.behaviour != "internal" or order_max < 2:
+            return
+        writers_per_target = sum(math.comb(order_max - 1, k - 1) for k in kept_orders)
+        if writers_per_target < 2:
+            return
+        names = self._EFFECT_FIELD_NAMES
+        context = (
+            f"Mode {self.mode_name!r} (behaviour='internal', "
+            f"{order_max} targets, CC orders {list(kept_orders)} kept): "
+            f"{writers_per_target} combination automata write each target"
+        )
+        occ_pulse = set(self.occ_effects_trans)
+        held_rest = sorted(occ_pulse & set(self.not_occ_effects))
+        if held_rest:
             raise ValueError(
-                f"Trans-based effects (occ_effects_trans / "
-                f"not_occ_effects_trans) are not supported with CCF order "
-                f"> 1 (len(targets)={len(self.targets)}) for mode "
-                f"{self.mode_name!r} (persistent-gate both-pulse desync "
-                f"across combinations) — deferred."
+                f"{context}. Variables {held_rest} are pulsed entering occ "
+                f"({names['occ_effects_trans']}) and held at rest "
+                f"({names['not_occ_effects']}): the combinations at rest "
+                f"covering the same target overwrite the pulse. Use "
+                f"{names['occ_effects']} for a value held while in occ."
+            )
+        both_pulse = sorted(occ_pulse & set(self.not_occ_effects_trans))
+        if both_pulse:
+            raise ValueError(
+                f"{context}. Variables {both_pulse} are pulsed on both faces "
+                f"({names['occ_effects_trans']} and "
+                f"{names['not_occ_effects_trans']}): one combination's repair "
+                f"would clear them while another combination covering the "
+                f"same target is still in occ. Hold the value in occ "
+                f"({names['occ_effects']}) and hand it back with "
+                f"{names['not_occ_effects_trans']}, or use "
+                f"behaviour='external'."
+            )
+        held_both = sorted(
+            var
+            for var in set(self.occ_effects) & set(self.not_occ_effects)
+            if self.occ_effects[var] != self.not_occ_effects[var]
+        )
+        if held_both:
+            raise ValueError(
+                f"{context}. Variables {held_both} are held on both faces "
+                f"with different values ({names['occ_effects']} and "
+                f"{names['not_occ_effects']}): a combination in occ and "
+                f"another at rest assert opposite values and the simulation "
+                f"never settles (cod3s#4). Hand the value back once with "
+                f"{names['not_occ_effects_trans']}, or leave the variable "
+                f"reinitialised and drop {names['not_occ_effects']}."
             )
 
     # ------------------------------------------------------------------
@@ -2154,6 +2265,8 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         inst_occ,
         inst_not_occ,
         cc_suffix,
+        occ_effects_trans=None,
+        not_occ_effects_trans=None,
     ):
         """Build one cc-combination automaton with inst direction(s).
 
@@ -2192,6 +2305,14 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         the composite guard. The structure being fixed here, a runtime
         override crossing 1 is refused by the study runner
         (``_inst_draw_kind``) rather than silently ignored.
+
+        Trans-based effects (records) are one-shot callbacks on the occ
+        and not_occ edges, as in :meth:`_build_mode_automaton` (cod3s#9).
+        On a timed edge the pulse fires at each crossing. On a draw edge
+        it is guarded on the destination state, so it fires only when
+        the draw lands there: a failed draw parks without a pulse, and
+        the re-arm transitions (parked -> armed, no logical change)
+        carry none. A certain draw has a single branch and always lands.
         """
         certain_occ = inst_occ and self._is_certain_draw(
             occ_var_params[self.occ_param_name[0]]
@@ -2403,6 +2524,23 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             not_occ_logical_states,
             not_occ_effects,
             trans_name=not_occ_state_name,
+        )
+
+        # One-shot effects (no-op when empty). The destination-state
+        # guard is what makes a pulse on a two-branch draw edge fire on
+        # the landed branch only; on a timed or single-branch edge it is
+        # always active after the firing, hence harmless.
+        self._wire_transition_effects(
+            aut,
+            occ_state_name,
+            occ_effects_trans,
+            target_state=occ_state_name,
+        )
+        self._wire_transition_effects(
+            aut,
+            not_occ_state_name,
+            not_occ_effects_trans,
+            target_state=not_occ_state_name,
         )
 
         self.reapply_monitor_masks()
@@ -2844,6 +2982,13 @@ class ObjFM(ObjMode2S):
     # no mirroring step is needed.
     # ------------------------------------------------------------------
 
+    _EFFECT_FIELD_NAMES = {
+        "occ_effects": "failure_effects",
+        "not_occ_effects": "repair_effects",
+        "occ_effects_trans": "failure_effects_trans",
+        "not_occ_effects_trans": "repair_effects_trans",
+    }
+
     def _validate_trans_effects(self):
         self._validate_trans_effects_supported()
 
@@ -2893,6 +3038,8 @@ class ObjFM(ObjMode2S):
         inst_occ,
         inst_not_occ,
         cc_suffix,
+        occ_effects_trans=None,
+        not_occ_effects_trans=None,
     ):
         """Route an inst build through the historical extension hook.
 
@@ -2902,13 +3049,22 @@ class ObjFM(ObjMode2S):
         engine, but a subclass override must still be invoked, so the
         inst path is bridged onto the same hook. The engine-only
         arguments travel through ``_inst_build_context`` rather than
-        widening the frozen historical signature.
+        widening the frozen historical signature. The trans-based
+        effects travel as on the timed path, only when non-empty.
         """
         self._inst_build_context = {
             "inst_occ": inst_occ,
             "inst_not_occ": inst_not_occ,
             "cc_suffix": cc_suffix,
         }
+        trans_kwargs = (
+            {
+                "failure_effects_trans": occ_effects_trans,
+                "repair_effects_trans": not_occ_effects_trans,
+            }
+            if (occ_effects_trans or not_occ_effects_trans)
+            else {}
+        )
         return self._build_fm_automaton(
             aut_name=aut_name,
             repair_state_name=not_occ_state_name,
@@ -2920,6 +3076,7 @@ class ObjFM(ObjMode2S):
             failure_effects=occ_effects,
             repair_effects=not_occ_effects,
             repair_law=not_occ_law,
+            **trans_kwargs,
         )
 
     def _build_mode_automaton(
@@ -2942,10 +3099,9 @@ class ObjFM(ObjMode2S):
         # third-party ObjFM subclass that overrides _build_fm_automaton
         # with the pre-feature signature keeps working as long as it
         # never opts into trans effects (it would otherwise raise
-        # TypeError on unexpected kwargs). With the CCF guard in
-        # _validate_trans_effects_supported these lists are non-empty
-        # only for single-target internal FMs (the external behaviours
-        # wire their pulses on the target mirrors instead).
+        # TypeError on unexpected kwargs). These lists are non-empty
+        # only for internal FMs (the external behaviours wire their
+        # pulses on the target mirrors instead).
         trans_kwargs = (
             {
                 "failure_effects_trans": occ_effects_trans,
@@ -3017,7 +3173,8 @@ class ObjFM(ObjMode2S):
         ``failure_effects_trans`` / ``repair_effects_trans`` (records
         format) are trans-based (mode="trans_based") effects wired on
         the occ / rep transition edge — fired once per crossing —
-        instead of clamped on the state.
+        instead of clamped on the state. On the inst path a pulse on a
+        draw edge fires only when the draw lands in its destination.
         """
         # Qualified calls: the engine implementations, not the façade
         # overrides above (a subclass overriding BOTH hooks must not
@@ -3037,6 +3194,8 @@ class ObjFM(ObjMode2S):
                 occ_effects=failure_effects,
                 not_occ_effects=repair_effects,
                 not_occ_law=repair_law,
+                occ_effects_trans=failure_effects_trans,
+                not_occ_effects_trans=repair_effects_trans,
                 **inst_context,
             )
         return ObjMode2S._build_mode_automaton(
@@ -3056,32 +3215,27 @@ class ObjFM(ObjMode2S):
         )
 
     def _validate_trans_effects_supported(self):
-        """Reject trans-based effects on behaviours that cannot host a
-        one-shot edge callback correctly.
+        """Reject trans-based effects that cannot be wired correctly.
 
         Supported: ``internal`` (edge callback on the FM's own occ / rep
         transition, target == carrier), ``external`` and
         ``external_rep_indep`` (edge callback on each target's mirror
         automaton, ``<fm>__occ`` / ``<fm>__rep``, writing the *target*
         component once per crossing of the target itself; cod3s#8).
+        Several targets and the inst draw of ``ObjFMInst`` are supported
+        too (cod3s#9): what several targets may make ill-posed depends on
+        the CC orders really kept and is checked by the engine's
+        :meth:`ObjMode2S._validate_shared_target_effects`.
 
-        Rejected:
-
-        - Same variable driven by a level (state) effect AND a trans-based
-          (pulse) effect on the SAME face (``failure_effects`` with
-          ``failure_effects_trans``, ``repair_effects`` with
-          ``repair_effects_trans``): the maintained level clamp re-applies on
-          every fixpoint pass while that state is active and silently
-          overwrites the pulse fired on entering it. Opposite faces (held in
-          occ, pulsed on entering rep, or the reverse) are accepted: that is
-          the one-shot hand-back of a clamped value.
-        - CCF (``len(targets) > 1``): the 2^N-1 combination automata share
-          each target's persistent gate, so one combination's CLEAR on rep
-          would reset the gate while another is still in occ on the same
-          target (both-pulse desync across combinations).
-        - ``ObjFMInst`` (overridden below): its draw transition wires branch
-          effects through a start method that would fire the one-shot effect
-          at t=0.
+        Rejected here: the same variable driven by a level (state) effect
+        AND a trans-based (pulse) effect on the SAME face
+        (``failure_effects`` with ``failure_effects_trans``,
+        ``repair_effects`` with ``repair_effects_trans``): the maintained
+        level clamp re-applies on every fixpoint pass while that state is
+        active and silently overwrites the pulse fired on entering it.
+        Opposite faces (held in occ, pulsed on entering rep, or the
+        reverse) are accepted: that is the one-shot hand-back of a
+        clamped value.
         """
         if not (self.failure_effects_trans or self.repair_effects_trans):
             return
@@ -3104,18 +3258,6 @@ class ObjFM(ObjMode2S):
                 f"of a state and the one-shot pulse entering that same state "
                 f"conflict (the pulse is silently overwritten). Use distinct "
                 f"variables, or put the pulse on the opposite face."
-            )
-        if len(self.targets) > 1:
-            raise ValueError(
-                f"Trans-based effects (failure_effects_trans / "
-                f"repair_effects_trans) are not supported with CCF order > 1 "
-                f"(len(targets)={len(self.targets)}) for FM {self.fm_name!r} "
-                f"(persistent-gate both-pulse desync across combinations): "
-                f"the 2^N-1 combination automata share each target's "
-                f"persistent gate, so one combination's CLEAR on rep would "
-                f"reset the gate while another combination is still in occ "
-                f"on the same target — deferred (needs a cross-automaton "
-                f"guard with its own MC-symmetry phase)."
             )
 
     def _create_target_automaton(
@@ -3515,20 +3657,3 @@ class ObjFMInst(ObjFM):
             )
 
         return repair_cond_fun
-
-    def _validate_trans_effects_supported(self):
-        """Reject trans-based effects for ObjFMInst (on-demand law).
-
-        The inst draw transition has no correct home for a one-shot
-        trans-based effect (MVP). Overrides ``ObjFM`` to reject
-        regardless of ``behaviour``.
-        """
-        if self.failure_effects_trans or self.repair_effects_trans:
-            raise ValueError(
-                f"Trans-based effects (failure_effects_trans / "
-                f"repair_effects_trans) are not supported for ObjFMInst "
-                f"(on-demand law) for FM {self.fm_name!r}. The inst draw "
-                f"transition wires its branch effects with a start method "
-                f"that would fire the one-shot effect at t=0. Use "
-                f"behaviour='internal' with an exp/delay law."
-            )

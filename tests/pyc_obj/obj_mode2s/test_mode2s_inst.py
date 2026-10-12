@@ -251,17 +251,19 @@ class TestNativeInstGuards:
                 not_occ_law={"cls": "inst", "prob": [0.8, 0.8]},
             )
 
-    def test_trans_effects_rejected_on_inst_direction(self, pyc_session):
-        system = PycSystem(name="InstTransGuard")
+    def test_trans_effects_accepted_on_inst_direction(self, pyc_session):
+        """Accepted since cod3s#9: the pulse of a draw edge is guarded on
+        the landed branch (behaviour in test_mode2s_one_shot_ccf_inst)."""
+        system = PycSystem(name="InstTransAccepted")
         Equipment("E1")
-        with pytest.raises(ValueError, match="inst"):
-            ObjMode2S(
-                mode_name="miss",
-                targets=["E1"],
-                occ_law={"cls": "inst", "prob": 0.3},
-                not_occ_law={"cls": "exp", "rate": 0.5},
-                occ_effects_trans={"working": False},
-            )
+        mode = ObjMode2S(
+            mode_name="miss",
+            targets=["E1"],
+            occ_law={"cls": "inst", "prob": 0.3},
+            not_occ_law={"cls": "exp", "rate": 0.5},
+            occ_effects_trans={"working": False},
+        )
+        assert mode.occ_effects_trans == {"working": False}
 
     def test_native_inst_cc_occ_side_allowed(self, pyc_session):
         """occ-side inst with CC mirrors ObjFMInst (per-order probs)."""

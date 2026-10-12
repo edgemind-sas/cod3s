@@ -170,10 +170,12 @@ class FailureModeBaseSpec(pydantic.BaseModel):
             "Trans-based effects applied **once** at the instant the failure "
             "transition fires (var_name → value), as opposed to the "
             "state-clamped ``failure_effects``. Supported with every "
-            "behaviour at order 1 (on the target mirror in the external "
-            "behaviours); rejected for CCF (order > 1), ObjFMInst ('inst' "
-            "occurrence law), and a variable also in ``failure_effects``. "
-            "Empty by default."
+            "behaviour and law (on the target mirror in the external "
+            "behaviours; on a draw edge, only when the draw lands in occ); "
+            "rejected for a variable also in ``failure_effects``, and, in "
+            "behaviour='internal' with combinations overlapping on a "
+            "target, for a variable in ``repair_effects`` or "
+            "``repair_effects_trans``. Empty by default."
         ),
     )
 
@@ -192,10 +194,12 @@ class FailureModeBaseSpec(pydantic.BaseModel):
         description=(
             "Trans-based effects applied **once** at the instant the repair "
             "transition fires (var_name → value). May hand back a variable "
-            "clamped by ``failure_effects``. Supported with every behaviour "
-            "at order 1 (on the target mirror in the external behaviours); "
-            "rejected for CCF (order > 1), ObjFMInst ('inst' occurrence law), "
-            "and a variable also in ``repair_effects``. Empty by default."
+            "clamped by ``failure_effects``, also with several targets. "
+            "Supported with every behaviour and law (on the target mirror "
+            "in the external behaviours); rejected for a variable also in "
+            "``repair_effects``, and, in behaviour='internal' with "
+            "combinations overlapping on a target, for a variable in "
+            "``failure_effects_trans``. Empty by default."
         ),
     )
 

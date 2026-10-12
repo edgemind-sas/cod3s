@@ -32,6 +32,11 @@ class Equipment(cod3s.PycComponent):
         super().__init__(name, **kwargs)
         self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
         self.working.setReinitialized(True)
+        # Written by the repair clamp of the CCF pin: holding ``working``
+        # on both faces under overlapping combinations is refused since
+        # cod3s#4 (it never converges), and a distinct variable keeps the
+        # pinned registration counts unchanged.
+        self.ready = self.addVariable("ready", Pyc.TVarType.t_bool, False)
 
 
 @pytest.fixture
@@ -99,7 +104,7 @@ def test_internal_ccf3_inactive_order_counts(pyc_session):
             failure_param=[0.1, 0, 0.3],
             repair_param=[0.2, 0, 0.4],
             failure_effects={"working": False},
-            repair_effects={"working": True},
+            repair_effects={"ready": True},
         )
     snap = _snapshot(fm)
     # Order 2 fully inactive (lambda_2 = mu_2 = 0) -> its 3 combos dropped.

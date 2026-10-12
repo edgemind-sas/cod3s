@@ -298,43 +298,46 @@ def test_trans_effect_multi_target_guard():
     assert gate2 == [0.0, 0.0]  # guard skipped the pulse
 
 
-def test_trans_effect_rejected_in_unsupported_behaviour():
-    """Behaviour matrix: ``ObjFMInst`` cannot host a one-shot edge callback.
+def test_trans_effect_accepted_on_objfminst():
+    """``ObjFMInst`` hosts one-shot effects since cod3s#9.
 
-    Its on-demand draw would fire the one-shot effect at t=0 → explicit
-    ValueError. ``external`` and, since cod3s#8, ``external_rep_indep`` are
-    supported (pulses on the target mirror, see
-    ``test_trans_effect_external_rep_indep_*``).
+    It was refused because its pre-engine draw wired branch effects with a
+    start method that would fire the pulse at t=0. The draw now lives in the
+    engine's inst machinery, where a pulse on the draw edge is guarded on
+    the landed branch (behaviour locked in
+    ``tests/pyc_obj/obj_mode2s/test_mode2s_one_shot_ccf_inst.py``).
+    ``external`` and ``external_rep_indep`` are supported since cod3s#8.
     """
-    system = PycSystem(name="SysTransReject")
+    system = PycSystem(name="SysTransInst")
     system.add_component(name="C1", cls="GateComp")
 
-    with pytest.raises(ValueError, match="ObjFMInst"):
-        system.add_component(
-            cls="ObjFMInst",
-            fm_name="finst",
-            targets=["C1"],
-            failure_param=0.3,
-            repair_param=0.1,
-            failure_effects_trans={"gate": True},
-        )
+    fm = system.add_component(
+        cls="ObjFMInst",
+        fm_name="finst",
+        targets=["C1"],
+        failure_param=0.3,
+        repair_param=0.1,
+        failure_effects_trans={"gate": True},
+    )
+    assert fm.failure_effects_trans == {"gate": True}
 
 
-def test_trans_effect_rejected_with_ccf():
-    """Behaviour matrix (A3): trans effects rejected under CCF (order > 1).
+def test_trans_effect_rejected_with_overlapping_ccf_combinations():
+    """Behaviour matrix (A3): a both-pulse gate under overlapping CCF.
 
-    With 2+ targets the 2^N-1 combination automata share each target's
-    persistent gate; one combination's CLEAR (rep) would reset the gate
-    while another is still in occ on the same target (both-pulse desync).
-    Rejected as a deferred concern rather than wired wrongly. A single
-    target (order 1, the rail case) is unaffected — every other test in
-    this module builds single-target FMs with trans effects and passes.
+    With 2 targets and orders 1 and 2 active, ``internal`` builds two
+    combination automata on each target; one combination's CLEAR (rep)
+    would reset the gate while the other is still in occ on the same target
+    (both-pulse desync). Since cod3s#9 the guard counts the combinations
+    really built instead of the targets: a lone pulse, the hand-back pair,
+    order 1 alone or the external behaviours are accepted (see
+    ``tests/pyc_obj/obj_mode2s/test_mode2s_one_shot_ccf_inst.py``).
     """
     system = PycSystem(name="SysTransCcf")
     system.add_component(name="C1", cls="GateComp")
     system.add_component(name="C2", cls="GateComp")
 
-    with pytest.raises(ValueError, match="CCF order"):
+    with pytest.raises(ValueError, match="pulsed on both faces"):
         system.add_component(
             cls="ObjFMExp",
             fm_name="fccf",
@@ -342,15 +345,19 @@ def test_trans_effect_rejected_with_ccf():
             failure_param=[0.1, 0.05],
             repair_param=[0.2, 0.1],
             failure_effects_trans={"gate": True},
+            repair_effects_trans={"gate": False},
         )
 
-    with pytest.raises(ValueError, match="CCF order"):
+    with pytest.raises(
+        ValueError, match="failure_effects_trans and repair_effects_trans"
+    ):
         system.add_component(
             cls="ObjFMDelay",
             fm_name="fccf_delay",
             targets=["C1", "C2"],
             failure_param=[10, 20],
             repair_param=[5, 5],
+            failure_effects_trans={"gate": True},
             repair_effects_trans={"gate": False},
         )
 
@@ -358,7 +365,8 @@ def test_trans_effect_rejected_with_ccf():
 def test_trans_effect_single_target_passes_ccf_guard():
     """The rail case (order_max == 1) is not caught by the CCF guard.
 
-    Explicit companion to ``test_trans_effect_rejected_with_ccf``: a
+    Explicit companion to
+    ``test_trans_effect_rejected_with_overlapping_ccf_combinations``: a
     single-target internal FM with trans effects builds and wires the
     pulse end-to-end.
     """
@@ -564,28 +572,29 @@ def test_trans_effect_external_rep_indep_edge_semantics():
     assert gate == [0.0, 1.0, 0.0, 1.0]
 
 
-def test_trans_effect_external_ccf_still_rejected():
-    """``external`` + CCF (2 targets) + trans effects → ValueError.
+def test_trans_effect_external_ccf_accepted():
+    """``external`` + CCF (2 targets) + trans effects is accepted (cod3s#9).
 
-    Even though single-target external is now supported, CCF stays rejected:
-    the 2^N-1 combination automata share each target's persistent gate, so
-    one combination's CLEAR on rep would reset a gate another combination is
-    still holding in occ (both-pulse desync across combinations).
+    Since cod3s#8 the pulses live on each target's mirror automaton, which
+    follows the OR of the combinations covering the target: one edge pair
+    per target, so a combination's CLEAR can no longer reset a gate that
+    another combination holds.
     """
-    system = PycSystem(name="SysExtCcfReject")
+    system = PycSystem(name="SysExtCcf")
     system.add_component(name="C1", cls="GateComp")
     system.add_component(name="C2", cls="GateComp")
 
-    with pytest.raises(ValueError, match="CCF order"):
-        system.add_component(
-            cls="ObjFMExp",
-            fm_name="fccf",
-            targets=["C1", "C2"],
-            behaviour="external",
-            failure_param=[0.1, 0.05],
-            repair_param=[0.2, 0.1],
-            failure_effects_trans={"gate": True},
-        )
+    fm = system.add_component(
+        cls="ObjFMExp",
+        fm_name="fccf",
+        targets=["C1", "C2"],
+        behaviour="external",
+        failure_param=[0.1, 0.05],
+        repair_param=[0.2, 0.1],
+        failure_effects_trans={"gate": True},
+        repair_effects_trans={"gate": False},
+    )
+    assert sorted(fm.automata_d) == ["fccf__cc_1", "fccf__cc_1_2", "fccf__cc_2"]
 
 
 def test_trans_effect_level_pulse_same_var_rejected():

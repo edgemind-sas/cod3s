@@ -63,8 +63,9 @@ condition machinery composes before the inst routing, exactly as the
 `ObjFMInst` façade has always exercised it — each combination automaton
 draws independently on a shared demand front. Remaining restrictions
 (rejected with clear errors, liftable later): inst on the **return**
-direction × CC order > 1; trans-based effects on inst directions; inst
-laws in self-hosted mode.
+direction × CC order > 1; inst laws in self-hosted mode. Trans-based
+effects on inst directions are accepted since 1.21.0 (see
+[Held and one-shot effects](#held-and-one-shot-effects)).
 
 ## Unified `inst` semantics
 
@@ -224,8 +225,45 @@ follow), on the target's own repair in `external_rep_indep`. Before
 fired while the target still held its clamp and was lost, and
 `external_rep_indep` refused one-shot effects.
 
-Remaining restrictions: one-shot effects are refused with CC order > 1
-and on `inst` directions.
+### Several targets
+
+Since 1.21.0 the validation counts how many built automata write a given
+target's variable, not the number of targets:
+
+* `external` / `external_rep_indep`: one writer per target, the mirror,
+  which follows the OR of the combinations covering it. Every shape
+  accepted for one target is accepted for several, whatever the CC
+  orders.
+* `internal`: each kept CC order `k` puts `C(n-1, k-1)` combination
+  automata on every target. Order 1 alone (one mode applied to several
+  instances) or order `n` alone is the single-target case. When the
+  combinations overlap (two kept orders, or one order strictly between 1
+  and `n`; an order is kept unless both its laws are inactive and
+  `drop_inactive_automata` is on), the hand-back pair above still
+  converges, with the same reading: a repaired combination's pulse is
+  overwritten by the clamp of a combination still in `occ`, and the last
+  repair hands the value back. Three shapes are refused, naming the
+  variables:
+
+| shape on one variable | why it is ill-posed |
+|---|---|
+| pulse entering `occ`, held at rest (`not_occ_effects`) | the combinations at rest covering the target overwrite the pulse |
+| pulse on both faces (persistent-gate both-pulse) | a combination's repair clears it while another one is still in `occ` |
+| held on both faces with different values | a combination in `occ` and one at rest fight, the run never returns (cod3s#4) |
+
+The last refusal applies with no one-shot effect at all: before 1.21.0
+the same declaration was accepted and the simulation spun without a
+diagnostic. Hand the value back with `not_occ_effects_trans`, or leave
+the variable reinitialised and declare no repair effect.
+
+### `inst` directions
+
+Since 1.21.0 one-shot effects are accepted on a mode with an `inst`
+direction, `ObjFMInst` included. A pulse on a timed edge (the repair of
+a demand failure, typically) fires at each crossing. A pulse on a draw
+edge fires only when the draw lands in the destination state: a failed
+draw parks in the `_star` micro-state without a pulse, and the re-arm
+transitions carry none, since the mode does not change logical state.
 
 ## Façade ↔ engine mapping
 
