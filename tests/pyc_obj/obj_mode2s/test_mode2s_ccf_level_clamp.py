@@ -161,10 +161,12 @@ def test_pulse_entering_occ_survives_a_value_held_at_rest():
 def test_held_effects_agree_with_the_occ_clamp_over_overlapping_combinations():
     """Three targets, every CC order kept: three variables, one reading.
 
-    ``ok`` is held only in occ (the single-target reference, untouched by
-    the change), ``working`` on both faces, ``level`` only at rest. On
-    every trajectory they all say the same thing iff the held effects
-    follow the OR of the combinations covering each target.
+    ``ok`` is held only in occ, ``working`` on both faces, ``level`` only
+    at rest. On every trajectory they all say the same thing iff the
+    ``not_occ`` values are applied exactly when no ``occ`` value is. All
+    three go through the same shared clamp, so this does not pin the OR
+    itself (any covering combination in occ): the timeline tests above
+    do.
     """
     targets = ("A", "B", "C")
     system = _system("SysClampAgreement", targets=targets)
