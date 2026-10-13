@@ -16,10 +16,11 @@ target's variable:
   combinations overlap, the hand-back pair (held in ``occ``, pulsed
   entering ``not_occ``) still converges: a repaired combination's pulse is
   overwritten by the clamp of a combination still in ``occ``, the last
-  repair hands the value back. Refused: a pulse entering ``occ`` on a
-  variable held at rest, the both-pulse persistent gate, and a variable
-  held on both faces with different values, which never converges
-  (cod3s#4).
+  repair hands the value back. Refused: the both-pulse persistent gate.
+  The held effects of overlapping combinations are applied once per
+  target (cod3s#10, see test_mode2s_ccf_level_clamp.py), so the shapes
+  refused in 1.21.0 for them (a pulse entering ``occ`` on a variable held
+  at rest, a variable held on both faces, cod3s#4) are accepted.
 
 Inst directions. A pulse on a timed edge of a mode with an inst direction
 is an ordinary edge callback. A pulse on a draw edge is guarded on the
@@ -229,32 +230,14 @@ def test_external_behaviours_accept_overlapping_combinations(behaviour, effects)
     )
 
 
-@pytest.mark.parametrize(
-    "effects, match",
-    [
-        (
-            dict(occ_effects_trans={"gate": True}, not_occ_effects={"gate": False}),
-            r"\['gate'\] are pulsed entering occ \(occ_effects_trans\) and held "
-            r"at rest \(not_occ_effects\)",
-        ),
-        (BOTH_PULSE, r"\['gate'\] are pulsed on both faces"),
-        (
-            dict(
-                occ_effects={"ceiling": CLAMPED}, not_occ_effects={"ceiling": NOMINAL}
-            ),
-            r"\['ceiling'\] are held on both faces with different values.*cod3s#4",
-        ),
-    ],
-    ids=["pulse-occ-held-rest", "both-pulse", "held-both-faces"],
-)
-def test_ill_posed_shapes_over_overlapping_combinations_are_refused(effects, match):
+def test_both_pulse_over_overlapping_combinations_is_refused():
     system = _system("SysOverlapRefused", targets=("A", "B", "C"))
-    with pytest.raises(ValueError, match=match) as err:
+    with pytest.raises(ValueError, match=r"\['gate'\] are pulsed on both faces") as err:
         system.add_component(
             **_mode(
                 ("A", "B", "C"),
                 **_exp(3, [0.3, 0.2, 0.1], [1.0, 0.5, 0.5]),
-                **effects,
+                **BOTH_PULSE,
             )
         )
     # The message names what made the combinations overlap.
@@ -277,7 +260,8 @@ def test_held_on_both_faces_with_the_same_value_is_accepted():
 def test_facade_refuses_with_its_own_vocabulary():
     system = _system("SysFacadeOverlap")
     with pytest.raises(
-        ValueError, match=r"failure_effects_trans\) and held at rest \(repair_effects"
+        ValueError,
+        match=r"pulsed on both faces \(failure_effects_trans and repair_effects_trans",
     ):
         system.add_component(
             cls="ObjFMExp",
@@ -286,7 +270,7 @@ def test_facade_refuses_with_its_own_vocabulary():
             failure_param=[0.3, 0.2],
             repair_param=[1.0, 0.5],
             failure_effects_trans={"gate": True},
-            repair_effects={"gate": False},
+            repair_effects_trans={"gate": False},
         )
     system.add_component(
         cls="ObjFMExp",

@@ -239,22 +239,28 @@ target's variable, not the number of targets:
   instances) or order `n` alone is the single-target case. When the
   combinations overlap (two kept orders, or one order strictly between 1
   and `n`; an order is kept unless both its laws are inactive and
-  `drop_inactive_automata` is on), the hand-back pair above still
-  converges, with the same reading: a repaired combination's pulse is
-  overwritten by the clamp of a combination still in `occ`, and the last
-  repair hands the value back. Three shapes are refused, naming the
-  variables:
+  `drop_inactive_automata` is on), the held effects are applied once per
+  target, over the combinations covering it: the `occ_effects` values
+  while at least one of them is in `occ`, the `not_occ_effects` values
+  only while all of them are at rest. That is the single-target
+  semantics, and the OR the `external` mirror follows. The hand-back
+  pair above still converges, with the same reading: a repaired
+  combination's pulse is overwritten by the clamp while another
+  combination covering the target is still in `occ`, and the last repair
+  hands the value back. One shape is refused, naming the variables:
 
 | shape on one variable | why it is ill-posed |
 |---|---|
-| pulse entering `occ`, held at rest (`not_occ_effects`) | the combinations at rest covering the target overwrite the pulse |
 | pulse on both faces (persistent-gate both-pulse) | a combination's repair clears it while another one is still in `occ` |
-| held on both faces with different values | a combination in `occ` and one at rest fight, the run never returns (cod3s#4) |
 
-The last refusal applies with no one-shot effect at all: before 1.21.0
-the same declaration was accepted and the simulation spun without a
-diagnostic. Hand the value back with `not_occ_effects_trans`, or leave
-the variable reinitialised and declare no repair effect.
+Before 1.23.0 each combination clamped the target on its own, so a
+combination at rest kept asserting `not_occ_effects` on a target that
+another combination had put in `occ`. A variable held on both faces with
+different values never settled (cod3s#4, refused in 1.21.0 and 1.22.0),
+a variable held only at rest stayed held instead of falling back to its
+reinitialised value (cod3s#10), and a pulse entering `occ` on a variable
+held at rest was overwritten (refused in 1.21.0 and 1.22.0). All three
+now behave as with a single target.
 
 ### `inst` directions
 

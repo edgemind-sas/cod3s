@@ -1329,9 +1329,13 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 continue
             kept_orders.append((order, occ_var_params_cur, not_occ_var_params_cur))
 
-        self._validate_shared_target_effects(
-            [order for order, _, _ in kept_orders], order_max
-        )
+        kept_order_ids = [order for order, _, _ in kept_orders]
+        self._validate_shared_target_effects(kept_order_ids, order_max)
+        # Internal mode whose combinations overlap on a target: the held
+        # effects are applied once per target over the combinations
+        # covering it (``_wire_shared_target_clamp``), not by each
+        # combination (cod3s#4, cod3s#10).
+        shared_clamps = self._writers_per_target(kept_order_ids, order_max) > 1
 
         for order, occ_var_params_cur, not_occ_var_params_cur in kept_orders:
 
@@ -1361,7 +1365,12 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                         for idx in target_set_idx
                     ]
                     not_occ_effects_cur = []
-                else:  # internal behaviour
+                elif shared_clamps:
+                    # internal, overlapping combinations: held effects wired
+                    # per target after the loop, none on the combinations.
+                    occ_effects_cur = []
+                    not_occ_effects_cur = []
+                else:  # internal behaviour, one combination per target
                     occ_effects_cur = []
                     for var, value in self.occ_effects.items():
                         for target_idx in target_set_idx:
@@ -1554,13 +1563,21 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                         not_occ_effects_trans=not_occ_effects_trans_cur,
                     )
 
-                # Record impacting automata for centralized control
-                if self.behaviour in ("external", "external_rep_indep"):
+                # Record impacting automata for centralized control (the
+                # ctrl_vars of external, the shared clamps of internal)
+                if (
+                    self.behaviour in ("external", "external_rep_indep")
+                    or shared_clamps
+                ):
                     for idx in target_set_idx:
                         impacted_target = self.targets[idx]
                         self.target_impacting_automata[impacted_target].append(
                             (aut, occ_state_name_cur)
                         )
+
+        if shared_clamps:
+            for target_name_cur, covering in self.target_impacting_automata.items():
+                self._wire_shared_target_clamp(target_name_cur, covering)
 
         # Centralized ctrl_var management for `external` only.
         # `external_rep_indep` does NOT use this: mode.occ sets ctrl=True via
@@ -2061,6 +2078,17 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         "not_occ_effects_trans": "not_occ_effects_trans",
     }
 
+    def _writers_per_target(self, kept_orders, order_max):
+        """Combination automata writing each target's variables directly.
+
+        ``internal`` only: each kept CC order ``k`` puts ``C(n-1, k-1)``
+        combination automata on every target. The external behaviours
+        write a target through its single mirror automaton, hence 1.
+        """
+        if self.behaviour != "internal" or order_max < 2:
+            return 1
+        return sum(math.comb(order_max - 1, k - 1) for k in kept_orders)
+
     def _validate_shared_target_effects(self, kept_orders, order_max):
         """Refuse the effects that overlapping combinations make ill-posed.
 
@@ -2077,28 +2105,23 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         * ``internal``: each kept order ``k`` puts ``C(n-1, k-1)``
           combination automata on every target. Order 1 alone, or order
           ``n`` alone, gives one writer per target, the single-target
-          case. Otherwise the combinations overlap, and three shapes on
-          one variable are refused:
-
-          - a pulse entering ``occ`` on a variable held on the
-            ``not_occ`` face: the combinations at rest covering the same
-            target hold the variable and overwrite the pulse;
-          - a pulse on both faces (the persistent-gate both-pulse): a
-            combination's repair clears the gate while another
-            combination covering the same target is still in ``occ``;
-          - a variable held on both faces with different values: a
-            combination in ``occ`` and another at rest assert opposite
-            values and the fixpoint never settles (cod3s#4, measured as
-            an unbounded run with no diagnostic).
+          case. Otherwise the combinations overlap. Their held effects
+          are then applied once per target over the covering
+          combinations (:meth:`_wire_shared_target_clamp`), which gives
+          the single-target semantics for every held shape. The one-shot
+          pulses stay on each combination's edges, so one shape is
+          refused: a pulse on both faces (the persistent-gate
+          both-pulse), since a combination's repair clears the gate
+          while another combination covering the same target is still in
+          ``occ``.
 
           The hand-back pair (held on ``occ``, pulsed entering
           ``not_occ``) is accepted: a repaired combination's pulse is
-          overwritten by the clamp of any combination still in ``occ``,
-          and the last repair hands the value back.
+          overwritten by the shared clamp while a combination covering
+          the target is still in ``occ``, and the last repair hands the
+          value back.
         """
-        if self.behaviour != "internal" or order_max < 2:
-            return
-        writers_per_target = sum(math.comb(order_max - 1, k - 1) for k in kept_orders)
+        writers_per_target = self._writers_per_target(kept_orders, order_max)
         if writers_per_target < 2:
             return
         names = self._EFFECT_FIELD_NAMES
@@ -2108,15 +2131,6 @@ class ObjMode2S(FmWiringMixin, PycComponent):
             f"{writers_per_target} combination automata write each target"
         )
         occ_pulse = set(self.occ_effects_trans)
-        held_rest = sorted(occ_pulse & set(self.not_occ_effects))
-        if held_rest:
-            raise ValueError(
-                f"{context}. Variables {held_rest} are pulsed entering occ "
-                f"({names['occ_effects_trans']}) and held at rest "
-                f"({names['not_occ_effects']}): the combinations at rest "
-                f"covering the same target overwrite the pulse. Use "
-                f"{names['occ_effects']} for a value held while in occ."
-            )
         both_pulse = sorted(occ_pulse & set(self.not_occ_effects_trans))
         if both_pulse:
             raise ValueError(
@@ -2129,21 +2143,57 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                 f"{names['not_occ_effects_trans']}, or use "
                 f"behaviour='external'."
             )
-        held_both = sorted(
-            var
-            for var in set(self.occ_effects) & set(self.not_occ_effects)
-            if self.occ_effects[var] != self.not_occ_effects[var]
+
+    def _wire_shared_target_clamp(self, target_name, covering):
+        """Hold a target's effects over the combinations covering it.
+
+        ``internal`` behaviour with overlapping combinations only, where
+        several combination automata cover the target (``covering``:
+        ``(automaton, occ_state_name)`` pairs). ONE method per target
+        applies the held effects: the ``occ_effects`` values while at
+        least one covering combination is in ``occ``, the
+        ``not_occ_effects`` values only while all of them are at rest.
+        That is the single-target semantics, and the OR the ``external``
+        mirror follows.
+
+        A clamp per combination let a combination at rest keep asserting
+        ``not_occ_effects`` on a target that another combination had put
+        in ``occ``: opposite values on one variable never settled
+        (cod3s#4), and a variable held only at rest stayed held instead
+        of falling back to its reinitialised value (cod3s#10).
+
+        ``occ`` is the occ state alone: an inst return direction, whose
+        parked state is logically in ``occ`` too, is refused with several
+        targets. Same registration pattern as the per-state clamps (the
+        covering automata, each written variable once, start, step).
+        """
+        target_comp = self.system().component(target_name)
+        occ_records = self._resolve_target_effects(
+            target_comp, target_name, self.occ_effects, kind="failure_effects"
         )
-        if held_both:
-            raise ValueError(
-                f"{context}. Variables {held_both} are held on both faces "
-                f"with different values ({names['occ_effects']} and "
-                f"{names['not_occ_effects']}): a combination in occ and "
-                f"another at rest assert opposite values and the simulation "
-                f"never settles (cod3s#4). Hand the value back once with "
-                f"{names['not_occ_effects_trans']}, or leave the variable "
-                f"reinitialised and drop {names['not_occ_effects']}."
-            )
+        not_occ_records = self._resolve_target_effects(
+            target_comp, target_name, self.not_occ_effects, kind="repair_effects"
+        )
+        if not (occ_records or not_occ_records):
+            return
+        occ_st_bkds = [aut.get_state_by_name(st)._bkd for aut, st in covering]
+
+        def clamp():
+            in_occ = any(st.isActive() for st in occ_st_bkds)
+            for elt in occ_records if in_occ else not_occ_records:
+                if elt["var"].value() != elt["value"]:
+                    elt["var"].setValue(elt["value"])
+
+        method_name = f"clamp__{self.name()}_{target_name}"
+        for aut, _ in covering:
+            aut._bkd.addSensitiveMethod(method_name, clamp)
+        written = {elt["var"].name(): elt["var"] for elt in occ_records}
+        written.update({elt["var"].name(): elt["var"] for elt in not_occ_records})
+        for var in written.values():
+            var.addSensitiveMethod(method_name, clamp)
+        self.addStartMethod(method_name, clamp)
+        if self.step:
+            self.step.addMethod(self, method_name)
 
     # ------------------------------------------------------------------
     # Automaton builders

@@ -32,10 +32,8 @@ class Equipment(cod3s.PycComponent):
         super().__init__(name, **kwargs)
         self.working = self.addVariable("working", Pyc.TVarType.t_bool, True)
         self.working.setReinitialized(True)
-        # Written by the repair clamp of the CCF pin: holding ``working``
-        # on both faces under overlapping combinations is refused since
-        # cod3s#4 (it never converges), and a distinct variable keeps the
-        # pinned registration counts unchanged.
+        # Written by the repair clamp of the CCF pin (a variable held
+        # only at rest, cod3s#10).
         self.ready = self.addVariable("ready", Pyc.TVarType.t_bool, False)
 
 
@@ -124,13 +122,14 @@ def test_internal_ccf3_inactive_order_counts(pyc_session):
         "mu__2_o_3",
         "mu__3_o_3",
     ]
-    # 4 automata x 2 state clamps (failure + repair effects).
-    # var_sensitive: order-1 clamps touch 1 var each (3 x 2), the order-3
-    # clamps touch 3 vars each (2 x 3).
+    # Orders 1 and 3 overlap on every target: one shared clamp per target
+    # (cod3s#10) instead of one per combination state. 3 starts; each
+    # clamp is registered on the 2 combinations covering its target
+    # (3 x 2) and on the 2 variables it writes (3 x 2).
     assert counts == {
-        "start": 8,
-        "aut_sensitive": 8,
-        "var_sensitive": 12,
+        "start": 3,
+        "aut_sensitive": 6,
+        "var_sensitive": 6,
         "trans_sensitive": 0,
     }
 
@@ -225,12 +224,14 @@ def test_inst_ccf_counts(pyc_session):
         "mu__1_o_2",
         "mu__2_o_2",
     ]
-    # One failure-effect clamp per combo automaton (3 aut + 3 start;
-    # var registrations 1 + 1 + 2). No repair clamp (reinitialized
-    # convention), re-arm and draw carry no registrations.
+    # Orders 1 and 2 overlap on both targets: one shared clamp per
+    # target (cod3s#10), 2 starts, registered on the 2 combinations
+    # covering its target (2 x 2) and on ``working`` (2 x 1). No repair
+    # effect (reinitialized convention), re-arm and draw carry no
+    # registrations.
     assert counts == {
-        "start": 3,
-        "aut_sensitive": 3,
-        "var_sensitive": 4,
+        "start": 2,
+        "aut_sensitive": 4,
+        "var_sensitive": 2,
         "trans_sensitive": 0,
     }
