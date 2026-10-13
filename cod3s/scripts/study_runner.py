@@ -25,8 +25,10 @@ existing system methods.
 from __future__ import annotations
 
 import datetime
+import faulthandler
 import logging
 import os
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Optional, Type, Union
@@ -833,7 +835,7 @@ def run_study(
             logger.info1("Apply attribute overrides")
         apply_attribute_overrides(system, study_obj.attribute_overrides, logger=logger)
 
-    # Step 6b: PDMP integration step
+    # Step 6b: PDMP integration step and schema
     #
     # Applied here rather than at build time because the manager does not
     # exist before the components do: muscadet creates one only when a
@@ -847,13 +849,25 @@ def run_study(
     # ``SimulationConfig.pdmp_dt``. The short version: the work is
     # proportional to ``1 / pdmp_dt``, and a step wider than the shortest
     # episode of interest makes that episode disappear silently.
-    pdmp_dt = study_obj.simulation.pdmp_dt if study_obj.simulation is not None else None
-    if pdmp_dt is not None:
+    #
+    # The schema is documented on ``SimulationConfig.pdmp_schema``: it is
+    # the lever against the integrator crash of issue #5.
+    simulation = study_obj.simulation
+    pdmp_dt = simulation.pdmp_dt if simulation is not None else None
+    pdmp_schema = simulation.pdmp_schema if simulation is not None else None
+    if pdmp_dt is not None or pdmp_schema is not None:
         manager = system.currentPDMPManager()
         if manager is not None:
-            manager.setDt(pdmp_dt)
-            if logger:
-                logger.info1(f"PDMP integration step set to {pdmp_dt:g}")
+            if pdmp_dt is not None:
+                manager.setDt(pdmp_dt)
+                if logger:
+                    logger.info1(f"PDMP integration step set to {pdmp_dt:g}")
+            if pdmp_schema is not None:
+                import Pycatshoo as Pyc
+
+                manager.setSchema(Pyc.TSchemaType.names[pdmp_schema])
+                if logger:
+                    logger.info1(f"PDMP integration schema set to {pdmp_schema}")
 
     # Step 7: monitor + simulate
     # ``monitorTransition`` exposes transitions in the sequences XML
@@ -988,6 +1002,12 @@ def run_study(
         target=_progress_reporter, name="cod3s-progress-reporter", daemon=True
     )
     _progress_thread.start()
+    # A crash inside PyCATSHOO's native code (issue #5) otherwise kills the
+    # process with nothing on stderr, which every caller reads as "the study
+    # was refused". The handler names the signal and dumps the Python stacks.
+    # Written to the real stderr: a replaced ``sys.stderr`` may have no fd.
+    if not faulthandler.is_enabled() and sys.__stderr__ is not None:
+        faulthandler.enable(file=sys.__stderr__)
     try:
         system.simulate(sim_payload)
     finally:

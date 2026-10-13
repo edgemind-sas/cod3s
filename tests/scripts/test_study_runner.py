@@ -365,6 +365,87 @@ class TestRunStudyEndToEnd:
         )
         manager.setDt.assert_not_called()
 
+    def test_the_integration_schema_reaches_the_pdmp_manager(self, tmp_path):
+        """A declared schema is set on the manager as the engine's enum value."""
+        Pyc = pytest.importorskip("Pycatshoo")
+        system = MagicMock()
+        system.comp = {}
+        manager = MagicMock()
+        system.currentPDMPManager.return_value = manager
+
+        class StubBuilder:
+            def build(self, *, logger=None):
+                return system
+
+        run_study(
+            system_builder=StubBuilder(),
+            study=StudyYaml(
+                name="schema",
+                simulation={"nb_runs": 1, "pdmp_schema": "dense_rk_dopri5"},
+            ),
+            results_dir=tmp_path,
+        )
+        manager.setSchema.assert_called_once_with(Pyc.TSchemaType.dense_rk_dopri5)
+
+    def test_no_schema_declared_leaves_the_manager_alone(self, tmp_path):
+        """Absent means "PyCATSHOO's own default schema"."""
+        system = MagicMock()
+        system.comp = {}
+        manager = MagicMock()
+        system.currentPDMPManager.return_value = manager
+
+        class StubBuilder:
+            def build(self, *, logger=None):
+                return system
+
+        run_study(
+            system_builder=StubBuilder(),
+            study=StudyYaml(name="plain", simulation={"nb_runs": 1}),
+            results_dir=tmp_path,
+        )
+        manager.setSchema.assert_not_called()
+
+    def test_a_crash_in_the_engine_names_itself_on_stderr(self, tmp_path):
+        """A segfault inside ``simulate`` must not exit silently (issue #5).
+
+        PyCATSHOO's integrator can crash in native code. Without a fatal
+        signal handler the process dies with exit code -11 and nothing on
+        stderr, which every caller reads as "the study was refused".
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        script = tmp_path / "crash.py"
+        script.write_text(textwrap.dedent(f"""
+            import ctypes
+            from unittest.mock import MagicMock
+
+            from cod3s.scripts.study_runner import run_study
+            from cod3s.specs.study_yaml import StudyYaml
+
+            system = MagicMock()
+            system.comp = {{}}
+            system.currentPDMPManager.return_value = None
+            system.simulate.side_effect = lambda *_: ctypes.string_at(0)
+
+            class StubBuilder:
+                def build(self, *, logger=None):
+                    return system
+
+            run_study(
+                system_builder=StubBuilder(),
+                study=StudyYaml(name="crash", simulation={{"nb_runs": 1}}),
+                results_dir={str(tmp_path / "out")!r},
+            )
+            """))
+        completed = subprocess.run(
+            [sys.executable, str(script)], capture_output=True, text=True, timeout=120
+        )
+        assert completed.returncode != 0
+        assert "Fatal Python error: Segmentation fault" in completed.stderr
+        assert "run_study" in completed.stderr
+
     def test_a_discrete_model_has_no_manager_and_still_runs(self, tmp_path):
         """The branch that is a real branch.
 

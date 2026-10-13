@@ -782,3 +782,35 @@ class TestTheIntegrationStep:
 
         with pytest.raises(pydantic.ValidationError):
             SimulationConfig(pdmp_dt=value)
+
+
+class TestTheIntegrationSchema:
+    """``pdmp_schema`` names a PyCATSHOO integration schema, or nothing.
+
+    Absent must stay absent: every PDMP study ran on the engine's default
+    schema before this field existed, and changing it moves the numbers.
+    """
+
+    def test_absent_means_the_engine_default(self):
+        from cod3s.specs.study_yaml import SimulationConfig
+
+        assert SimulationConfig().pdmp_schema is None
+
+    def test_a_known_schema_is_accepted(self):
+        from cod3s.specs.study_yaml import SimulationConfig
+
+        config = SimulationConfig(pdmp_schema="dense_rk_dopri5")
+        assert config.pdmp_schema == "dense_rk_dopri5"
+
+    def test_an_unknown_schema_is_refused(self):
+        from cod3s.specs.study_yaml import SimulationConfig
+
+        with pytest.raises(pydantic.ValidationError, match="dense_rk_dopri5"):
+            SimulationConfig(pdmp_schema="rk45")
+
+    def test_the_accepted_names_are_exactly_the_engine_schemas(self):
+        """The list is spelled out in the spec, so it must track the binary."""
+        Pyc = pytest.importorskip("Pycatshoo")
+        from cod3s.specs.study_yaml import PDMP_SCHEMAS
+
+        assert set(PDMP_SCHEMAS) == set(Pyc.TSchemaType.names)

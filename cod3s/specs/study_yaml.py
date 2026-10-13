@@ -69,7 +69,7 @@ via ``extra="allow"``) and registers the subclass at runtime via
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal, Union, get_args
 
 import pydantic
 
@@ -98,7 +98,10 @@ import pydantic
 #:   new check on ``events.name``, both over enabled entries only —
 #:   patch (no field added, removed or changed in meaning; the rule was
 #:   keyed on a premise the runtime does not hold).
-STUDY_YAML_VERSION = "1.0.4"
+#: - 1.0.5: added optional ``pdmp_schema`` (PDMP integration schema) on
+#:   ``SimulationConfig`` — patch (optional field defaulting to None).
+#:   Also covers ``pdmp_dt``, added earlier without a bump.
+STUDY_YAML_VERSION = "1.0.5"
 
 #: Prefix marking a **top-level** study key as an extension field.
 #:
@@ -612,6 +615,31 @@ class ScheduleEntry(pydantic.BaseModel):
         return self
 
 
+#: PDMP integration schemas, spelled as PyCATSHOO's ``TSchemaType`` names.
+#: Listed here rather than read from the engine so the spec validates
+#: without importing PyCATSHOO; a test pins it to the binary's enum.
+PdmpSchema = Literal[
+    "euler",
+    "runge_kutta4",
+    "runge_kutta_cash_karp54",
+    "runge_kutta_dopri5",
+    "runge_kutta_fehlberg78",
+    "modified_midpoint",
+    "controlled_rk_cash_karp54",
+    "controlled_rk_dopri5",
+    "controlled_rk_fehlberg78",
+    "controlled_bulirsch_stoer",
+    "dense_rk_dopri5",
+    "dense_bulirsch_stoer",
+    "backward_differentiation_formulas",
+    "adams_moulton",
+    "implicit_differential_algebraic",
+    "newton_krilov",
+    "IDA_NK",
+]
+PDMP_SCHEMAS: tuple[str, ...] = get_args(PdmpSchema)
+
+
 class SimulationConfig(pydantic.BaseModel):
     """Mirror of the ``simulation`` section consumed by ``run-cod3s-study``.
 
@@ -703,6 +731,30 @@ class SimulationConfig(pydantic.BaseModel):
             "Ignored, deliberately without warning, by a purely discrete "
             "model: such a system has no PDMP manager at all, so there is "
             "nothing for this to govern."
+        ),
+    )
+    pdmp_schema: PdmpSchema | None = pydantic.Field(
+        None,
+        description=(
+            "Integration schema of the PDMP solver, by its PyCATSHOO "
+            "``TSchemaType`` name. ``None`` leaves PyCATSHOO's own default "
+            "(``runge_kutta4``), which is what every study ran on before "
+            "this field existed.\n\n"
+            "``dense_rk_dopri5`` avoids a known defect of PyCATSHOO 1.2.6 "
+            "(cod3s issue #5): with the fixed-step schemas, "
+            "``CPDMPManager::doSteps`` can dereference a stale pointer into "
+            "its memorised trajectory when a discrete jump is followed, "
+            "within the same call, by a schedule instant. The process then "
+            "dies with SIGSEGV, depending only on the schedule. Measured on "
+            "a hydrogen plant of 26 components: the crashing schedule and "
+            "five others completed with ``dense_rk_dopri5``, four to six "
+            "times faster, with indicators within 2e-4 of the default "
+            "schema. Whether ``pdmp_dt`` still sets the resolution of a "
+            "threshold crossing under an adaptive schema was not measured.\n\n"
+            "``implicit_differential_algebraic``, ``newton_krilov`` and "
+            "``IDA_NK`` need algebraic equations: on a purely differential "
+            "model the simulation fails at start with a PyCATSHOO error.\n\n"
+            "Ignored, like ``pdmp_dt``, by a purely discrete model."
         ),
     )
 
