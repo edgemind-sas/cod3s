@@ -1336,6 +1336,9 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         # covering it (``_wire_shared_target_clamp``), not by each
         # combination (cod3s#4, cod3s#10).
         shared_clamps = self._writers_per_target(kept_order_ids, order_max) > 1
+        # (automaton, occ state) pairs of the combinations covering each
+        # target, for the shared clamps.
+        covering_automata: dict[str, list[tuple]] = {t: [] for t in self.targets}
 
         for order, occ_var_params_cur, not_occ_var_params_cur in kept_orders:
 
@@ -1563,12 +1566,14 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                         not_occ_effects_trans=not_occ_effects_trans_cur,
                     )
 
-                # Record impacting automata for centralized control (the
-                # ctrl_vars of external, the shared clamps of internal)
-                if (
-                    self.behaviour in ("external", "external_rep_indep")
-                    or shared_clamps
-                ):
+                if shared_clamps:
+                    for idx in target_set_idx:
+                        covering_automata[self.targets[idx]].append(
+                            (aut, occ_state_name_cur)
+                        )
+
+                # Record impacting automata for centralized control
+                if self.behaviour in ("external", "external_rep_indep"):
                     for idx in target_set_idx:
                         impacted_target = self.targets[idx]
                         self.target_impacting_automata[impacted_target].append(
@@ -1576,7 +1581,7 @@ class ObjMode2S(FmWiringMixin, PycComponent):
                         )
 
         if shared_clamps:
-            for target_name_cur, covering in self.target_impacting_automata.items():
+            for target_name_cur, covering in covering_automata.items():
                 self._wire_shared_target_clamp(target_name_cur, covering)
 
         # Centralized ctrl_var management for `external` only.

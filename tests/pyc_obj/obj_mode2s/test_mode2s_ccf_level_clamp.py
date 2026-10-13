@@ -44,8 +44,7 @@ IN_OCC = [False, True, True, True, True, False, True]
 TOL = 1e-6
 MC_SCHEDULE = [0.0, 0.7, 1.3, 2.2, 3.1, 4.6, 5.9, 7.4, 9.0, 11.3, 14.0]
 
-# Pulled at most once per test: before the fix, the cod3s#4 shape spun
-# forever inside the first step after a failure.
+# Guard: a non-converging fixpoint (cod3s#4) would otherwise hang the run.
 pytestmark = pytest.mark.timeout(120)
 
 
