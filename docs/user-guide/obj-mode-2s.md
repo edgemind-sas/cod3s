@@ -262,6 +262,14 @@ reinitialised value (cod3s#10), and a pulse entering `occ` on a variable
 held at rest was overwritten (refused in 1.21.0 and 1.22.0). All three
 now behave as with a single target.
 
+The mode publishes that decision as `shared_target_clamps`, set before any
+combination is built. A subclass that resolves its held effects itself
+(`muscadet.ObjFailureMode` resolves flow-name patterns in
+`_build_fm_automaton`) reads it there, hands the build hooks no held record
+when it is true, and returns the records from
+`_shared_target_clamp_effects(target_comp, target_name)` instead, so its
+targets are clamped once over their covering combinations too.
+
 ### `inst` directions
 
 Since 1.21.0 one-shot effects are accepted on a mode with an `inst`

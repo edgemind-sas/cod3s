@@ -923,6 +923,12 @@ class ObjMode2S(FmWiringMixin, PycComponent):
 
     VALID_BEHAVIOURS = ("internal", "external", "external_rep_indep")
 
+    #: True when the held effects are applied once per target over the
+    #: covering combinations (internal behaviour, overlapping
+    #: combinations), see :meth:`_shared_target_clamp_effects`. Set by
+    #: the constructor before any combination is built.
+    shared_target_clamps = False
+
     #: Automata and transitions this class builds for given constructor
     #: arguments, computed without building them (``n_targets`` in place
     #: of the target names). See :mod:`cod3s.pycatshoo.mode_footprint`.
@@ -1334,8 +1340,12 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         # Internal mode whose combinations overlap on a target: the held
         # effects are applied once per target over the combinations
         # covering it (``_wire_shared_target_clamp``), not by each
-        # combination (cod3s#4, cod3s#10).
-        shared_clamps = self._writers_per_target(kept_order_ids, order_max) > 1
+        # combination (cod3s#4, cod3s#10). Set before any combination is
+        # built, so the build hooks can read it.
+        self.shared_target_clamps = (
+            self._writers_per_target(kept_order_ids, order_max) > 1
+        )
+        shared_clamps = self.shared_target_clamps
         # (automaton, occ state) pairs of the combinations covering each
         # target, for the shared clamps.
         covering_automata: dict[str, list[tuple]] = {t: [] for t in self.targets}
@@ -2173,11 +2183,8 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         covering automata, each written variable once, start, step).
         """
         target_comp = self.system().component(target_name)
-        occ_records = self._resolve_target_effects(
-            target_comp, target_name, self.occ_effects, kind="failure_effects"
-        )
-        not_occ_records = self._resolve_target_effects(
-            target_comp, target_name, self.not_occ_effects, kind="repair_effects"
+        occ_records, not_occ_records = self._shared_target_clamp_effects(
+            target_comp, target_name
         )
         if not (occ_records or not_occ_records):
             return
@@ -2199,6 +2206,31 @@ class ObjMode2S(FmWiringMixin, PycComponent):
         self.addStartMethod(method_name, clamp)
         if self.step:
             self.step.addMethod(self, method_name)
+
+    def _shared_target_clamp_effects(self, target_comp, target_name):
+        """The held effects the shared clamp applies on one target.
+
+        Extension hook, called once per target when
+        :attr:`shared_target_clamps` is true, after every combination is
+        built. Returns ``(occ_records, not_occ_records)``, lists of
+        ``{"var": variable, "value": value}``. The default resolves
+        ``occ_effects`` / ``not_occ_effects`` against the target by exact
+        variable name.
+
+        A subclass that resolves its effects itself (for instance from
+        name patterns, in ``_build_fm_automaton``) hands the build hooks
+        no held record when :attr:`shared_target_clamps` is true and
+        returns them here instead, so the target is clamped once over its
+        covering combinations rather than once per combination.
+        """
+        return (
+            self._resolve_target_effects(
+                target_comp, target_name, self.occ_effects, kind="failure_effects"
+            ),
+            self._resolve_target_effects(
+                target_comp, target_name, self.not_occ_effects, kind="repair_effects"
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Automaton builders

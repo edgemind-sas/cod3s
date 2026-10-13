@@ -211,3 +211,69 @@ def test_facade_holds_its_effects_over_the_covering_combinations():
         from_level = [v / REST_LEVEL for v in _values(level[target])]
         assert from_level == pytest.approx(p_working, abs=TOL), target
         assert any(0.0 < p < 1.0 for p in p_working), target
+
+
+@pytest.mark.parametrize(
+    "targets, occ_rate, not_occ_rate, behaviour, expected",
+    [
+        (("A", "B"), [0.3, 0.2], [1.0, 0.5], "internal", True),
+        (("A", "B"), [0.3, 0.0], [1.0, 0.0], "internal", False),
+        (("A", "B"), [0.0, 0.3], [0.0, 1.0], "internal", False),
+        (("A",), 0.3, 1.0, "internal", False),
+        (("A", "B"), [0.3, 0.2], [1.0, 0.5], "external", False),
+    ],
+    ids=["overlap", "order-1-alone", "order-n-alone", "single-target", "external"],
+)
+def test_shared_target_clamps_tells_when_the_held_effects_are_shared(
+    targets, occ_rate, not_occ_rate, behaviour, expected
+):
+    system = _system("SysSharedFlag", targets=targets)
+    mode = system.add_component(
+        **_mode(
+            targets,
+            behaviour=behaviour,
+            occ_law={"cls": "exp", "rate": occ_rate},
+            not_occ_law={"cls": "exp", "rate": not_occ_rate},
+            occ_effects={"working": False},
+        )
+    )
+    assert mode.shared_target_clamps is expected
+
+
+class SelfResolvedClampMode(cod3s.ObjMode2S):
+    """Resolves its held effects itself, as a pattern-matching façade does.
+
+    The engine is handed no held effect; the records come back through
+    the shared-clamp hook.
+    """
+
+    def __init__(self, held_occ, held_not_occ, **kwargs):
+        self._held = {"occ": held_occ, "not_occ": held_not_occ}
+        super().__init__(**kwargs)
+
+    def _shared_target_clamp_effects(self, target_comp, target_name):
+        return tuple(
+            [
+                {"var": target_comp.variable(var), "value": value}
+                for var, value in self._held[face].items()
+            ]
+            for face in ("occ", "not_occ")
+        )
+
+
+def test_a_subclass_resolving_its_own_effects_gets_the_shared_clamp():
+    system = _system("SysSelfResolved")
+    SelfResolvedClampMode(
+        held_occ={"working": False},
+        held_not_occ={"level": REST_LEVEL},
+        mode_name="m",
+        targets=["A", "B"],
+        occ_state="occ",
+        not_occ_state="rep",
+        occ_law={"cls": "delay", "time": [2.0, 3.0]},
+        not_occ_law={"cls": "delay", "time": [2.0, 10.0]},
+    )
+    expected = [0.0 if occ else float(REST_LEVEL) for occ in IN_OCC]
+    level_a, level_b = _run_timeline(system, "level")
+    assert level_a == expected
+    assert level_b == expected
